@@ -768,7 +768,7 @@ async def process_user_input(
 
             context.user_data['temp_magnet_choices_details'] = parsed_choices
 
-            choices_text = f"Found {len(parsed_choices)} valid torrents. Please select one:\n\n"
+            choices_text = f"Found {len(parsed_choices)} valid torrents\\. Please select one:\n\n"
             keyboard = []
             for choice in parsed_choices:
                 details_line = f"{choice['resolution']} | {choice['file_type']} | {choice['size']}"
