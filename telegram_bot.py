@@ -553,7 +553,7 @@ async def fetch_and_parse_magnet_details(
         """Worker to fetch metadata for a single magnet link."""
         bencoded_metadata = await asyncio.to_thread(_blocking_fetch_metadata, ses, magnet_link)
         if bencoded_metadata:
-            ti = lt.torrent_info(bencoded_metadata) # type: ignore
+            ti = lt.torrent_info(bencoded_metadata) #type: ignore
             return {
                 "index": index,
                 "ti": ti,
@@ -562,9 +562,9 @@ async def fetch_and_parse_magnet_details(
             }
         return None
 
+    # The fix is to remove the parse_mode argument, as this is a simple text message.
     await progress_message.edit_text(
-        f"Found {len(magnet_links)} links. Fetching details... this may take a moment.",
-        parse_mode=ParseMode.MARKDOWN_V2
+        f"Found {len(magnet_links)} links. Fetching details... this may take a moment."
     )
 
     tasks = [fetch_one(link, i) for i, link in enumerate(magnet_links)]
@@ -583,6 +583,7 @@ async def fetch_and_parse_magnet_details(
             "bencoded_metadata": result['bencoded_metadata']
         })
             
+    # Sort by the original index to maintain the order from the webpage
     parsed_choices.sort(key=lambda x: x['index'])
     return parsed_choices
 
