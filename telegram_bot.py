@@ -1426,12 +1426,12 @@ class ProgressReporter:
 
     async def report(self, status: lt.torrent_status): # type: ignore
         """
-        Formats and sends a progress update to Telegram, but only if a
-        cancellation confirmation is not pending.
+        Formats and sends a progress update to Telegram, ensuring the cancel
+        button persists with every update.
         """
         if self.download_data.get('cancellation_pending', False):
-            return 
-        
+            return
+
         log_name = status.name if status.name else self.clean_name
         progress_percent = status.progress * 100
         speed_mbps = status.download_rate / 1024 / 1024
@@ -1468,15 +1468,19 @@ class ProgressReporter:
             f"*Speed:* {speed_str} MB/s"
         )
         
-        # --- THE FIX: Remove the reply_markup from this call. ---
-        # The reporter should only update the text, never the buttons.
-        # The button_handler is now the sole controller of the keyboard.
+        # --- THE FIX: Add the keyboard with the cancel button here. ---
+        # This ensures that when this message replaces the "starting" message,
+        # the cancel button is preserved.
+        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         try:
             await self.application.bot.edit_message_text(
                 text=telegram_message,
                 chat_id=self.chat_id,
                 message_id=self.message_id,
-                parse_mode=ParseMode.MARKDOWN_V2
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=reply_markup
             )
         except BadRequest as e:
             if "Message is not modified" not in str(e):
@@ -1637,32 +1641,24 @@ async def handle_successful_download(
 
 async def start_download_task(download_data: Dict, application: Application):
     """
-    Creates, registers, and persists a new download task.
-    
-    This function updates the user's message to show that the download is
-    starting and provides a cancel button.
-    
-    Args:
-        download_data: The dictionary containing all necessary info for the download.
-        application: The main Application object to access bot_data.
+    Creates, registers, and persists a new download task, ensuring the initial
+    message includes a cancel button.
     """
     active_downloads = application.bot_data.get('active_downloads', {})
     download_queues = application.bot_data.get('download_queues', {})
     chat_id_str = str(download_data['chat_id'])
 
-    # Create and store the task
     task = asyncio.create_task(download_task_wrapper(download_data, application))
     download_data['task'] = task
     active_downloads[chat_id_str] = download_data
     
-    # Persist the new state (active download started, queue might have changed)
     save_state(
         application.bot_data['persistence_file'],
         active_downloads,
         download_queues
     )
 
-    # Let the user know the download is starting and give them a cancel button
+    # This correctly adds the cancel button to the "starting" message.
     keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -1674,7 +1670,6 @@ async def start_download_task(download_data: Dict, application: Application):
             reply_markup=reply_markup
         )
     except BadRequest as e:
-        # This can happen if the original confirmation message was deleted
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts}] [WARN] Could not edit message to start queued download: {e}")
 
