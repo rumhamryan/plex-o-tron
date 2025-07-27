@@ -4,6 +4,7 @@ import libtorrent as lt
 import asyncio
 import os
 from typing import Callable, Awaitable, Optional, Tuple
+import datetime
 
 StatusCallback = Callable[[lt.torrent_status], Awaitable[None]] #type:ignore
 
@@ -25,10 +26,10 @@ async def download_with_progress(
             ti = lt.torrent_info(source)  # type: ignore
             handle = ses.add_torrent({'ti': ti, 'save_path': save_path})
         except RuntimeError:
-            print(f"[ERROR] Invalid .torrent file provided: {source}")
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Invalid .torrent file provided: {source}")
             return False, None
 
-    print("[INFO] Waiting for metadata...")
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Waiting for metadata...")
     while not handle.status().has_metadata:
         try:
             await asyncio.sleep(1)
@@ -39,7 +40,7 @@ async def download_with_progress(
                 ses.remove_torrent(handle)
             raise
     
-    print("[INFO] Metadata received. Applying file priorities.")
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Metadata received. Applying file priorities.")
     ti = handle.torrent_file()
     if ti:
         files = ti.files()
@@ -49,18 +50,18 @@ async def download_with_progress(
             _, ext = os.path.splitext(file_path)
             if ext.lower() in allowed_extensions:
                 priorities.append(1)
-                print(f"[PRIORITY] Enabling download for: {file_path}")
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PRIORITY] Enabling download for: {file_path}")
             else:
                 priorities.append(0)
-                print(f"[PRIORITY] Disabling download for: {file_path}")
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PRIORITY] Disabling download for: {file_path}")
         handle.prioritize_files(priorities)
 
-    print("[INFO] Starting main download loop.")
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Starting main download loop.")
     while True:
         s = handle.status()
         await status_callback(s)
         if s.state == lt.torrent_status.states.seeding or s.state == lt.torrent_status.states.finished: #type: ignore
-            print(f"[INFO] Download loop finished. Final state: {s.state.name}")
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Download loop finished. Final state: {s.state.name}")
             break
         try:
             await asyncio.sleep(5) 
@@ -74,7 +75,7 @@ async def download_with_progress(
     await status_callback(handle.status())
     
     # --- THE FIX: Gracefully shut down the session to finalize files ---
-    print("[INFO] Shutting down libtorrent session gracefully to finalize files.")
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Shutting down libtorrent session gracefully to finalize files.")
     ses.pause()
     await asyncio.sleep(1) # Allow a moment for the session to process finalization
     torrent_info_to_return = handle.torrent_file() # Get info before session is deleted

@@ -1248,8 +1248,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles all button presses from inline keyboards.
-    (Refactored to add a confirmation step for download cancellation)
+    Handles all button presses from inline keyboards, using a lock to ensure
+    cancellation operations are atomic and free from race conditions.
     """
     if not await is_user_authorized(update, context):
         return
@@ -1268,69 +1268,50 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id_str = str(chat_id)
     active_downloads = context.bot_data.get('active_downloads', {})
 
-    # --- Cancellation Flow for Active Downloads ---
-
-    if query.data == "cancel_download":
-        if chat_id_str in active_downloads:
-            # --- THE FIX: Set the flag to pause the ProgressReporter ---
-            active_downloads[chat_id_str]['cancellation_pending'] = True
-            # --- End of fix ---
-
-            confirm_text = "Are you sure you want to cancel this download?"
-            keyboard = [[
-                InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
-                InlineKeyboardButton("❌ No, Continue", callback_data="resume_download"),
-            ]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            try:
-                await query.edit_message_text(text=confirm_text, reply_markup=reply_markup)
-            except BadRequest:
-                pass
-        else:
-            await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
-        return
-
-    if query.data == "confirm_cancel":
+    # --- THE FIX: Cancellation logic is now wrapped in a lock ---
+    if query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
         if chat_id_str in active_downloads:
             download_data = active_downloads[chat_id_str]
-            clean_name = download_data.get('source_dict', {}).get('clean_name', 'your download')
-            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts}] [CANCEL] User {chat_id} confirmed cancellation for '{clean_name}'.")
+            lock = download_data.get('lock')
+            if not lock: return
 
-            if 'task' in download_data and not download_data['task'].done():
-                task: asyncio.Task = download_data['task']
-                task.cancel()
-            else:
-                await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
+            async with lock:
+                if query.data == "cancel_download":
+                    download_data['cancellation_pending'] = True
+                    confirm_text = "Are you sure you want to cancel this download?"
+                    keyboard = [[
+                        InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
+                        InlineKeyboardButton("❌ No, Continue", callback_data="resume_download"),
+                    ]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    try:
+                        await query.edit_message_text(text=confirm_text, reply_markup=reply_markup)
+                    except BadRequest: pass
+                
+                elif query.data == "confirm_cancel":
+                    if 'task' in download_data and not download_data['task'].done():
+                        task: asyncio.Task = download_data['task']
+                        task.cancel()
+                    else:
+                        await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
+
+                elif query.data == "resume_download":
+                    download_data['cancellation_pending'] = False
+                    keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    try:
+                        await query.edit_message_text(text="▶️ Download resuming...", reply_markup=reply_markup)
+                    except BadRequest: pass
         else:
             await query.edit_message_text("ℹ️ Could not find an active download to cancel.", reply_markup=None)
         return
-
-    if query.data == "resume_download":
-        if chat_id_str in active_downloads:
-            # --- THE FIX: Unset the flag to allow the ProgressReporter to resume ---
-            active_downloads[chat_id_str]['cancellation_pending'] = False
-            # --- End of fix ---
-
-            keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            try:
-                await query.edit_message_text(
-                    text="▶️ Download resuming...",
-                    reply_markup=reply_markup
-                )
-            except BadRequest:
-                pass
-        return
-
-    # --- Cancellation Flow for Pending Operations ---
+    # --- End of fix ---
 
     if query.data == "cancel_operation":
         if 'temp_magnet_choices_details' in context.user_data:
             context.user_data.pop('temp_magnet_choices_details', None)
             await query.edit_message_text("❌ Selection cancelled.")
             return
-
         if 'pending_torrent' in context.user_data:
             pending_torrent = context.user_data.pop('pending_torrent')
             await query.edit_message_text("❌ Operation cancelled by user.")
@@ -1338,67 +1319,50 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 os.remove(pending_torrent.get('value'))
             return
 
-    # --- Magnet Selection & Download Confirmation Flow ---
-
     if query.data and query.data.startswith("select_magnet_"):
         if 'temp_magnet_choices_details' not in context.user_data:
             await query.edit_message_text("This selection has expired. Please send the link again.")
             return
-
         selected_index = int(query.data.split('_')[2])
         choices = context.user_data.pop('temp_magnet_choices_details')
         selected_choice = next((c for c in choices if c['index'] == selected_index), None)
-
         if not selected_choice:
             await query.edit_message_text("An internal error occurred. Please try again.")
             return
-
         bencoded_metadata = selected_choice['bencoded_metadata']
         ti = lt.torrent_info(bencoded_metadata) #type: ignore
-
         context.user_data['pending_magnet_link'] = selected_choice['magnet_link']
-        
         error_message, parsed_info = await validate_and_enrich_torrent(ti, message)
         if error_message or not parsed_info:
             return
-
         await send_confirmation_prompt(message, context, ti, parsed_info)
         return
 
     if 'pending_torrent' not in context.user_data:
         await query.edit_message_text("This action has expired. Please send the link again.")
         return
-
     pending_torrent = context.user_data.pop('pending_torrent')
-    
     if query.data == "confirm_download":
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         save_paths = context.bot_data["SAVE_PATHS"]
         initial_save_path = save_paths['default']
-        
         print(f"[{ts}] [BUTTON_HANDLER] Staging download to initial path: {initial_save_path}")
-
         download_data = {
             'source_dict': pending_torrent,
             'chat_id': chat_id,
             'message_id': pending_torrent['original_message_id'],
             'save_path': initial_save_path
         }
-        
         download_queues = context.bot_data.get('download_queues', {})
         if chat_id_str not in download_queues:
             download_queues[chat_id_str] = []
-        
         download_queues[chat_id_str].append(download_data)
         position = len(download_queues[chat_id_str])
-        
         print(f"[{ts}] [BUTTON_HANDLER] User {chat_id_str} confirmed download. Added to queue at position {position}.")
-        
         if chat_id_str in active_downloads:
              await query.edit_message_text(f"✅ Download queued. You are position #{position} in line.", reply_markup=None)
         else:
              await query.edit_message_text(f"✅ Your download is next in line and will begin shortly.", reply_markup=None)
-
         save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
         await process_queue_for_user(chat_id, context.application)
 
@@ -1426,65 +1390,64 @@ class ProgressReporter:
 
     async def report(self, status: lt.torrent_status): # type: ignore
         """
-        Formats and sends a progress update to Telegram, ensuring the cancel
-        button persists with every update.
+        Formats and sends a progress update, but only after acquiring a lock
+        to prevent race conditions with the cancellation logic.
         """
-        if self.download_data.get('cancellation_pending', False):
-            return
+        # --- THE FIX: Acquire the lock before proceeding ---
+        async with self.download_data['lock']:
+            if self.download_data.get('cancellation_pending', False):
+                return
 
-        log_name = status.name if status.name else self.clean_name
-        progress_percent = status.progress * 100
-        speed_mbps = status.download_rate / 1024 / 1024
-        ts_progress = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{ts_progress}] [LOG] {log_name}: {progress_percent:.2f}% | Peers: {status.num_peers} | Speed: {speed_mbps:.2f} MB/s")
-        
-        current_time = time.monotonic()
-        if current_time - self.last_update_time < 5:
-            return
-        self.last_update_time = current_time
+            log_name = status.name if status.name else self.clean_name
+            progress_percent = status.progress * 100
+            speed_mbps = status.download_rate / 1024 / 1024
+            ts_progress = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts_progress}] [LOG] {log_name}: {progress_percent:.2f}% | Peers: {status.num_peers} | Speed: {speed_mbps:.2f} MB/s")
+            
+            current_time = time.monotonic()
+            if current_time - self.last_update_time < 5:
+                return
+            self.last_update_time = current_time
 
-        name_str = ""
-        if self.parsed_info.get('type') == 'tv':
-            show_title = self.parsed_info.get('title', 'Unknown Show')
-            season_num = self.parsed_info.get('season', 0)
-            episode_num = self.parsed_info.get('episode', 0)
-            episode_title = self.parsed_info.get('episode_title', 'Unknown Episode')
-            safe_show_title = escape_markdown(show_title)
-            safe_episode_details = escape_markdown(f"S{season_num:02d}E{episode_num:02d} - {episode_title}")
-            name_str = f"`{safe_show_title}`\n`{safe_episode_details}`"
-        else:
-            safe_clean_name = escape_markdown(self.clean_name)
-            name_str = f"`{safe_clean_name}`"
+            name_str = ""
+            if self.parsed_info.get('type') == 'tv':
+                show_title = self.parsed_info.get('title', 'Unknown Show')
+                season_num = self.parsed_info.get('season', 0)
+                episode_num = self.parsed_info.get('episode', 0)
+                episode_title = self.parsed_info.get('episode_title', 'Unknown Episode')
+                safe_show_title = escape_markdown(show_title)
+                safe_episode_details = escape_markdown(f"S{season_num:02d}E{episode_num:02d} - {episode_title}")
+                name_str = f"`{safe_show_title}`\n`{safe_episode_details}`"
+            else:
+                safe_clean_name = escape_markdown(self.clean_name)
+                name_str = f"`{safe_clean_name}`"
 
-        progress_str = escape_markdown(f"{progress_percent:.2f}")
-        speed_str = escape_markdown(f"{speed_mbps:.2f}")
-        state_str = escape_markdown(status.state.name)
+            progress_str = escape_markdown(f"{progress_percent:.2f}")
+            speed_str = escape_markdown(f"{speed_mbps:.2f}")
+            state_str = escape_markdown(status.state.name)
 
-        telegram_message = (
-            f"⬇️ *Downloading:*\n{name_str}\n"
-            f"*Progress:* {progress_str}%\n"
-            f"*State:* {state_str}\n"
-            f"*Peers:* {status.num_peers}\n"
-            f"*Speed:* {speed_str} MB/s"
-        )
-        
-        # --- THE FIX: Add the keyboard with the cancel button here. ---
-        # This ensures that when this message replaces the "starting" message,
-        # the cancel button is preserved.
-        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        try:
-            await self.application.bot.edit_message_text(
-                text=telegram_message,
-                chat_id=self.chat_id,
-                message_id=self.message_id,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=reply_markup
+            telegram_message = (
+                f"⬇️ *Downloading:*\n{name_str}\n"
+                f"*Progress:* {progress_str}%\n"
+                f"*State:* {state_str}\n"
+                f"*Peers:* {status.num_peers}\n"
+                f"*Speed:* {speed_str} MB/s"
             )
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            
+            keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            try:
+                await self.application.bot.edit_message_text(
+                    text=telegram_message,
+                    chat_id=self.chat_id,
+                    message_id=self.message_id,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup
+                )
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
 def cleanup_download_resources(
     application: Application,
@@ -1641,12 +1604,14 @@ async def handle_successful_download(
 
 async def start_download_task(download_data: Dict, application: Application):
     """
-    Creates, registers, and persists a new download task, ensuring the initial
-    message includes a cancel button.
+    Creates, registers, and persists a new download task, adding a lock
+    to the task's data to prevent race conditions.
     """
     active_downloads = application.bot_data.get('active_downloads', {})
     download_queues = application.bot_data.get('download_queues', {})
     chat_id_str = str(download_data['chat_id'])
+
+    download_data['lock'] = asyncio.Lock()
 
     task = asyncio.create_task(download_task_wrapper(download_data, application))
     download_data['task'] = task
@@ -1658,7 +1623,6 @@ async def start_download_task(download_data: Dict, application: Application):
         download_queues
     )
 
-    # This correctly adds the cancel button to the "starting" message.
     keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
