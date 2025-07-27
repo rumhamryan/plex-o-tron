@@ -1456,7 +1456,7 @@ async def handle_successful_download(
     plex_config: Optional[Dict[str, str]]
 ) -> str:
     """
-    Orchestrates all post-download tasks: renaming, moving, and triggering a Plex scan.
+    Orchestrates post-download tasks, ensuring the Plex scan waits for the move to complete.
     
     Args:
         ti: The torrent_info object for the completed download.
@@ -1468,7 +1468,8 @@ async def handle_successful_download(
         A formatted string to be sent to the user as the final status message.
     """
     scan_status_message = ""
-    # Use the more detailed name from parsed_info for the final message
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     if parsed_info.get('type') == 'tv':
         clean_name = f"{parsed_info.get('title')} - S{parsed_info.get('season', 0):02d}E{parsed_info.get('episode', 0):02d}"
     else:
@@ -1479,7 +1480,6 @@ async def handle_successful_download(
         target_file_path_in_torrent = None
         original_extension = ".mkv"
 
-        # Find the primary media file to move
         for i in range(files.num_files()):
             _, ext = os.path.splitext(files.file_path(i))
             if ext.lower() in ALLOWED_EXTENSIONS:
@@ -1493,7 +1493,6 @@ async def handle_successful_download(
         final_filename = generate_plex_filename(parsed_info, original_extension)
         destination_directory = base_save_path
 
-        # TV Show Directory Logic
         if parsed_info.get('type') == 'tv':
             show_title = parsed_info.get('title', 'Unknown Show')
             season_num = parsed_info.get('season', 0)
@@ -1509,10 +1508,16 @@ async def handle_successful_download(
         current_path = os.path.join(base_save_path, target_file_path_in_torrent)
         new_path = os.path.join(destination_directory, final_filename)
         
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [MOVE] From: {current_path}\n[MOVE] To:   {new_path}")
-        shutil.move(current_path, new_path)
+        # --- THE FIX: Delegate the blocking 'move' to a thread ---
+        print(f"[{ts}] [MOVE] Invoking move operation...\n     From: {current_path}\n     To:   {new_path}")
         
-        # Plex Scan Logic
+        # This await ensures the bot proceeds ONLY after the move is fully complete.
+        await asyncio.to_thread(shutil.move, current_path, new_path)
+        
+        ts_after_move = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts_after_move}] [MOVE] Move operation completed successfully.")
+        # --- End of fix ---
+        
         if plex_config:
             media_type = parsed_info.get('type')
             library_name = 'Movies' if media_type == 'movie' else 'TV Shows' if media_type == 'tv' else None
@@ -1531,17 +1536,16 @@ async def handle_successful_download(
                         NotFound: f"Plex library '{library_name}' not found.",
                     }
                     error_reason = error_map.get(type(e), f"An unexpected error occurred: {e}")
-                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX ERROR] {error_reason}")
+                    print(f"[PLEX ERROR] {error_reason}")
                     scan_status_message = f"\n\n*Plex Error:* Could not trigger scan\\."
 
-        # Cleanup Logic
         original_top_level_dir = os.path.join(base_save_path, target_file_path_in_torrent.split(os.path.sep)[0])
         if os.path.isdir(original_top_level_dir) and not os.listdir(original_top_level_dir):
-             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Deleting empty original directory: {original_top_level_dir}")
+             print(f"[CLEANUP] Deleting empty original directory: {original_top_level_dir}")
              shutil.rmtree(original_top_level_dir)
 
     except Exception as e:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Post-processing failed: {e}")
+        print(f"[ERROR] Post-processing failed: {e}")
         return (
             f"❌ *Post-Processing Error*\n"
             f"Download completed but failed during file handling\\.\n\n"
@@ -1553,7 +1557,7 @@ async def handle_successful_download(
         f"Renamed and moved to Plex Server:\n"
         f"`{escape_markdown(clean_name)}`"
         f"{scan_status_message}"
-    )   
+    )
 
 async def start_download_task(download_data: Dict, application: Application):
     """
