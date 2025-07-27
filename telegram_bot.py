@@ -1429,25 +1429,20 @@ class ProgressReporter:
         Formats and sends a progress update to Telegram, but only if a
         cancellation confirmation is not pending.
         """
-        # --- THE FIX: Check for the confirmation flag before doing anything ---
         if self.download_data.get('cancellation_pending', False):
-            return # Do not update the message while confirmation is active
-        # --- End of fix ---
-
-        # --- Logging to console on every check ---
+            return 
+        
         log_name = status.name if status.name else self.clean_name
         progress_percent = status.progress * 100
         speed_mbps = status.download_rate / 1024 / 1024
         ts_progress = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts_progress}] [LOG] {log_name}: {progress_percent:.2f}% | Peers: {status.num_peers} | Speed: {speed_mbps:.2f} MB/s")
         
-        # --- Rate-limit updates to Telegram ---
         current_time = time.monotonic()
         if current_time - self.last_update_time < 5:
             return
         self.last_update_time = current_time
 
-        # --- Formatting the message for Telegram ---
         name_str = ""
         if self.parsed_info.get('type') == 'tv':
             show_title = self.parsed_info.get('title', 'Unknown Show')
@@ -1473,16 +1468,15 @@ class ProgressReporter:
             f"*Speed:* {speed_str} MB/s"
         )
         
-        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
+        # --- THE FIX: Remove the reply_markup from this call. ---
+        # The reporter should only update the text, never the buttons.
+        # The button_handler is now the sole controller of the keyboard.
         try:
             await self.application.bot.edit_message_text(
                 text=telegram_message,
                 chat_id=self.chat_id,
                 message_id=self.message_id,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=reply_markup
+                parse_mode=ParseMode.MARKDOWN_V2
             )
         except BadRequest as e:
             if "Message is not modified" not in str(e):
