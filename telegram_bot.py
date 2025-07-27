@@ -712,6 +712,10 @@ async def process_user_input(
                 display_escaped = escape_markdown(display_name[:60] + '...' if len(display_name) > 60 else display_name)
                 choices_text += f"*{i+1}\\.* `{display_escaped}`\n"
                 keyboard.append([InlineKeyboardButton(f"Select {i+1}", callback_data=f"select_magnet_{i}")])
+            
+            # --- THE FIX: Add a cancel button to the multi-magnet choice prompt ---
+            keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+            # --- End of fix ---
 
             reply_markup = InlineKeyboardMarkup(keyboard)
             await progress_message.edit_text(choices_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
