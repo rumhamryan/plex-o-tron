@@ -102,5 +102,4 @@ To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment 
 
 *   `/start` - Displays a welcome message.
 *   `/help` - Shows a brief help message.
-*   `/cancel` - Stops your currently active download.
 *   `/plexstatus` - Checks the connection to your Plex server.

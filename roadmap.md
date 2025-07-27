@@ -1,9 +1,6 @@
 ToDo:
 
 Reasonable features in scope and effort:
-1. The magnet links message should not include the name instead: resolution, file extension, size
-2. timestamps for all print invocations
-3. confirmation of download cancellation could harden the feature to accidental presses
 4. pause download button would be cool
 5. A delete function that can remove files from the library (maybe not though, manual deletion will be safe and more deliberate)
   - Should include query about movie or tv show with buttons, then the prompt for what to delete

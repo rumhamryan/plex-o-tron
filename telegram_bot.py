@@ -1272,6 +1272,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "cancel_download":
         if chat_id_str in active_downloads:
+            # --- THE FIX: Set the flag to pause the ProgressReporter ---
+            active_downloads[chat_id_str]['cancellation_pending'] = True
+            # --- End of fix ---
+
             confirm_text = "Are you sure you want to cancel this download?"
             keyboard = [[
                 InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
@@ -1280,7 +1284,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             try:
                 await query.edit_message_text(text=confirm_text, reply_markup=reply_markup)
-            except BadRequest: # Ignore if message is already gone/changed
+            except BadRequest:
                 pass
         else:
             await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
@@ -1295,7 +1299,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if 'task' in download_data and not download_data['task'].done():
                 task: asyncio.Task = download_data['task']
-                task.cancel() # The task's exception handler will edit the final message.
+                task.cancel()
             else:
                 await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
         else:
@@ -1303,29 +1307,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "resume_download":
-        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        try:
-            # Edit the message back to an intermediate state. The ProgressReporter
-            # will overwrite this on its next cycle with the full live status.
-            await query.edit_message_text(
-                text="▶️ Download resuming...",
-                reply_markup=reply_markup
-            )
-        except BadRequest:
-            pass # Ignore if message is already gone
+        if chat_id_str in active_downloads:
+            # --- THE FIX: Unset the flag to allow the ProgressReporter to resume ---
+            active_downloads[chat_id_str]['cancellation_pending'] = False
+            # --- End of fix ---
+
+            keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            try:
+                await query.edit_message_text(
+                    text="▶️ Download resuming...",
+                    reply_markup=reply_markup
+                )
+            except BadRequest:
+                pass
         return
 
     # --- Cancellation Flow for Pending Operations ---
 
     if query.data == "cancel_operation":
-        # For magnet selection
         if 'temp_magnet_choices_details' in context.user_data:
             context.user_data.pop('temp_magnet_choices_details', None)
             await query.edit_message_text("❌ Selection cancelled.")
             return
 
-        # For final download confirmation
         if 'pending_torrent' in context.user_data:
             pending_torrent = context.user_data.pop('pending_torrent')
             await query.edit_message_text("❌ Operation cancelled by user.")
@@ -1400,7 +1405,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 class ProgressReporter:
     """
     A class to encapsulate the state and logic for reporting download progress.
-    It handles rate-limiting updates to avoid hitting Telegram API limits.
+    It handles rate-limiting updates and can be paused for confirmations.
     """
     def __init__(
         self,
@@ -1408,19 +1413,27 @@ class ProgressReporter:
         chat_id: int,
         message_id: int,
         parsed_info: Dict[str, Any],
-        clean_name: str
+        clean_name: str,
+        download_data: Dict[str, Any] # Add this to access the state
     ):
         self.application = application
         self.chat_id = chat_id
         self.message_id = message_id
         self.parsed_info = parsed_info
         self.clean_name = clean_name
+        self.download_data = download_data # Store the state dictionary
         self.last_update_time: float = 0
 
     async def report(self, status: lt.torrent_status): # type: ignore
         """
-        Formats and sends a progress update to Telegram, respecting a 5-second interval.
+        Formats and sends a progress update to Telegram, but only if a
+        cancellation confirmation is not pending.
         """
+        # --- THE FIX: Check for the confirmation flag before doing anything ---
+        if self.download_data.get('cancellation_pending', False):
+            return # Do not update the message while confirmation is active
+        # --- End of fix ---
+
         # --- Logging to console on every check ---
         log_name = status.name if status.name else self.clean_name
         progress_percent = status.progress * 100
@@ -1431,7 +1444,7 @@ class ProgressReporter:
         # --- Rate-limit updates to Telegram ---
         current_time = time.monotonic()
         if current_time - self.last_update_time < 5:
-            return # Don't update if it has been less than 5 seconds
+            return
         self.last_update_time = current_time
 
         # --- Formatting the message for Telegram ---
@@ -1688,13 +1701,15 @@ async def download_task_wrapper(download_data: Dict, application: Application):
 
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Starting/Resuming download task for '{clean_name}' for chat_id {chat_id}.")
     
-    reporter = ProgressReporter(application, chat_id, message_id, parsed_info, clean_name)
+    # --- THE FIX: Pass the download_data dictionary to the reporter ---
+    reporter = ProgressReporter(application, chat_id, message_id, parsed_info, clean_name, download_data)
+    # --- End of fix ---
 
     try:
         # --- 2. EXECUTE ---
         success, ti = await download_with_progress(
             source=source_value, 
-            save_path=initial_save_path, # Download to the initial default path
+            save_path=initial_save_path,
             status_callback=reporter.report,
             bot_data=application.bot_data,
             allowed_extensions=ALLOWED_EXTENSIONS
@@ -1707,8 +1722,8 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             final_message = await handle_successful_download(
                 ti=ti,
                 parsed_info=parsed_info,
-                initial_download_path=initial_save_path, # The source directory
-                save_paths=application.bot_data.get("SAVE_PATHS", {}), # The full paths config
+                initial_download_path=initial_save_path,
+                save_paths=application.bot_data.get("SAVE_PATHS", {}),
                 plex_config=application.bot_data.get("PLEX_CONFIG")
             )
             
