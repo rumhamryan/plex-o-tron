@@ -1191,7 +1191,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = message.chat_id
 
-    # --- THE FIX: Handle cancellation of an active download via button press ---
     if query.data == "cancel_download":
         active_downloads = context.bot_data.get('active_downloads', {})
         chat_id_str = str(chat_id)
@@ -1211,7 +1210,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text("ℹ️ Could not find an active download to cancel.", reply_markup=None)
         return
-    # --- End of fix ---
 
     if query.data == "cancel_operation" and 'temp_magnet_choices' in context.user_data:
         context.user_data.pop('temp_magnet_choices', None)
@@ -1246,7 +1244,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pending_torrent = context.user_data.pop('pending_torrent')
     
     if query.data == "confirm_download":
-        await query.edit_message_text("✅ Confirmation received. Your download has been queued.")
+        confirm_text = "✅ Confirmation received. Your download has been queued."
+        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            text=confirm_text,
+            reply_markup=reply_markup
+        )
 
         save_paths = context.bot_data["SAVE_PATHS"]
         parsed_info = pending_torrent.get('parsed_info', {})
