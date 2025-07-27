@@ -1,7 +1,6 @@
 ToDo:
 - A 3rd button during the confirm/deny prompt 'edit' could be use to solicit user input on the name, in the case that there is an extra character, or misspelling
 - A delete function that can remove files from the library (maybe not though, manual deletion will be safe and more deliberate)
-- A cancel button for the multi-magnet selection
 - A cancel button for torrents currently downloading
 - look into deleting entire chat every time to reducing remote logging
 

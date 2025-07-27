@@ -927,7 +927,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         r"Here are the available commands:\n\n"
         r"`start` \- Show welcome message\.\n"
-        r"`cancel` \- Stop download\.\n"
         r"`plexstatus` \- Check Plex\.\n"
         r"`plexrestart` \- Restart Plex\.\n\n"
     )
@@ -1175,7 +1174,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles all button presses from inline keyboards.
-    (Refactored to reuse the processing pipeline)
+    (Refactored to handle multiple cancellation contexts)
     """
     if not await is_user_authorized(update, context):
         return
@@ -1190,7 +1189,35 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
 
-    # --- Handle Multi-Magnet Selection ---
+    chat_id = message.chat_id
+
+    # --- THE FIX: Handle cancellation of an active download via button press ---
+    if query.data == "cancel_download":
+        active_downloads = context.bot_data.get('active_downloads', {})
+        chat_id_str = str(chat_id)
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        if chat_id_str in active_downloads:
+            download_data = active_downloads[chat_id_str]
+            clean_name = download_data.get('source_dict', {}).get('clean_name', 'your download')
+            
+            print(f"[{ts}] [INFO] Received cancel button press from chat_id {chat_id} for '{clean_name}'.")
+            
+            if 'task' in download_data and not download_data['task'].done():
+                task: asyncio.Task = download_data['task']
+                task.cancel()
+            else:
+                await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
+        else:
+            await query.edit_message_text("ℹ️ Could not find an active download to cancel.", reply_markup=None)
+        return
+    # --- End of fix ---
+
+    if query.data == "cancel_operation" and 'temp_magnet_choices' in context.user_data:
+        context.user_data.pop('temp_magnet_choices', None)
+        await query.edit_message_text("❌ Selection cancelled by user.")
+        return
+
     if query.data and query.data.startswith("select_magnet_"):
         if 'temp_magnet_choices' not in context.user_data:
             await query.edit_message_text("This selection has expired. Please send the link again.")
@@ -1200,24 +1227,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         magnet_links = context.user_data.pop('temp_magnet_choices')
         selected_magnet = magnet_links[selected_index]
         
-        # --- REUSE THE PIPELINE ---
-        # 1. PROCESS: Get torrent_info for the selected magnet.
         context.user_data['pending_magnet_link'] = selected_magnet
         ti = await fetch_metadata_from_magnet(selected_magnet, message, context)
         if not ti:
             return
 
-        # 2. VALIDATE & ENRICH: Reuse the exact same function as handle_message.
         error_message, parsed_info = await validate_and_enrich_torrent(ti, message)
         if error_message or not parsed_info:
             return
 
-        # 3. CONFIRM: Reuse the exact same function to send the final prompt.
         await send_confirmation_prompt(message, context, ti, parsed_info)
-        # --- END OF REUSED PIPELINE ---
         return
 
-    # --- Handle Final Confirmation/Cancellation ---
     if 'pending_torrent' not in context.user_data:
         await query.edit_message_text("This action has expired. Please send the link again.")
         return
@@ -1315,6 +1336,9 @@ class ProgressReporter:
             f"*Peers:* {status.num_peers}\n"
             f"*Speed:* {speed_str} MB/s"
         )
+
+        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
         try:
             await self.application.bot.edit_message_text(
@@ -1492,7 +1516,6 @@ async def download_task_wrapper(download_data: Dict, application: Application):
 
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Starting/Resuming download task for '{clean_name}' for chat_id {chat_id}.")
     
-    # Initialize the progress reporter object
     reporter = ProgressReporter(application, chat_id, message_id, parsed_info, clean_name)
 
     try:
@@ -1500,7 +1523,7 @@ async def download_task_wrapper(download_data: Dict, application: Application):
         success, ti = await download_with_progress(
             source=source_value, 
             save_path=base_save_path,
-            status_callback=reporter.report, # Pass the class method as the callback
+            status_callback=reporter.report,
             bot_data=application.bot_data,
             allowed_extensions=ALLOWED_EXTENSIONS
         )
@@ -1535,7 +1558,15 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             f"`{escape_markdown(clean_name)}`"
         )
         try:
-            await application.bot.edit_message_text(text=final_message, chat_id=chat_id, message_id=message_id, parse_mode=ParseMode.MARKDOWN_V2)
+            # --- THE FIX: Remove the keyboard from the final "Cancelled" message ---
+            await application.bot.edit_message_text(
+                text=final_message, 
+                chat_id=chat_id, 
+                message_id=message_id, 
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=None
+            )
+            # --- End of fix ---
         except BadRequest as e:
             if "Message is not modified" not in str(e): raise
             
@@ -1550,7 +1581,13 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             f"`{safe_error}`"
         )
         try:
-            await application.bot.edit_message_text(text=final_message, chat_id=chat_id, message_id=message_id, parse_mode=ParseMode.MARKDOWN_V2)
+            await application.bot.edit_message_text(
+                text=final_message,
+                chat_id=chat_id,
+                message_id=message_id,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=None
+            )
         except BadRequest as e:
             if "Message is not modified" not in str(e): raise
             
