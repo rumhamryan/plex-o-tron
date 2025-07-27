@@ -1134,51 +1134,43 @@ async def find_magnet_link_on_page(url: str) -> List[str]:
     # --- Convert set back to a list before returning ---
     return list(unique_magnet_links)
 
-async def _add_to_queue_or_start(download_data: Dict, application: Application):
+async def process_queue_for_user(chat_id: int, application: Application):
     """
-    Checks for an active download and either queues the new one or starts it.
+    Checks and processes the download queue for a specific user.
+
+    This function is the single authority for starting a download from the queue.
+    It is safe to call multiple times, as it will exit immediately if a download
+    is already active for the user.
     
     Args:
-        download_data: The dictionary containing all necessary info for the download.
-        application: The main Application object to access bot_data.
+        chat_id: The integer chat ID of the user.
+        application: The main Application object.
     """
-    chat_id = download_data['chat_id']
     chat_id_str = str(chat_id)
     active_downloads = application.bot_data.get('active_downloads', {})
     download_queues = application.bot_data.get('download_queues', {})
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    print(f"[{ts}] [DEBUG] Entering queue-or-start logic for chat_id {chat_id_str}.")
-
-    # If there is already an active download for this user...
+    # --- DEBUG: Guard clause to prevent duplicate downloads ---
     if chat_id_str in active_downloads:
-        # ...add the new download to their queue.
-        if chat_id_str not in download_queues:
-            download_queues[chat_id_str] = []
+        print(f"[{ts}] [QUEUE_PROCESSOR] Invoked for {chat_id_str}, but a download is already active. No action taken.")
+        return
+
+    # --- DEBUG: Check if there's anything to process ---
+    if chat_id_str in download_queues and download_queues[chat_id_str]:
+        print(f"[{ts}] [QUEUE_PROCESSOR] No active download for {chat_id_str}. Starting next item from queue.")
         
-        download_queues[chat_id_str].append(download_data)
-        position = len(download_queues[chat_id_str])
+        # Pop the next item from the front of the queue
+        next_download_data = download_queues[chat_id_str].pop(0)
+
+        # If the queue is now empty, remove the user's entry completely
+        if not download_queues[chat_id_str]:
+            del download_queues[chat_id_str]
         
-        print(f"[{ts}] [DEBUG] Active download found for {chat_id_str}. Queuing new item at position {position}.")
-        
-        # Notify the user
-        await application.bot.edit_message_text(
-            text=f"✅ Download queued. You are position #{position} in line.",
-            chat_id=chat_id,
-            message_id=download_data['message_id'],
-            reply_markup=None
-        )
-        
-        # Persist the updated queue state
-        save_state(
-            application.bot_data['persistence_file'],
-            active_downloads,
-            download_queues
-        )
+        # This helper function now correctly starts the task
+        await start_download_task(next_download_data, application)
     else:
-        # Otherwise, start the download immediately.
-        print(f"[{ts}] [DEBUG] No active download for {chat_id_str}. Starting immediately.")
-        await start_download_task(download_data, application)
+        print(f"[{ts}] [QUEUE_PROCESSOR] Invoked for {chat_id_str}, but their queue is empty. No action taken.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1225,7 +1217,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles all button presses from inline keyboards.
-    (Refactored to support a download queue)
+    (Refactored to use an authoritative queue processor)
     """
     if not await is_user_authorized(update, context):
         return
@@ -1295,8 +1287,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pending_torrent = context.user_data.pop('pending_torrent')
     
     if query.data == "confirm_download":
-        active_downloads = context.bot_data.get('active_downloads', {})
-        download_queues = context.bot_data.get('download_queues', {})
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         chat_id_str = str(chat_id)
         
         save_paths = context.bot_data["SAVE_PATHS"]
@@ -1311,25 +1302,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'save_path': final_save_path
         }
 
-        await _add_to_queue_or_start(download_data, context.application)
-
+        download_queues = context.bot_data.get('download_queues', {})
+        if chat_id_str not in download_queues:
+            download_queues[chat_id_str] = []
+        
+        download_queues[chat_id_str].append(download_data)
+        position = len(download_queues[chat_id_str])
+        
+        print(f"[{ts}] [BUTTON_HANDLER] User {chat_id_str} confirmed download. Added to queue at position {position}.")
+        
+        # Let the user know their item is queued, even if it starts immediately
+        active_downloads = context.bot_data.get('active_downloads', {})
         if chat_id_str in active_downloads:
-            if chat_id_str not in download_queues:
-                download_queues[chat_id_str] = []
-            
-            download_queues[chat_id_str].append(download_data)
-            position = len(download_queues[chat_id_str])
-            
-            await query.edit_message_text(f"✅ Download queued. You are position #{position} in line.", reply_markup=None)
-            
-            save_state(
-                context.bot_data['persistence_file'],
-                active_downloads,
-                download_queues
-            )
+             await query.edit_message_text(f"✅ Download queued. You are position #{position} in line.", reply_markup=None)
         else:
-            # Otherwise, start the download immediately
-            await start_download_task(download_data, context.application)
+             await query.edit_message_text(f"✅ Your download is next in line and will begin shortly.", reply_markup=None)
+
+        save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
+
+        await process_queue_for_user(chat_id, context.application)
 
     elif query.data == "cancel_operation":
         await query.edit_message_text("❌ Operation cancelled by user.")
@@ -1600,7 +1591,7 @@ async def start_download_task(download_data: Dict, application: Application):
 
 async def download_task_wrapper(download_data: Dict, application: Application):
     """
-    (V4 Refactor) Manages the download lifecycle and triggers the next from the queue.
+    (V5 Refactor) Manages the download lifecycle and triggers the queue processor on completion.
     """
     # --- 1. SETUP ---
     source_dict = download_data['source_dict']
@@ -1644,7 +1635,6 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             )
 
     except asyncio.CancelledError:
-        # --- 4. HANDLE CANCELLATION ---
         ts_cancel = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if application.bot_data.get('is_shutting_down', False):
             print(f"[{ts_cancel}] [INFO] Task for '{clean_name}' paused due to bot shutdown.")
@@ -1668,7 +1658,6 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             if "Message is not modified" not in str(e): raise
             
     except Exception as e:
-        # --- 5. HANDLE OTHER ERRORS ---
         ts_except = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts_except}] [ERROR] An unexpected exception occurred in download task for '{clean_name}': {e}")
         safe_error = escape_markdown(str(e))
@@ -1689,28 +1678,13 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             if "Message is not modified" not in str(e): raise
             
     finally:
-        # --- 6. CLEANUP ---
+        # --- 6. CLEANUP & DEQUEUE ---
         if not application.bot_data.get('is_shutting_down', False):
             cleanup_download_resources(application, chat_id, source_type, source_value, base_save_path)
-        
-        # --- THE FIX: Dequeue and start the next download ---
-        if application.bot_data.get('is_shutting_down', False):
-            return
-
-        download_queues = application.bot_data.get('download_queues', {})
-        chat_id_str = str(chat_id)
-
-        if chat_id_str in download_queues and download_queues[chat_id_str]:
-            ts_queue = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts_queue}] [QUEUE] Found item in queue for chat_id {chat_id_str}. Starting next download.")
             
-            next_download_data = download_queues[chat_id_str].pop(0)
-
-            if not download_queues[chat_id_str]:
-                del download_queues[chat_id_str]
-            
-            asyncio.create_task(start_download_task(next_download_data, application))
-        # --- End of fix ---
+            ts_final = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts_final}] [FINALLY] Task for {chat_id} finished. Nudging queue processor.")
+            await process_queue_for_user(chat_id, application)
 
 # --- MAIN SCRIPT EXECUTION ---
 if __name__ == '__main__':
