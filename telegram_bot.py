@@ -1131,13 +1131,59 @@ async def find_magnet_link_on_page(url: str) -> List[str]:
     except Exception as e:
         print(f"[{ts}] [WEBSCRAPE ERROR] An unexpected error occurred during scraping {url}: {e}")
     
-    # --- MODIFIED: Convert set back to a list before returning ---
+    # --- Convert set back to a list before returning ---
     return list(unique_magnet_links)
+
+async def _add_to_queue_or_start(download_data: Dict, application: Application):
+    """
+    Checks for an active download and either queues the new one or starts it.
+    
+    Args:
+        download_data: The dictionary containing all necessary info for the download.
+        application: The main Application object to access bot_data.
+    """
+    chat_id = download_data['chat_id']
+    chat_id_str = str(chat_id)
+    active_downloads = application.bot_data.get('active_downloads', {})
+    download_queues = application.bot_data.get('download_queues', {})
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    print(f"[{ts}] [DEBUG] Entering queue-or-start logic for chat_id {chat_id_str}.")
+
+    # If there is already an active download for this user...
+    if chat_id_str in active_downloads:
+        # ...add the new download to their queue.
+        if chat_id_str not in download_queues:
+            download_queues[chat_id_str] = []
+        
+        download_queues[chat_id_str].append(download_data)
+        position = len(download_queues[chat_id_str])
+        
+        print(f"[{ts}] [DEBUG] Active download found for {chat_id_str}. Queuing new item at position {position}.")
+        
+        # Notify the user
+        await application.bot.edit_message_text(
+            text=f"✅ Download queued. You are position #{position} in line.",
+            chat_id=chat_id,
+            message_id=download_data['message_id'],
+            reply_markup=None
+        )
+        
+        # Persist the updated queue state
+        save_state(
+            application.bot_data['persistence_file'],
+            active_downloads,
+            download_queues
+        )
+    else:
+        # Otherwise, start the download immediately.
+        print(f"[{ts}] [DEBUG] No active download for {chat_id_str}. Starting immediately.")
+        await start_download_task(download_data, application)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles incoming messages by coordinating the torrent processing pipeline.
-    (Refactored to be a high-level coordinator)
+    (Refactored to allow queueing)
     """
     if not await is_user_authorized(update, context):
         return
@@ -1149,38 +1195,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data is None:
         context.user_data = {}
-
-    if str(chat_id) in context.bot_data.get('active_downloads', {}):
-        await update.message.reply_text("ℹ️ You already have a download in progress. Please /cancel it before starting a new one.")
-        return
-
+    
     progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
 
     # --- 1. PROCESS ---
     # Delegate all input analysis and torrent_info acquisition to the new function.
     ti = await process_user_input(text, context, progress_message)
     
-    # If ti is None, it means process_user_input handled the response,
-    # (e.g., sent an error or a multi-magnet selection). So we stop.
     if not ti:
         return
 
     # --- 2. VALIDATE & ENRICH ---
-    # Delegate all validation and metadata fetching to the new function.
     error_message, parsed_info = await validate_and_enrich_torrent(ti, progress_message)
     
-    # If validation fails, the error message has already been sent. So we stop.
     if error_message or not parsed_info:
-        # Clean up the .torrent file if it exists
         if 'torrent_file_path' in context.user_data and os.path.exists(context.user_data['torrent_file_path']):
             os.remove(context.user_data['torrent_file_path'])
         return
 
     # --- 3. CONFIRM ---
-    # Delegate sending the final confirmation prompt.
     await send_confirmation_prompt(progress_message, context, ti, parsed_info)
 
-    # Delete the user's original message for a clean UI
     try:
         await user_message_to_delete.delete()
     except BadRequest as e:
@@ -1276,7 +1311,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'save_path': final_save_path
         }
 
-        # --- THE FIX: Queue the download if one is already active ---
+        await _add_to_queue_or_start(download_data, context.application)
+
         if chat_id_str in active_downloads:
             if chat_id_str not in download_queues:
                 download_queues[chat_id_str] = []
@@ -1294,7 +1330,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             # Otherwise, start the download immediately
             await start_download_task(download_data, context.application)
-        # --- End of fix ---
 
     elif query.data == "cancel_operation":
         await query.edit_message_text("❌ Operation cancelled by user.")
