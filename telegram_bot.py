@@ -768,21 +768,40 @@ async def process_user_input(
 
             context.user_data['temp_magnet_choices_details'] = parsed_choices
 
-            choices_text = f"Found {len(parsed_choices)} valid torrents\\. Please select one:\n\n"
+            # Determine the common title from the first valid torrent.
+            first_choice_name = parsed_choices[0]['name']
+            parsed_title_info = parse_torrent_name(first_choice_name)
+            
+            common_title = "Unknown Title"
+            if parsed_title_info.get('type') == 'movie':
+                common_title = f"{parsed_title_info.get('title', '')} ({parsed_title_info.get('year', '')})".strip()
+            else: # For TV shows or unknown types, use the parsed title.
+                common_title = parsed_title_info.get('title', first_choice_name)
+
+            # Construct the message text with a title and subtitle.
+            header_text = f"*{escape_markdown(common_title)}*\n\n"
+            subtitle_text = f"Found {len(parsed_choices)} valid torrents\\. Please select one:"
+            final_text = header_text + subtitle_text
+
+            # Construct the keyboard with details on the buttons.
             keyboard = []
             for choice in parsed_choices:
-                details_line = f"{choice['resolution']} | {choice['file_type']} | {choice['size']}"
-                display_name = escape_markdown(choice['name'][:50] + '...' if len(choice['name']) > 50 else choice['name'])
-                
-                choices_text += f"*{choice['index'] + 1}\\.* `{display_name}`\n"
-                choices_text += f"   └ `{escape_markdown(details_line)}`\n"
-                
-                keyboard.append([InlineKeyboardButton(f"Select #{choice['index'] + 1}", callback_data=f"select_magnet_{choice['index']}")])
+                button_label = f"{choice['resolution']} | {choice['file_type']} | {choice['size']}"
+                keyboard.append([
+                    InlineKeyboardButton(
+                        button_label,
+                        callback_data=f"select_magnet_{choice['index']}"
+                    )
+                ])
 
             keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
             reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await progress_message.edit_text(choices_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+
+            await progress_message.edit_text(
+                final_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
             return None
     else:
         error_message_text = "This does not look like a valid .torrent URL, magnet link, or a web page containing a magnet link."
