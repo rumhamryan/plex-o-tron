@@ -1204,7 +1204,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await user_message_to_delete.delete()
     except BadRequest as e:
         if "Message to delete not found" not in str(e):
-             print(f"[WARN] Could not delete user's message: {e}")
+             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not delete user's message: {e}")
 
     # --- 1. PROCESS ---
     ti = await process_user_input(text, context, progress_message)
@@ -1226,7 +1226,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles all button presses from inline keyboards.
-    (Refactored to use an authoritative queue processor)
+    (Refactored to standardize initial download path)
     """
     if not await is_user_authorized(update, context):
         return
@@ -1299,18 +1299,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         chat_id_str = str(chat_id)
         
+        # --- Standardize the initial download location ---
+        # All torrents will first be downloaded to the default path.
         save_paths = context.bot_data["SAVE_PATHS"]
-        parsed_info = pending_torrent.get('parsed_info', {})
-        torrent_type = parsed_info.get('type')
-        final_save_path = save_paths.get(f"{torrent_type}s_save_path", save_paths['default'])
+        initial_save_path = save_paths['default']
         
+        print(f"[{ts}] [BUTTON_HANDLER] Staging download to initial path: {initial_save_path}")
+
         download_data = {
             'source_dict': pending_torrent,
             'chat_id': chat_id,
             'message_id': pending_torrent['original_message_id'],
-            'save_path': final_save_path
+            'save_path': initial_save_path
         }
-
+        
         download_queues = context.bot_data.get('download_queues', {})
         if chat_id_str not in download_queues:
             download_queues[chat_id_str] = []
@@ -1320,7 +1322,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         print(f"[{ts}] [BUTTON_HANDLER] User {chat_id_str} confirmed download. Added to queue at position {position}.")
         
-        # Let the user know their item is queued, even if it starts immediately
         active_downloads = context.bot_data.get('active_downloads', {})
         if chat_id_str in active_downloads:
              await query.edit_message_text(f"✅ Download queued. You are position #{position} in line.", reply_markup=None)
@@ -1452,16 +1453,19 @@ def cleanup_download_resources(
 async def handle_successful_download(
     ti: lt.torrent_info, # type: ignore
     parsed_info: Dict[str, Any],
-    base_save_path: str,
+    initial_download_path: str, # The source directory (e.g., '~/Downloads')
+    save_paths: Dict[str, str],   # The full paths config
     plex_config: Optional[Dict[str, str]]
 ) -> str:
     """
-    Orchestrates post-download tasks, ensuring the Plex scan waits for the move to complete.
+    Moves completed downloads from the initial path to the correct final media directory.
+    (Refactored to be type-safe)
     
     Args:
         ti: The torrent_info object for the completed download.
         parsed_info: The enriched metadata for the torrent.
-        base_save_path: The root directory where the download was saved.
+        initial_download_path: The directory where the download was initially saved.
+        save_paths: The dictionary containing 'movies' and 'tv_shows' final paths.
         plex_config: A dictionary with 'url' and 'token' for the Plex server.
         
     Returns:
@@ -1469,8 +1473,9 @@ async def handle_successful_download(
     """
     scan_status_message = ""
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    media_type = parsed_info.get('type')
 
-    if parsed_info.get('type') == 'tv':
+    if media_type == 'tv':
         clean_name = f"{parsed_info.get('title')} - S{parsed_info.get('season', 0):02d}E{parsed_info.get('episode', 0):02d}"
     else:
         clean_name = parsed_info.get('title', 'Download')
@@ -1491,38 +1496,45 @@ async def handle_successful_download(
             raise FileNotFoundError("No valid media file (.mkv, .mp4) found in the completed torrent.")
 
         final_filename = generate_plex_filename(parsed_info, original_extension)
-        destination_directory = base_save_path
+        
+        destination_directory_root: Optional[str] = None
+        if media_type == 'movie':
+            destination_directory_root = save_paths.get('movies', save_paths.get('default'))
+        elif media_type == 'tv':
+            destination_directory_root = save_paths.get('tv_shows', save_paths.get('default'))
+        else: # Fallback for 'unknown' or other types
+            destination_directory_root = save_paths.get('default')
 
-        if parsed_info.get('type') == 'tv':
+        # --- THE FIX: Type guard to ensure the path is not None ---
+        if not destination_directory_root:
+            raise ValueError("Configuration error: 'default_save_path' is missing or invalid.")
+
+        destination_directory: str = destination_directory_root
+        # --- End of fix ---
+        
+        if media_type == 'tv':
             show_title = parsed_info.get('title', 'Unknown Show')
             season_num = parsed_info.get('season', 0)
             
             invalid_chars = r'<>:"/\|?*'
             safe_show_title = "".join(c for c in show_title if c not in invalid_chars)
-            show_directory = os.path.join(base_save_path, safe_show_title)
+            show_directory = os.path.join(destination_directory_root, safe_show_title)
             season_prefix = f"Season {season_num:02d}"
             destination_directory = os.path.join(show_directory, season_prefix)
 
         os.makedirs(destination_directory, exist_ok=True)
         
-        current_path = os.path.join(base_save_path, target_file_path_in_torrent)
+        current_path = os.path.join(initial_download_path, target_file_path_in_torrent)
         new_path = os.path.join(destination_directory, final_filename)
         
-        # --- THE FIX: Delegate the blocking 'move' to a thread ---
         print(f"[{ts}] [MOVE] Invoking move operation...\n     From: {current_path}\n     To:   {new_path}")
-        
-        # This await ensures the bot proceeds ONLY after the move is fully complete.
         await asyncio.to_thread(shutil.move, current_path, new_path)
         
         ts_after_move = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts_after_move}] [MOVE] Move operation completed successfully.")
-        # --- End of fix ---
         
         if plex_config:
-            media_type = parsed_info.get('type')
-            library_name = 'Movies' if media_type == 'movie' else 'TV Shows' if media_type == 'tv' else None
-            
-            if library_name:
+            if library_name := ('Movies' if media_type == 'movie' else 'TV Shows' if media_type == 'tv' else None):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX] Attempting to scan '{library_name}' library...")
                 try:
                     plex = await asyncio.to_thread(PlexServer, plex_config['url'], plex_config['token'])
@@ -1531,15 +1543,12 @@ async def handle_successful_download(
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX] Successfully triggered scan for '{library_name}' library.")
                     scan_status_message = f"\n\nPlex scan for the `{escape_markdown(library_name)}` library has been initiated\\."
                 except (Unauthorized, NotFound, Exception) as e:
-                    error_map = {
-                        Unauthorized: "Plex token is invalid.",
-                        NotFound: f"Plex library '{library_name}' not found.",
-                    }
+                    error_map = { Unauthorized: "Plex token is invalid.", NotFound: f"Plex library '{library_name}' not found." }
                     error_reason = error_map.get(type(e), f"An unexpected error occurred: {e}")
                     print(f"[PLEX ERROR] {error_reason}")
                     scan_status_message = f"\n\n*Plex Error:* Could not trigger scan\\."
 
-        original_top_level_dir = os.path.join(base_save_path, target_file_path_in_torrent.split(os.path.sep)[0])
+        original_top_level_dir = os.path.join(initial_download_path, target_file_path_in_torrent.split(os.path.sep)[0])
         if os.path.isdir(original_top_level_dir) and not os.listdir(original_top_level_dir):
              print(f"[CLEANUP] Deleting empty original directory: {original_top_level_dir}")
              shutil.rmtree(original_top_level_dir)
@@ -1604,13 +1613,13 @@ async def start_download_task(download_data: Dict, application: Application):
 
 async def download_task_wrapper(download_data: Dict, application: Application):
     """
-    (V6 Refactor) Manages the download lifecycle, now aware of shutdown signals for persistence.
+    (V7 Refactor) Passes the full save paths configuration to the handler.
     """
     # --- 1. SETUP ---
     source_dict = download_data['source_dict']
     chat_id = download_data['chat_id']
     message_id = download_data['message_id']
-    base_save_path = download_data['save_path']
+    initial_save_path = download_data['save_path']
     
     source_value = source_dict['value']
     source_type = source_dict['type']
@@ -1625,7 +1634,7 @@ async def download_task_wrapper(download_data: Dict, application: Application):
         # --- 2. EXECUTE ---
         success, ti = await download_with_progress(
             source=source_value, 
-            save_path=base_save_path,
+            save_path=initial_save_path, # Download to the initial default path
             status_callback=reporter.report,
             bot_data=application.bot_data,
             allowed_extensions=ALLOWED_EXTENSIONS
@@ -1634,12 +1643,15 @@ async def download_task_wrapper(download_data: Dict, application: Application):
         # --- 3. POST-PROCESS ON SUCCESS ---
         if success and ti:
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SUCCESS] Download for '{clean_name}' completed. Starting post-processing.")
+            
             final_message = await handle_successful_download(
                 ti=ti,
                 parsed_info=parsed_info,
-                base_save_path=base_save_path,
+                initial_download_path=initial_save_path, # The source directory
+                save_paths=application.bot_data.get("SAVE_PATHS", {}), # The full paths config
                 plex_config=application.bot_data.get("PLEX_CONFIG")
             )
+            
             await application.bot.edit_message_text(
                 text=final_message, 
                 chat_id=chat_id, 
@@ -1647,16 +1659,12 @@ async def download_task_wrapper(download_data: Dict, application: Application):
                 parse_mode=ParseMode.MARKDOWN_V2
             )
 
-    # --- Differentiate between a user cancel and a system shutdown ---
     except asyncio.CancelledError:
         ts_cancel = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        # Check if the cancellation was triggered by the shutdown process
         if application.bot_data.get('is_shutting_down', False):
             print(f"[{ts_cancel}] [INFO] Task for '{clean_name}' paused due to bot shutdown. It will be resumed on restart.")
-            # Re-raise the exception to signal that the task has been handled for the shutdown coordinator
             raise
         
-        # Otherwise, it was a normal cancellation by the user pressing the button
         print(f"[{ts_cancel}] [CANCEL] Download task for '{clean_name}' was cancelled by user {chat_id}.")
         final_message = (
             f"⏹️ *Cancelled*\n"
@@ -1675,7 +1683,6 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send cancellation confirmation message during shutdown: {e}")
             
     except Exception as e:
-        # --- 5. HANDLE OTHER UNEXPECTED ERRORS ---
         ts_except = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts_except}] [ERROR] An unexpected exception occurred in download task for '{clean_name}': {e}")
         safe_error = escape_markdown(str(e))
@@ -1696,15 +1703,12 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send final error message during shutdown: {e}")
             
     finally:
-        # --- Only perform cleanup if the bot is NOT shutting down ---
-        # This is the key to preserving the download state for persistence.
         if not application.bot_data.get('is_shutting_down', False):
-            cleanup_download_resources(application, chat_id, source_type, source_value, base_save_path)
+            cleanup_download_resources(application, chat_id, source_type, source_value, initial_save_path)
             
             ts_final = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f"[{ts_final}] [FINALLY] Task for {chat_id} finished normally. Nudging queue processor.")
             await process_queue_for_user(chat_id, application)
-        # --- End of fix ---
 
 # --- MAIN SCRIPT EXECUTION ---
 if __name__ == '__main__':
