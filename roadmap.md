@@ -3,6 +3,8 @@ ToDo:
 - A delete function that can remove files from the library (maybe not though, manual deletion will be safe and more deliberate)
 - look into deleting entire chat every time to reducing remote logging
 - notification of new movie/tv show in the plex library to other users
+- The magnet links message should not include the name instead: resolution, size, file extension
+- make sure for cancelled downloads, the /mnt folders are checked for .parts files
 
 - auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
@@ -24,4 +26,4 @@ ToDo:
           - x265 preference
           - seeders: EZTV, ELITE, MeGusta, 
 
-- multi-download support or at the very least queueing
+- multi-download support
