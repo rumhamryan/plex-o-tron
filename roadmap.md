@@ -1,7 +1,7 @@
 ToDo:
 
 Reasonable features in scope and effort:
-1. The magnet links message should not include the name instead: resolution, size, file extension
+1. The magnet links message should not include the name instead: resolution, file extension, size
 2. timestamps for all print invocations
 3. confirmation of download cancellation could harden the feature to accidental presses
 4. pause download button would be cool
