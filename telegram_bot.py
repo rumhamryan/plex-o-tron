@@ -1175,7 +1175,7 @@ async def process_queue_for_user(chat_id: int, application: Application):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles incoming messages by coordinating the torrent processing pipeline.
-    (Refactored to allow queueing)
+    (Refactored to delete user messages immediately)
     """
     if not await is_user_authorized(update, context):
         return
@@ -1190,8 +1190,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
 
+    try:
+        await user_message_to_delete.delete()
+    except BadRequest as e:
+        if "Message to delete not found" not in str(e):
+             print(f"[WARN] Could not delete user's message: {e}")
+
     # --- 1. PROCESS ---
-    # Delegate all input analysis and torrent_info acquisition to the new function.
     ti = await process_user_input(text, context, progress_message)
     
     if not ti:
@@ -1207,12 +1212,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- 3. CONFIRM ---
     await send_confirmation_prompt(progress_message, context, ti, parsed_info)
-
-    try:
-        await user_message_to_delete.delete()
-    except BadRequest as e:
-        if "Message to delete not found" not in str(e):
-             print(f"[WARN] Could not delete user's message: {e}")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
