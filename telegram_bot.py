@@ -1249,6 +1249,122 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pending_torrent.get('type') == 'file' and pending_torrent.get('value') and os.path.exists(pending_torrent.get('value')):
             os.remove(pending_torrent.get('value'))
 
+class ProgressReporter:
+    """
+    A class to encapsulate the state and logic for reporting download progress.
+    It handles rate-limiting updates to avoid hitting Telegram API limits.
+    """
+    def __init__(
+        self,
+        application: Application,
+        chat_id: int,
+        message_id: int,
+        parsed_info: Dict[str, Any],
+        clean_name: str
+    ):
+        self.application = application
+        self.chat_id = chat_id
+        self.message_id = message_id
+        self.parsed_info = parsed_info
+        self.clean_name = clean_name
+        self.last_update_time: float = 0
+
+    async def report(self, status: lt.torrent_status): # type: ignore
+        """
+        Formats and sends a progress update to Telegram, respecting a 5-second interval.
+        """
+        # --- Logging to console on every check ---
+        log_name = status.name if status.name else self.clean_name
+        progress_percent = status.progress * 100
+        speed_mbps = status.download_rate / 1024 / 1024
+        ts_progress = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts_progress}] [LOG] {log_name}: {progress_percent:.2f}% | Peers: {status.num_peers} | Speed: {speed_mbps:.2f} MB/s")
+        
+        # --- Rate-limit updates to Telegram ---
+        current_time = time.monotonic()
+        if current_time - self.last_update_time < 5:
+            return # Don't update if it has been less than 5 seconds
+        self.last_update_time = current_time
+
+        # --- Formatting the message for Telegram ---
+        name_str = ""
+        if self.parsed_info.get('type') == 'tv':
+            show_title = self.parsed_info.get('title', 'Unknown Show')
+            season_num = self.parsed_info.get('season', 0)
+            episode_num = self.parsed_info.get('episode', 0)
+            episode_title = self.parsed_info.get('episode_title', 'Unknown Episode')
+            safe_show_title = escape_markdown(show_title)
+            safe_episode_details = escape_markdown(f"S{season_num:02d}E{episode_num:02d} - {episode_title}")
+            name_str = f"`{safe_show_title}`\n`{safe_episode_details}`"
+        else:
+            safe_clean_name = escape_markdown(self.clean_name)
+            name_str = f"`{safe_clean_name}`"
+
+        progress_str = escape_markdown(f"{progress_percent:.2f}")
+        speed_str = escape_markdown(f"{speed_mbps:.2f}")
+        state_str = escape_markdown(status.state.name)
+
+        telegram_message = (
+            f"⬇️ *Downloading:*\n{name_str}\n"
+            f"*Progress:* {progress_str}%\n"
+            f"*State:* {state_str}\n"
+            f"*Peers:* {status.num_peers}\n"
+            f"*Speed:* {speed_str} MB/s"
+        )
+
+        try:
+            await self.application.bot.edit_message_text(
+                text=telegram_message,
+                chat_id=self.chat_id,
+                message_id=self.message_id,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+
+def cleanup_download_resources(
+    application: Application,
+    chat_id: int,
+    source_type: str,
+    source_value: str,
+    base_save_path: str
+):
+    """
+    Handles all post-task cleanup, including application state and file system.
+    
+    Args:
+        application: The main Application object to access bot_data.
+        chat_id: The chat ID for which to clean up resources.
+        source_type: The type of download ('file' or 'magnet').
+        source_value: The path to the .torrent file or the magnet link.
+        base_save_path: The directory where the download was saved, to scan for parts.
+    """
+    ts_final = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts_final}] [INFO] Cleaning up resources for task for chat_id {chat_id}.")
+    
+    # 1. Clean up application state
+    active_downloads = application.bot_data.get('active_downloads', {})
+    if str(chat_id) in active_downloads:
+        del active_downloads[str(chat_id)]
+        save_active_downloads(application.bot_data['persistence_file'], active_downloads)
+
+    # 2. Clean up temporary .torrent file (if one was created)
+    if source_type == 'file' and source_value and os.path.exists(source_value):
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Deleting temporary .torrent file: {source_value}")
+        os.remove(source_value)
+
+    # 3. Clean up leftover .parts files from libtorrent
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Scanning '{base_save_path}' for leftover .parts files...")
+    try:
+        for filename in os.listdir(base_save_path):
+            if filename.endswith(".parts"):
+                parts_file_path = os.path.join(base_save_path, filename)
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Found and deleting leftover parts file: {parts_file_path}")
+                os.remove(parts_file_path)
+    except Exception as e:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Could not perform .parts file cleanup: {e}")
+
 async def handle_successful_download(
     ti: lt.torrent_info, # type: ignore
     parsed_info: Dict[str, Any],
@@ -1357,8 +1473,9 @@ async def handle_successful_download(
 
 async def download_task_wrapper(download_data: Dict, application: Application):
     """
-    (Refactored) Manages the download lifecycle, reports progress, and delegates post-processing.
+    (V3 Refactor) Manages the download lifecycle by coordinating helper components.
     """
+    # --- 1. SETUP ---
     source_dict = download_data['source_dict']
     chat_id = download_data['chat_id']
     message_id = download_data['message_id']
@@ -1368,31 +1485,25 @@ async def download_task_wrapper(download_data: Dict, application: Application):
     source_type = source_dict['type']
     clean_name = source_dict.get('clean_name', "Download")
     parsed_info = source_dict.get('parsed_info', {})
-    
+
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Starting/Resuming download task for '{clean_name}' for chat_id {chat_id}.")
     
-    last_update_time = 0
-    async def report_progress(status: lt.torrent_status): #type: ignore
-        nonlocal last_update_time
-        # This nested function for progress reporting remains unchanged.
-        current_time = time.monotonic()
-        if current_time - last_update_time > 5:
-            # ... (all progress reporting logic remains here) ...
-            last_update_time = current_time
+    # Initialize the progress reporter object
+    reporter = ProgressReporter(application, chat_id, message_id, parsed_info, clean_name)
 
     try:
+        # --- 2. EXECUTE ---
         success, ti = await download_with_progress(
             source=source_value, 
             save_path=base_save_path,
-            status_callback=report_progress,
+            status_callback=reporter.report, # Pass the class method as the callback
             bot_data=application.bot_data,
             allowed_extensions=ALLOWED_EXTENSIONS
         )
 
+        # --- 3. POST-PROCESS ON SUCCESS ---
         if success and ti:
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SUCCESS] Download for '{clean_name}' completed. Starting post-processing.")
-            
-            # --- DELEGATE POST-PROCESSING ---
             final_message = await handle_successful_download(
                 ti=ti,
                 parsed_info=parsed_info,
@@ -1407,6 +1518,7 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             )
 
     except asyncio.CancelledError:
+        # --- 4. HANDLE CANCELLATION ---
         ts_cancel = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if application.bot_data.get('is_shutting_down', False):
             print(f"[{ts_cancel}] [INFO] Task for '{clean_name}' paused due to bot shutdown.")
@@ -1422,7 +1534,9 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             await application.bot.edit_message_text(text=final_message, chat_id=chat_id, message_id=message_id, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e): raise
+            
     except Exception as e:
+        # --- 5. HANDLE OTHER ERRORS ---
         ts_except = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts_except}] [ERROR] An unexpected exception occurred in download task for '{clean_name}': {e}")
         safe_error = escape_markdown(str(e))
@@ -1435,29 +1549,12 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             await application.bot.edit_message_text(text=final_message, chat_id=chat_id, message_id=message_id, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e): raise
+            
     finally:
-        ts_final = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # --- 6. CLEANUP ---
         if not application.bot_data.get('is_shutting_down', False):
-            print(f"[{ts_final}] [INFO] Cleaning up resources for task '{clean_name}' for chat_id {chat_id}.")
-            active_downloads = application.bot_data.get('active_downloads', {})
-            if str(chat_id) in active_downloads:
-                del active_downloads[str(chat_id)]
-                save_active_downloads(application.bot_data['persistence_file'], active_downloads)
+            cleanup_download_resources(application, chat_id, source_type, source_value, base_save_path)
 
-            if source_type == 'file' and source_value and os.path.exists(source_value):
-                os.remove(source_value)
-
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Scanning '{base_save_path}' for leftover .parts files...")
-            try:
-                for filename in os.listdir(base_save_path):
-                    if filename.endswith(".parts"):
-                        parts_file_path = os.path.join(base_save_path, filename)
-                        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Found and deleting leftover parts file: {parts_file_path}")
-                        os.remove(parts_file_path)
-            except Exception as e:
-                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Could not perform .parts file cleanup: {e}")
-
-# --- MAIN SCRIPT EXECUTION ---
 # --- MAIN SCRIPT EXECUTION ---
 if __name__ == '__main__':
     PERSISTENCE_FILE = 'persistence.json'
