@@ -967,8 +967,6 @@ async def post_shutdown(application: Application):
 from telegram import Update
 from telegram.ext import CallbackContext
 
-# ... (other imports and your existing bot code) ...
-
 async def start_command(update: Update, context: CallbackContext) -> None:
     """Sends a message with instructions and torrent site links when the /start command is issued."""
     # Ensure update.message is not None before trying to use it.
@@ -1019,39 +1017,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=help_text,
         parse_mode=ParseMode.MARKDOWN_V2
     )
-
-async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_authorized(update, context):
-        return
-        
-    if not update.message: return
-    chat_id = update.message.chat_id
-    
-    active_downloads = context.bot_data.get('active_downloads', {})
-    chat_id_str = str(chat_id)
-    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    if chat_id_str in active_downloads:
-        download_data = active_downloads[chat_id_str]
-        clean_name = download_data.get('source_dict', {}).get('clean_name', 'your download')
-        
-        print(f"[{ts}] [INFO] Received /cancel command from chat_id {chat_id} for '{clean_name}'.")
-        
-        if 'task' in download_data and not download_data['task'].done():
-            task: asyncio.Task = download_data['task']
-            task.cancel()
-            
-            try:
-                await update.message.delete()
-            except BadRequest as e:
-                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not delete /cancel command message: {e}")
-
-        else:
-            print(f"[{ts}] [WARN] /cancel command for chat_id {chat_id} found a record but no active task object.")
-            await update.message.reply_text("⚠️ Found a record of your download, but the task is not running. It may be in a stalled state.")
-    else:
-        print(f"[{ts}] [INFO] Received /cancel command from chat_id {chat_id}, but no active task was found.")
-        await update.message.reply_text("ℹ️ There are no active downloads for you to cancel.")
 
 async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Checks the connection to the Plex Media Server."""
@@ -1282,6 +1247,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_confirmation_prompt(progress_message, context, ti, parsed_info)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles all button presses from inline keyboards.
+    (Refactored to add a confirmation step for download cancellation)
+    """
     if not await is_user_authorized(update, context):
         return
 
@@ -1296,26 +1265,75 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
 
     chat_id = message.chat_id
+    chat_id_str = str(chat_id)
+    active_downloads = context.bot_data.get('active_downloads', {})
+
+    # --- Cancellation Flow for Active Downloads ---
 
     if query.data == "cancel_download":
-        active_downloads = context.bot_data.get('active_downloads', {})
-        chat_id_str = str(chat_id)
-        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if chat_id_str in active_downloads:
+            confirm_text = "Are you sure you want to cancel this download?"
+            keyboard = [[
+                InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
+                InlineKeyboardButton("❌ No, Continue", callback_data="resume_download"),
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            try:
+                await query.edit_message_text(text=confirm_text, reply_markup=reply_markup)
+            except BadRequest: # Ignore if message is already gone/changed
+                pass
+        else:
+            await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
+        return
 
+    if query.data == "confirm_cancel":
         if chat_id_str in active_downloads:
             download_data = active_downloads[chat_id_str]
             clean_name = download_data.get('source_dict', {}).get('clean_name', 'your download')
-            
-            print(f"[{ts}] [INFO] Received cancel button press from chat_id {chat_id} for '{clean_name}'.")
-            
+            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts}] [CANCEL] User {chat_id} confirmed cancellation for '{clean_name}'.")
+
             if 'task' in download_data and not download_data['task'].done():
                 task: asyncio.Task = download_data['task']
-                task.cancel()
+                task.cancel() # The task's exception handler will edit the final message.
             else:
                 await query.edit_message_text("ℹ️ This download has already completed or been cancelled.", reply_markup=None)
         else:
             await query.edit_message_text("ℹ️ Could not find an active download to cancel.", reply_markup=None)
         return
+
+    if query.data == "resume_download":
+        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            # Edit the message back to an intermediate state. The ProgressReporter
+            # will overwrite this on its next cycle with the full live status.
+            await query.edit_message_text(
+                text="▶️ Download resuming...",
+                reply_markup=reply_markup
+            )
+        except BadRequest:
+            pass # Ignore if message is already gone
+        return
+
+    # --- Cancellation Flow for Pending Operations ---
+
+    if query.data == "cancel_operation":
+        # For magnet selection
+        if 'temp_magnet_choices_details' in context.user_data:
+            context.user_data.pop('temp_magnet_choices_details', None)
+            await query.edit_message_text("❌ Selection cancelled.")
+            return
+
+        # For final download confirmation
+        if 'pending_torrent' in context.user_data:
+            pending_torrent = context.user_data.pop('pending_torrent')
+            await query.edit_message_text("❌ Operation cancelled by user.")
+            if pending_torrent.get('type') == 'file' and pending_torrent.get('value') and os.path.exists(pending_torrent.get('value')):
+                os.remove(pending_torrent.get('value'))
+            return
+
+    # --- Magnet Selection & Download Confirmation Flow ---
 
     if query.data and query.data.startswith("select_magnet_"):
         if 'temp_magnet_choices_details' not in context.user_data:
@@ -1342,15 +1360,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_confirmation_prompt(message, context, ti, parsed_info)
         return
 
-    if query.data == "cancel_operation":
-        context.user_data.pop('temp_magnet_choices_details', None)
-        await query.edit_message_text("❌ Selection cancelled.")
-        if 'pending_torrent' in context.user_data:
-            pending_torrent = context.user_data.pop('pending_torrent')
-            if pending_torrent.get('type') == 'file' and pending_torrent.get('value') and os.path.exists(pending_torrent.get('value')):
-                os.remove(pending_torrent.get('value'))
-        return
-
     if 'pending_torrent' not in context.user_data:
         await query.edit_message_text("This action has expired. Please send the link again.")
         return
@@ -1359,8 +1368,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "confirm_download":
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        chat_id_str = str(chat_id)
-        
         save_paths = context.bot_data["SAVE_PATHS"]
         initial_save_path = save_paths['default']
         
@@ -1382,7 +1389,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         print(f"[{ts}] [BUTTON_HANDLER] User {chat_id_str} confirmed download. Added to queue at position {position}.")
         
-        active_downloads = context.bot_data.get('active_downloads', {})
         if chat_id_str in active_downloads:
              await query.edit_message_text(f"✅ Download queued. You are position #{position} in line.", reply_markup=None)
         else:
@@ -1599,16 +1605,16 @@ async def handle_successful_download(
                 except (Unauthorized, NotFound, Exception) as e:
                     error_map = { Unauthorized: "Plex token is invalid.", NotFound: f"Plex library '{library_name}' not found." }
                     error_reason = error_map.get(type(e), f"An unexpected error occurred: {e}")
-                    print(f"[PLEX ERROR] {error_reason}")
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX ERROR] {error_reason}")
                     scan_status_message = f"\n\n*Plex Error:* Could not trigger scan\\."
 
         original_top_level_dir = os.path.join(initial_download_path, target_file_path_in_torrent.split(os.path.sep)[0])
         if os.path.isdir(original_top_level_dir) and not os.listdir(original_top_level_dir):
-             print(f"[CLEANUP] Deleting empty original directory: {original_top_level_dir}")
+             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Deleting empty original directory: {original_top_level_dir}")
              shutil.rmtree(original_top_level_dir)
 
     except Exception as e:
-        print(f"[ERROR] Post-processing failed: {e}")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Post-processing failed: {e}")
         return (
             f"❌ *Post-Processing Error*\n"
             f"Download completed but failed during file handling\\.\n\n"
@@ -1789,9 +1795,7 @@ if __name__ == '__main__':
     application.bot_data["persistence_file"] = PERSISTENCE_FILE
     application.bot_data["ALLOWED_USER_IDS"] = ALLOWED_USER_IDS
     application.bot_data.setdefault('active_downloads', {})
-    # --- THE FIX: Initialize the download_queues dictionary ---
     application.bot_data.setdefault('download_queues', {})
-    # --- End of fix ---
 
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Creating global libtorrent session for the application.")
     application.bot_data["TORRENT_SESSION"] = lt.session({ #type: ignore
@@ -1806,7 +1810,6 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?plexrestart$', re.IGNORECASE)), plex_restart_command))
         
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
     application.add_handler(CallbackQueryHandler(button_handler))
     
     application.run_polling()
