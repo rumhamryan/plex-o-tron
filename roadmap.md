@@ -1,13 +1,20 @@
 ToDo:
-- A 3rd button during the confirm/deny prompt 'edit' could be use to solicit user input on the name, in the case that there is an extra character, or misspelling
-- A delete function that can remove files from the library (maybe not though, manual deletion will be safe and more deliberate)
+
+Reasonable features in scope and effort:
+1. The magnet links message should not include the name instead: resolution, size, file extension
+2. timestamps for all print invocations
+3. confirmation of download cancellation could harden the feature to accidental presses
+4. pause download button would be cool
+5. A delete function that can remove files from the library (maybe not though, manual deletion will be safe and more deliberate)
+  - Should include query about movie or tv show with buttons, then the prompt for what to delete
+  - need to account for folder or file deletion paths
+
+These two are contradictory:
 - look into deleting entire chat every time to reducing remote logging
 - notification of new movie/tv show in the plex library to other users
-- The magnet links message should not include the name instead: resolution, size, file extension
-- pause download button would be cool
-- confirmation of download cancellation could harden the feature to accidental presses
-- timestamps for all print invocations
 
+These are the big ones:
+- multi-download support
 - auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
     - yts.mx
@@ -27,5 +34,3 @@ ToDo:
           - 1080 minimum
           - x265 preference
           - seeders: EZTV, ELITE, MeGusta, 
-
-- multi-download support
