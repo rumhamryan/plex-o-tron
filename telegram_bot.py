@@ -44,6 +44,7 @@ def escape_markdown(text: str) -> str:
 def get_configuration() -> tuple[str, dict, list[int], dict]:
     """
     Reads bot token, paths, allowed IDs, and Plex config from the config.ini file.
+    (Refactored to correctly expand user home directory paths)
     """
     config = configparser.ConfigParser()
     config_path = 'config.ini'
@@ -62,6 +63,14 @@ def get_configuration() -> tuple[str, dict, list[int], dict]:
         'tv_shows': config.get('host', 'tv_shows_save_path', fallback=None)
     }
 
+    # --- THE FIX: Expand the user tilde (~) and resolve to absolute paths ---
+    # This ensures that paths like '~/Downloads' are correctly interpreted.
+    for key, value in paths.items():
+        if value:
+            paths[key] = os.path.expanduser(value)
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CONFIG] Resolved path for '{key}': {paths[key]}")
+    # --- End of fix ---
+
     if not paths['default']:
         raise ValueError("'default_save_path' is mandatory and was not found in the config file.")
 
@@ -74,6 +83,7 @@ def get_configuration() -> tuple[str, dict, list[int], dict]:
     
     for path_type, path_value in paths.items():
         if path_value is not None:
+            # The directory existence check will now work on the correct, expanded path
             if not os.path.exists(path_value):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INFO: {path_type.capitalize()} path '{path_value}' not found. Creating it.")
                 os.makedirs(path_value)
@@ -1499,7 +1509,7 @@ async def handle_successful_download(
         current_path = os.path.join(base_save_path, target_file_path_in_torrent)
         new_path = os.path.join(destination_directory, final_filename)
         
-        print(f"[MOVE] From: {current_path}\n[MOVE] To:   {new_path}")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [MOVE] From: {current_path}\n[MOVE] To:   {new_path}")
         shutil.move(current_path, new_path)
         
         # Plex Scan Logic
@@ -1508,12 +1518,12 @@ async def handle_successful_download(
             library_name = 'Movies' if media_type == 'movie' else 'TV Shows' if media_type == 'tv' else None
             
             if library_name:
-                print(f"[PLEX] Attempting to scan '{library_name}' library...")
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX] Attempting to scan '{library_name}' library...")
                 try:
                     plex = await asyncio.to_thread(PlexServer, plex_config['url'], plex_config['token'])
                     target_library = await asyncio.to_thread(plex.library.section, library_name)
                     await asyncio.to_thread(target_library.update)
-                    print(f"[PLEX] Successfully triggered scan for '{library_name}' library.")
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX] Successfully triggered scan for '{library_name}' library.")
                     scan_status_message = f"\n\nPlex scan for the `{escape_markdown(library_name)}` library has been initiated\\."
                 except (Unauthorized, NotFound, Exception) as e:
                     error_map = {
@@ -1521,17 +1531,17 @@ async def handle_successful_download(
                         NotFound: f"Plex library '{library_name}' not found.",
                     }
                     error_reason = error_map.get(type(e), f"An unexpected error occurred: {e}")
-                    print(f"[PLEX ERROR] {error_reason}")
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX ERROR] {error_reason}")
                     scan_status_message = f"\n\n*Plex Error:* Could not trigger scan\\."
 
         # Cleanup Logic
         original_top_level_dir = os.path.join(base_save_path, target_file_path_in_torrent.split(os.path.sep)[0])
         if os.path.isdir(original_top_level_dir) and not os.listdir(original_top_level_dir):
-             print(f"[CLEANUP] Deleting empty original directory: {original_top_level_dir}")
+             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Deleting empty original directory: {original_top_level_dir}")
              shutil.rmtree(original_top_level_dir)
 
     except Exception as e:
-        print(f"[ERROR] Post-processing failed: {e}")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Post-processing failed: {e}")
         return (
             f"❌ *Post-Processing Error*\n"
             f"Download completed but failed during file handling\\.\n\n"
