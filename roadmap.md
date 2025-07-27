@@ -5,6 +5,7 @@ ToDo:
 - notification of new movie/tv show in the plex library to other users
 - The magnet links message should not include the name instead: resolution, size, file extension
 - make sure for cancelled downloads, the /mnt folders are checked for .parts files
+- cancelling cause a crazy big exception traceback and persistence is broken
 
 - auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies

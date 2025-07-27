@@ -26,7 +26,7 @@ from plexapi.exceptions import NotFound, Unauthorized
 from telegram import Update, Message, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, ApplicationBuilder, CallbackContext, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.constants import ParseMode
-from telegram.error import BadRequest
+from telegram.error import BadRequest, NetworkError
 import libtorrent as lt
 
 from download_torrent import download_with_progress
@@ -1590,7 +1590,7 @@ async def start_download_task(download_data: Dict, application: Application):
 
 async def download_task_wrapper(download_data: Dict, application: Application):
     """
-    (V5 Refactor) Manages the download lifecycle and triggers the queue processor on completion.
+    (V6 Refactor) Manages the download lifecycle, now aware of shutdown signals for persistence.
     """
     # --- 1. SETUP ---
     source_dict = download_data['source_dict']
@@ -1633,12 +1633,16 @@ async def download_task_wrapper(download_data: Dict, application: Application):
                 parse_mode=ParseMode.MARKDOWN_V2
             )
 
+    # --- Differentiate between a user cancel and a system shutdown ---
     except asyncio.CancelledError:
         ts_cancel = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # Check if the cancellation was triggered by the shutdown process
         if application.bot_data.get('is_shutting_down', False):
-            print(f"[{ts_cancel}] [INFO] Task for '{clean_name}' paused due to bot shutdown.")
+            print(f"[{ts_cancel}] [INFO] Task for '{clean_name}' paused due to bot shutdown. It will be resumed on restart.")
+            # Re-raise the exception to signal that the task has been handled for the shutdown coordinator
             raise
         
+        # Otherwise, it was a normal cancellation by the user pressing the button
         print(f"[{ts_cancel}] [CANCEL] Download task for '{clean_name}' was cancelled by user {chat_id}.")
         final_message = (
             f"⏹️ *Cancelled*\n"
@@ -1653,10 +1657,11 @@ async def download_task_wrapper(download_data: Dict, application: Application):
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=None
             )
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): raise
+        except (BadRequest, NetworkError) as e:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send cancellation confirmation message during shutdown: {e}")
             
     except Exception as e:
+        # --- 5. HANDLE OTHER UNEXPECTED ERRORS ---
         ts_except = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts_except}] [ERROR] An unexpected exception occurred in download task for '{clean_name}': {e}")
         safe_error = escape_markdown(str(e))
@@ -1673,17 +1678,19 @@ async def download_task_wrapper(download_data: Dict, application: Application):
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=None
             )
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): raise
+        except (BadRequest, NetworkError) as e:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send final error message during shutdown: {e}")
             
     finally:
-        # --- 6. CLEANUP & DEQUEUE ---
+        # --- Only perform cleanup if the bot is NOT shutting down ---
+        # This is the key to preserving the download state for persistence.
         if not application.bot_data.get('is_shutting_down', False):
             cleanup_download_resources(application, chat_id, source_type, source_value, base_save_path)
             
             ts_final = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts_final}] [FINALLY] Task for {chat_id} finished. Nudging queue processor.")
+            print(f"[{ts_final}] [FINALLY] Task for {chat_id} finished normally. Nudging queue processor.")
             await process_queue_for_user(chat_id, application)
+        # --- End of fix ---
 
 # --- MAIN SCRIPT EXECUTION ---
 if __name__ == '__main__':
