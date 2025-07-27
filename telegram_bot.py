@@ -1341,7 +1341,7 @@ class ProgressReporter:
             f"*Peers:* {status.num_peers}\n"
             f"*Speed:* {speed_str} MB/s"
         )
-
+        
         keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -1350,7 +1350,8 @@ class ProgressReporter:
                 text=telegram_message,
                 chat_id=self.chat_id,
                 message_id=self.message_id,
-                parse_mode=ParseMode.MARKDOWN_V2
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=reply_markup
             )
         except BadRequest as e:
             if "Message is not modified" not in str(e):
