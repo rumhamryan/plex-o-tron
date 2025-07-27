@@ -809,40 +809,57 @@ async def send_confirmation_prompt(
 
 # --- PERSISTENCE FUNCTIONS ---
 
-def save_active_downloads(file_path: str, active_downloads: Dict):
-    """Saves the state of active downloads to a JSON file."""
-    data_to_save = {}
+def save_state(file_path: str, active_downloads: Dict, download_queues: Dict):
+    """Saves the state of active and queued downloads to a JSON file."""
+    serializable_active = {}
     for chat_id, download_data in active_downloads.items():
-        serializable_data = download_data.copy()
-        serializable_data.pop('task', None) 
-        data_to_save[chat_id] = serializable_data
+        data_copy = download_data.copy()
+        data_copy.pop('task', None)
+        serializable_active[chat_id] = data_copy
+
+    data_to_save = {
+        'active_downloads': serializable_active,
+        'download_queues': download_queues
+    }
 
     try:
         with open(file_path, 'w') as f:
             json.dump(data_to_save, f, indent=4)
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Saved {len(data_to_save)} active download(s) to {file_path}")
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        queued_count = sum(len(q) for q in download_queues.values())
+        print(f"[{ts}] [INFO] Saved state: {len(serializable_active)} active, {queued_count} queued.")
     except Exception as e:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Could not save persistence file: {e}")
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts}] [ERROR] Could not save persistence file: {e}")
 
-def load_active_downloads(file_path: str) -> Dict:
-    """Loads the state of active downloads from a JSON file."""
+def load_state(file_path: str) -> Tuple[Dict, Dict]:
+    """Loads the state of active and queued downloads from a JSON file."""
     if not os.path.exists(file_path):
-        return {}
+        return {}, {}
     try:
         with open(file_path, 'r') as f:
             data = json.load(f)
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Loaded {len(data)} active download(s) from {file_path}")
-            return data
+            active = data.get('active_downloads', {})
+            queued = data.get('download_queues', {})
+            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            queued_count = sum(len(q) for q in queued.values())
+            print(f"[{ts}] [INFO] Loaded state: {len(active)} active, {queued_count} queued.")
+            return active, queued
     except (json.JSONDecodeError, IOError) as e:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Could not read or parse persistence file '{file_path}': {e}. Starting fresh.")
-        return {}
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts}] [ERROR] Could not read or parse persistence file '{file_path}': {e}. Starting fresh.")
+        return {}, {}
     
 async def post_init(application: Application):
     """Resumes any active downloads after the bot has been initialized."""
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{ts}] --- Resuming active downloads ---")
+    print(f"[{ts}] --- Loading persisted state and resuming downloads ---")
     persistence_file = application.bot_data['persistence_file']
-    active_downloads = load_active_downloads(persistence_file)
+    
+    active_downloads, download_queues = load_state(persistence_file)
+    
+    application.bot_data['active_downloads'] = active_downloads
+    application.bot_data['download_queues'] = download_queues
     
     if active_downloads:
         for chat_id_str, download_data in active_downloads.items():
@@ -850,7 +867,6 @@ async def post_init(application: Application):
             task = asyncio.create_task(download_task_wrapper(download_data, application))
             download_data['task'] = task
     
-    application.bot_data['active_downloads'] = active_downloads
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] --- Resume process finished ---")
 
 async def post_shutdown(application: Application):
@@ -1174,7 +1190,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles all button presses from inline keyboards.
-    (Refactored to handle multiple cancellation contexts)
+    (Refactored to support a download queue)
     """
     if not await is_user_authorized(update, context):
         return
@@ -1244,35 +1260,41 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pending_torrent = context.user_data.pop('pending_torrent')
     
     if query.data == "confirm_download":
-        confirm_text = "✅ Confirmation received. Your download has been queued."
-        keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        active_downloads = context.bot_data.get('active_downloads', {})
+        download_queues = context.bot_data.get('download_queues', {})
+        chat_id_str = str(chat_id)
         
-        await query.edit_message_text(
-            text=confirm_text,
-            reply_markup=reply_markup
-        )
-
         save_paths = context.bot_data["SAVE_PATHS"]
         parsed_info = pending_torrent.get('parsed_info', {})
         torrent_type = parsed_info.get('type')
-
         final_save_path = save_paths.get(f"{torrent_type}s_save_path", save_paths['default'])
-
-        active_downloads = context.bot_data.get('active_downloads', {})
         
         download_data = {
             'source_dict': pending_torrent,
-            'chat_id': message.chat_id,
+            'chat_id': chat_id,
             'message_id': pending_torrent['original_message_id'],
             'save_path': final_save_path
         }
-        
-        task = asyncio.create_task(download_task_wrapper(download_data, context.application))
-        download_data['task'] = task
-        active_downloads[str(message.chat_id)] = download_data
-        
-        save_active_downloads(context.bot_data['persistence_file'], active_downloads)
+
+        # --- THE FIX: Queue the download if one is already active ---
+        if chat_id_str in active_downloads:
+            if chat_id_str not in download_queues:
+                download_queues[chat_id_str] = []
+            
+            download_queues[chat_id_str].append(download_data)
+            position = len(download_queues[chat_id_str])
+            
+            await query.edit_message_text(f"✅ Download queued. You are position #{position} in line.", reply_markup=None)
+            
+            save_state(
+                context.bot_data['persistence_file'],
+                active_downloads,
+                download_queues
+            )
+        else:
+            # Otherwise, start the download immediately
+            await start_download_task(download_data, context.application)
+        # --- End of fix ---
 
     elif query.data == "cancel_operation":
         await query.edit_message_text("❌ Operation cancelled by user.")
@@ -1366,29 +1388,22 @@ def cleanup_download_resources(
 ):
     """
     Handles all post-task cleanup, including application state and file system.
-    
-    Args:
-        application: The main Application object to access bot_data.
-        chat_id: The chat ID for which to clean up resources.
-        source_type: The type of download ('file' or 'magnet').
-        source_value: The path to the .torrent file or the magnet link.
-        base_save_path: The directory where the download was saved, to scan for parts.
     """
     ts_final = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{ts_final}] [INFO] Cleaning up resources for task for chat_id {chat_id}.")
     
-    # 1. Clean up application state
+    # --- THE FIX: Call the new save_state function ---
     active_downloads = application.bot_data.get('active_downloads', {})
+    download_queues = application.bot_data.get('download_queues', {})
     if str(chat_id) in active_downloads:
         del active_downloads[str(chat_id)]
-        save_active_downloads(application.bot_data['persistence_file'], active_downloads)
+        save_state(application.bot_data['persistence_file'], active_downloads, download_queues)
+    # --- End of fix ---
 
-    # 2. Clean up temporary .torrent file (if one was created)
     if source_type == 'file' and source_value and os.path.exists(source_value):
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Deleting temporary .torrent file: {source_value}")
         os.remove(source_value)
 
-    # 3. Clean up leftover .parts files from libtorrent
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CLEANUP] Scanning '{base_save_path}' for leftover .parts files...")
     try:
         for filename in os.listdir(base_save_path):
@@ -1505,9 +1520,52 @@ async def handle_successful_download(
         f"{scan_status_message}"
     )   
 
+async def start_download_task(download_data: Dict, application: Application):
+    """
+    Creates, registers, and persists a new download task.
+    
+    This function updates the user's message to show that the download is
+    starting and provides a cancel button.
+    
+    Args:
+        download_data: The dictionary containing all necessary info for the download.
+        application: The main Application object to access bot_data.
+    """
+    active_downloads = application.bot_data.get('active_downloads', {})
+    download_queues = application.bot_data.get('download_queues', {})
+    chat_id_str = str(download_data['chat_id'])
+
+    # Create and store the task
+    task = asyncio.create_task(download_task_wrapper(download_data, application))
+    download_data['task'] = task
+    active_downloads[chat_id_str] = download_data
+    
+    # Persist the new state (active download started, queue might have changed)
+    save_state(
+        application.bot_data['persistence_file'],
+        active_downloads,
+        download_queues
+    )
+
+    # Let the user know the download is starting and give them a cancel button
+    keyboard = [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    try:
+        await application.bot.edit_message_text(
+            text="▶️ Your download is now starting...",
+            chat_id=download_data['chat_id'],
+            message_id=download_data['message_id'],
+            reply_markup=reply_markup
+        )
+    except BadRequest as e:
+        # This can happen if the original confirmation message was deleted
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts}] [WARN] Could not edit message to start queued download: {e}")
+
 async def download_task_wrapper(download_data: Dict, application: Application):
     """
-    (V3 Refactor) Manages the download lifecycle by coordinating helper components.
+    (V4 Refactor) Manages the download lifecycle and triggers the next from the queue.
     """
     # --- 1. SETUP ---
     source_dict = download_data['source_dict']
@@ -1564,7 +1622,6 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             f"`{escape_markdown(clean_name)}`"
         )
         try:
-            # --- THE FIX: Remove the keyboard from the final "Cancelled" message ---
             await application.bot.edit_message_text(
                 text=final_message, 
                 chat_id=chat_id, 
@@ -1572,7 +1629,6 @@ async def download_task_wrapper(download_data: Dict, application: Application):
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=None
             )
-            # --- End of fix ---
         except BadRequest as e:
             if "Message is not modified" not in str(e): raise
             
@@ -1601,6 +1657,25 @@ async def download_task_wrapper(download_data: Dict, application: Application):
         # --- 6. CLEANUP ---
         if not application.bot_data.get('is_shutting_down', False):
             cleanup_download_resources(application, chat_id, source_type, source_value, base_save_path)
+        
+        # --- THE FIX: Dequeue and start the next download ---
+        if application.bot_data.get('is_shutting_down', False):
+            return
+
+        download_queues = application.bot_data.get('download_queues', {})
+        chat_id_str = str(chat_id)
+
+        if chat_id_str in download_queues and download_queues[chat_id_str]:
+            ts_queue = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts_queue}] [QUEUE] Found item in queue for chat_id {chat_id_str}. Starting next download.")
+            
+            next_download_data = download_queues[chat_id_str].pop(0)
+
+            if not download_queues[chat_id_str]:
+                del download_queues[chat_id_str]
+            
+            asyncio.create_task(start_download_task(next_download_data, application))
+        # --- End of fix ---
 
 # --- MAIN SCRIPT EXECUTION ---
 if __name__ == '__main__':
@@ -1627,30 +1702,24 @@ if __name__ == '__main__':
     application.bot_data["persistence_file"] = PERSISTENCE_FILE
     application.bot_data["ALLOWED_USER_IDS"] = ALLOWED_USER_IDS
     application.bot_data.setdefault('active_downloads', {})
+    # --- THE FIX: Initialize the download_queues dictionary ---
+    application.bot_data.setdefault('download_queues', {})
+    # --- End of fix ---
 
-    # --- NEW: Create and store a single, long-lived libtorrent session ---
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Creating global libtorrent session for the application.")
     application.bot_data["TORRENT_SESSION"] = lt.session({ #type: ignore
         'listen_interfaces': '0.0.0.0:6881', 
         'dht_bootstrap_nodes': 'router.utorrent.com:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881'
     })
     
-    # --- MODIFIED: Replaced CommandHandlers with MessageHandlers for flexibility ---
-    # This allows users to type commands with or without the leading '/'.
-    # The regex '^(?i)/?command$' matches 'command', '/command', 'Command', etc.
-    # The order is crucial: these specific handlers are added BEFORE the generic one.
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?hello$', re.IGNORECASE)), start_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?start$', re.IGNORECASE)), start_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?cancel$', re.IGNORECASE)), cancel_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?plexstatus$', re.IGNORECASE)), plex_status_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?plexrestart$', re.IGNORECASE)), plex_restart_command))
         
-    # This generic handler for links/magnets now correctly comes after the specific command
-    # handlers and will not be triggered by command words.
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # This handler for button presses is unaffected.
     application.add_handler(CallbackQueryHandler(button_handler))
     
     application.run_polling()
