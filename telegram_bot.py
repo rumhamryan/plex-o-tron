@@ -523,11 +523,11 @@ async def _update_fetch_timer(progress_message: Message, timeout: int, cancel_ev
             break
             
         message_text = (
-            f"⬇️ *Fetching Metadata...*\n"
-            f"`Magnet Link`\n\n"
-            f"*Please wait, this can be slow.*\n"
-            f"*The bot is NOT frozen.*\n\n"
-            f"Elapsed Time: `{elapsed}s`"
+            rf"⬇️ *Fetching Metadata\.\.\.*\n"
+            rf"`Magnet Link`\n\n"
+            rf"*Please wait, this can be slow\.*\n"
+            rf"*The bot is NOT frozen\.*\n\n"
+            rf"Elapsed Time: `{elapsed}s`"
         )
         try:
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
@@ -538,9 +538,9 @@ async def _update_fetch_timer(progress_message: Message, timeout: int, cancel_ev
         try:
             await asyncio.wait_for(cancel_event.wait(), timeout=1)
         except asyncio.TimeoutError:
-            pass
+            pass # This is expected.
 
-async def fetch_metadata_from_magnet(magnet_link: str, progress_message: Message, context: ContextTypes.DEFAULT_TYPE) -> Optional[lt.torrent_info]: # type: ignore
+async def fetch_metadata_from_magnet(magnet_link: str, progress_message: Message, context: ContextTypes.DEFAULT_TYPE) -> Optional[lt.torrent_info]: #type: ignore
     """
     (Coordinator) Fetches metadata by running the blocking libtorrent code in a
     separate thread, while running a responsive UI timer in the main thread.
@@ -562,10 +562,10 @@ async def fetch_metadata_from_magnet(magnet_link: str, progress_message: Message
         return ti
     else:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Metadata fetch failed or timed out.")
-        message_text = "Timed out fetching metadata from the magnet link. It might be inactive or poorly seeded."
-        
+        error_message_text = "Timed out fetching metadata from the magnet link. It might be inactive or poorly seeded."
+        message_text = f"❌ *Error:* {escape_markdown(error_message_text)}"
         try:
-            await progress_message.edit_text(f"❌ *Error:* {escape_markdown(message_text)}", parse_mode=ParseMode.MARKDOWN_V2)
+            await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
@@ -600,15 +600,21 @@ async def fetch_and_parse_magnet_details(
     ses = context.bot_data["TORRENT_SESSION"]
     
     async def fetch_one(magnet_link: str, index: int):
+        """Worker to fetch metadata for a single magnet link."""
         bencoded_metadata = await asyncio.to_thread(_blocking_fetch_metadata, ses, magnet_link)
         if bencoded_metadata:
             ti = lt.torrent_info(bencoded_metadata) #type: ignore
-            return { "index": index, "ti": ti, "magnet_link": magnet_link, "bencoded_metadata": bencoded_metadata }
+            return {
+                "index": index,
+                "ti": ti,
+                "magnet_link": magnet_link,
+                "bencoded_metadata": bencoded_metadata
+            }
         return None
 
     message_text = f"Found {len(magnet_links)} links. Fetching details... this may take a moment."
     try:
-        await progress_message.edit_text(text=message_text)
+        await progress_message.edit_text(message_text)
     except BadRequest as e:
         if "Message is not modified" not in str(e):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
@@ -690,7 +696,7 @@ async def validate_and_enrich_torrent(
         error_msg = f"This torrent is *{format_bytes(ti.total_size())}*, which is larger than the *{MAX_TORRENT_SIZE_GB} GB* limit."
         message_text = f"❌ *Size Limit Exceeded*\n\n{error_msg}"
         try:
-            await progress_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
@@ -701,7 +707,7 @@ async def validate_and_enrich_torrent(
         error_msg = f"This torrent {validation_error}"
         message_text = f"❌ *Unsupported File Type*\n\n{error_msg}"
         try:
-            await progress_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
@@ -710,17 +716,21 @@ async def validate_and_enrich_torrent(
     parsed_info = parse_torrent_name(ti.name())
 
     if parsed_info['type'] == 'tv':
-        message_text = f"📺 {escape_markdown('TV show detected. Searching Wikipedia for episode title...')}"
+        wiki_search_msg = escape_markdown("TV show detected. Searching Wikipedia for episode title...")
+        message_text = f"📺 {wiki_search_msg}"
         try:
-            await progress_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
         episode_title, corrected_show_title = await fetch_episode_title_from_wikipedia(
-            show_title=parsed_info['title'], season=parsed_info['season'], episode=parsed_info['episode']
+            show_title=parsed_info['title'],
+            season=parsed_info['season'],
+            episode=parsed_info['episode']
         )
         parsed_info['episode_title'] = episode_title
+
         if corrected_show_title:
             parsed_info['title'] = corrected_show_title
 
@@ -730,12 +740,13 @@ async def process_user_input(
     text: str,
     context: ContextTypes.DEFAULT_TYPE,
     progress_message: Message
-) -> Optional[lt.torrent_info]: # type: ignore
+    ) -> Optional[lt.torrent_info]: # type: ignore
     """
-    Analyzes user input to acquire a torrent_info object.
+    Analyzes user input text to acquire a torrent_info object.
     """
-    if context.user_data is None: context.user_data = {}
-    ti: Optional[lt.torrent_info] = None # type: ignore
+    if context.user_data is None:
+        context.user_data = {}
+        ti: Optional[lt.torrent_info] = None # type: ignore
 
     if text.startswith('magnet:?xt=urn:btih:'):
         context.user_data['pending_magnet_link'] = text
@@ -748,34 +759,43 @@ async def process_user_input(
                 response.raise_for_status()
             torrent_content = response.content
             ti = lt.torrent_info(torrent_content) # type: ignore
+
             info_hash = str(ti.info_hashes().v1) # type: ignore
-            torrents_dir = ".torrents"; os.makedirs(torrents_dir, exist_ok=True)
+            torrents_dir = ".torrents"
+            os.makedirs(torrents_dir, exist_ok=True)
             source_value = os.path.join(torrents_dir, f"{info_hash}.torrent")
-            with open(source_value, "wb") as f: f.write(torrent_content)
+            with open(source_value, "wb") as f:
+                f.write(torrent_content)
+
             context.user_data['torrent_file_path'] = source_value
             return ti
+
         except httpx.RequestError as e:
-            message_text = f"Failed to download .torrent file from URL: {e}"
+            error_msg = f"Failed to download .torrent file from URL: {e}"
+            message_text = f"❌ *Error:* {escape_markdown(error_msg)}"
             try:
-                await progress_message.edit_text(f"❌ *Error:* {escape_markdown(message_text)}", parse_mode=ParseMode.MARKDOWN_V2)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            except BadRequest as e_inner:
+                if "Message is not modified" not in str(e_inner):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
             return None
         except RuntimeError:
             message_text = r"❌ *Error:* The provided file is not a valid torrent\."
             try:
-                await progress_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            except BadRequest as e_inner:
+                if "Message is not modified" not in str(e_inner):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
             return None
 
     elif text.startswith(('http://', 'https://')):
         safe_message_part = escape_markdown("Attempting to find magnet link(s) on:")
         message_text = f"🌐 *Web Page Detected:*\n{safe_message_part}\n`{escape_markdown(text)}`"
         try:
-            await progress_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
         extracted_magnet_links = await find_magnet_link_on_page(text)
 
@@ -783,14 +803,16 @@ async def process_user_input(
             error_msg = "The provided URL does not contain any magnet links, or the page could not be accessed."
             message_text = f"❌ *Error:* {escape_markdown(error_msg)}"
             try:
-                await progress_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            except BadRequest as e_inner:
+                if "Message is not modified" not in str(e_inner):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
             return None
 
         if len(extracted_magnet_links) == 1:
-            context.user_data['pending_magnet_link'] = extracted_magnet_links[0]
-            return await fetch_metadata_from_magnet(extracted_magnet_links[0], progress_message, context)
+            magnet_link = extracted_magnet_links[0]
+            context.user_data['pending_magnet_link'] = magnet_link
+            return await fetch_metadata_from_magnet(magnet_link, progress_message, context)
 
         if len(extracted_magnet_links) > 1:
             parsed_choices = await fetch_and_parse_magnet_details(extracted_magnet_links, context, progress_message)
@@ -799,35 +821,48 @@ async def process_user_input(
                 error_msg = "Could not fetch details for any of the found magnet links. They may be inactive."
                 message_text = f"❌ *Error:* {escape_markdown(error_msg)}"
                 try:
-                    await progress_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
-                except BadRequest as e:
-                    if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                    await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+                except BadRequest as e_inner:
+                    if "Message is not modified" not in str(e_inner):
+                        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
                 return None
 
             context.user_data['temp_magnet_choices_details'] = parsed_choices
+            
             first_choice_name = parsed_choices[0]['name']
             parsed_title_info = parse_torrent_name(first_choice_name)
-            common_title = f"{parsed_title_info.get('title', '')} ({parsed_title_info.get('year', '')})".strip() if parsed_title_info.get('type') == 'movie' else parsed_title_info.get('title', first_choice_name)
             
-            header_text = f"*{escape_markdown(common_title)}*\n\n"
-            subtitle_text = f"Found {len(parsed_choices)} valid torrents\\. Please select one:"
-            message_text = header_text + subtitle_text
+            common_title = "Unknown Title"
+            if parsed_title_info.get('type') == 'movie':
+                common_title = f"{parsed_title_info.get('title', '')} ({parsed_title_info.get('year', '')})".strip()
+            else:
+                common_title = parsed_title_info.get('title', first_choice_name)
 
-            keyboard = [[InlineKeyboardButton(f"{c['resolution']} | {c['file_type']} | {c['size']}", callback_data=f"select_magnet_{c['index']}")] for c in parsed_choices]
+            header_text = f"*{escape_markdown(common_title)}*\n\n"
+            subtitle_text = rf"Found {len(parsed_choices)} valid torrents\. Please select one:"
+            final_text = header_text + subtitle_text
+
+            keyboard = []
+            for choice in parsed_choices:
+                button_label = f"{choice['resolution']} | {choice['file_type']} | {choice['size']}"
+                keyboard.append([InlineKeyboardButton(button_label, callback_data=f"select_magnet_{choice['index']}")])
             keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
             reply_markup = InlineKeyboardMarkup(keyboard)
-
+            
             try:
-                await progress_message.edit_text(text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                await progress_message.edit_text(final_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
             except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                if "Message is not modified" not in str(e):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
             return None
     else:
-        message_text = "This does not look like a valid .torrent URL, magnet link, or a web page containing a magnet link."
+        error_message_text = "This does not look like a valid .torrent URL, magnet link, or a web page containing a magnet link."
+        message_text = f"❌ *Error:* {escape_markdown(error_message_text)}"
         try:
-            await progress_message.edit_text(f"❌ *Error:* {escape_markdown(message_text)}", parse_mode=ParseMode.MARKDOWN_V2)
+            await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return None
 
 async def send_confirmation_prompt(
@@ -839,7 +874,9 @@ async def send_confirmation_prompt(
     """
     Formats and sends the final confirmation message to the user with buttons.
     """
-    if context.user_data is None: context.user_data = {}
+    if context.user_data is None:
+        context.user_data = {}
+
     display_name = ""
     if parsed_info['type'] == 'movie':
         display_name = f"{parsed_info['title']} ({parsed_info['year']})"
@@ -849,32 +886,50 @@ async def send_confirmation_prompt(
     else:
         display_name = parsed_info['title']
 
-    details_line = f"{parse_resolution_from_name(ti.name())} | {get_dominant_file_type(ti.files())} | {format_bytes(ti.total_size())}"
+    resolution = parse_resolution_from_name(ti.name())
+    file_type_str = get_dominant_file_type(ti.files())
+    total_size_str = format_bytes(ti.total_size())
+    details_line = f"{resolution} | {file_type_str} | {total_size_str}"
+
     message_text = (
         f"✅ *Validation Passed*\n\n"
         f"*Name:* {escape_markdown(display_name)}\n"
         f"*Details:* `{escape_markdown(details_line)}`\n\n"
         f"Do you want to start this download?"
     )
+
     keyboard = [[
         InlineKeyboardButton("✅ Confirm Download", callback_data="confirm_download"),
         InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
     ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    source_type: str
+    source_value: str
     if 'pending_magnet_link' in context.user_data:
-        source_type, source_value = 'magnet', str(context.user_data.pop('pending_magnet_link'))
+        source_type = 'magnet'
+        source_value = str(context.user_data.pop('pending_magnet_link'))
     elif 'torrent_file_path' in context.user_data:
-        source_type, source_value = 'file', str(context.user_data['torrent_file_path'])
+        source_type = 'file'
+        source_value = str(context.user_data['torrent_file_path'])
     else:
-        source_type, source_value = 'magnet', f"magnet:?xt=urn:btih:{ti.info_hashes().v1}"
+        source_type = 'magnet'
+        source_value = f"magnet:?xt=urn:btih:{ti.info_hashes().v1}"
 
     context.user_data['pending_torrent'] = {
-        'type': source_type, 'value': source_value, 'clean_name': display_name,
-        'parsed_info': parsed_info, 'original_message_id': progress_message.message_id
+        'type': source_type,
+        'value': source_value,
+        'clean_name': display_name,
+        'parsed_info': parsed_info,
+        'original_message_id': progress_message.message_id
     }
+
     try:
-        await progress_message.edit_text(text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+        await progress_message.edit_text(
+            text=message_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
     except BadRequest as e:
         if "Message is not modified" not in str(e):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
@@ -973,19 +1028,10 @@ from telegram.ext import CallbackContext
 
 async def start_command(update: Update, context: CallbackContext) -> None:
     """Sends a message with instructions and torrent site links when the /start command is issued."""
-    # Ensure update.message is not None before trying to use it.
-    # This check satisfies the type checker and adds robustness.
     if update.message is None:
-        # In this specific context (CommandHandler for /start), this case is highly unlikely,
-        # but adding it makes the type checker happy and provides a fallback.
-        if update.effective_chat:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="Hello! Please send /start again." # A simpler fallback
-            )
         return
 
-    welcome_message = """
+    message_text = """
 Send me a .torrent or .magnet link!
 
 For Movies:
@@ -997,7 +1043,11 @@ For TV Shows:
 https://eztvx.to/
 https://1337x.to/
 """
-    await update.message.reply_text(welcome_message)
+    try:
+        await update.message.reply_text(message_text)
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send start message: {e}")
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """(NEW) Starts the conversation to delete media from the library."""
@@ -1005,12 +1055,10 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not update.message: return
 
-    # Delete the user's /delete command message to keep the chat clean
     try:
         await update.message.delete()
-    except BadRequest as e:
-        if "Message to delete not found" not in str(e):
-             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not delete user's /delete command: {e}")
+    except BadRequest:
+        pass
 
     keyboard = [
         [
@@ -1020,10 +1068,13 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "What type of media do you want to delete?", reply_markup=reply_markup
-    )
+    message_text = "What type of media do you want to delete?"
+    
+    try:
+        await update.message.reply_text(text=message_text, reply_markup=reply_markup)
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send delete prompt: {e}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides a formatted list of available commands."""
@@ -1031,83 +1082,155 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not update.message: return
     
-    # Using MarkdownV2 for nice formatting.
-    # Note that special characters like '.', '-', and '!' must be escaped with a '\'.
-    help_text = (
+    message_text = (
         r"Here are the available commands:\n\n"
         r"`start` \- Show welcome message\.\n"
         r"`plexstatus` \- Check Plex\.\n"
-        r"`plexrestart` \- Restart Plex\.\n\n"
+        r"`plexrestart` \- Restart Plex\.\n"
+        r"`delete` \- Delete media from the library\."
     )
     
-    await update.message.reply_text(
-        text=help_text,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
+    try:
+        await update.message.reply_text(
+            text=message_text,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send help message: {e}")
 
 async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_authorized(update, context): return
+    """Checks the connection to the Plex Media Server."""
+    if not await is_user_authorized(update, context):
+        return
     if not update.message: return
-    status_message = await update.message.reply_text("Plex Status: 🟡 Checking connection...")
 
+    status_message = None
+    try:
+        status_message = await update.message.reply_text("Plex Status: 🟡 Checking connection...")
+    except BadRequest as e:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send initial plex status message: {e}")
+        return
+
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     plex_config = context.bot_data.get("PLEX_CONFIG", {})
+
     if not plex_config:
         message_text = "Plex Status: ⚪️ Not configured. Please add your Plex details to the `config.ini` file."
-        try: await status_message.edit_text(text=message_text)
+        try:
+            await status_message.edit_text(message_text)
         except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return
 
     try:
+        print(f"[{ts}] [PLEX STATUS] Attempting to connect to Plex server...")
         plex = await asyncio.to_thread(PlexServer, plex_config['url'], plex_config['token'])
-        message_text = (f"Plex Status: ✅ *Connected*\n\n*Server Version:* `{escape_markdown(plex.version)}`\n*Platform:* `{escape_markdown(plex.platform)}`")
-        try: await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        server_version = plex.version
+        server_platform = plex.platform
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] Success! Connected.")
+        
+        message_text = (
+            f"Plex Status: ✅ *Connected*\n\n"
+            f"*Server Version:* `{escape_markdown(server_version)}`\n"
+            f"*Platform:* `{escape_markdown(server_platform)}`"
+        )
+        try:
+            await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+
     except Unauthorized:
-        message_text = (r"Plex Status: ❌ *Authentication Failed*\n\nThe Plex API token is incorrect\. Please check your `config\.ini` file\.")
-        try: await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] ERROR: Unauthorized.")
+        message_text = (
+            rf"Plex Status: ❌ *Authentication Failed*\n\n"
+            rf"The Plex API token is incorrect\. Please check your `config\.ini` file\."
+        )
+        try:
+            await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+
     except Exception as e:
-        message_text = (f"Plex Status: ❌ *Connection Failed*\n\nCould not connect to the Plex server at `{escape_markdown(plex_config['url'])}`\\. Please ensure the server is running and accessible\\.")
-        try: await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] ERROR: {e}")
+        message_text = (
+            rf"Plex Status: ❌ *Connection Failed*\n"
+            rf"Could not connect to the Plex server at `{escape_markdown(plex_config['url'])}`\. "
+            rf"Please ensure the server is running and accessible\."
+        )
+        try:
+            await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        except BadRequest as e_inner:
+            if "Message is not modified" not in str(e_inner):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
 
 async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_authorized(update, context): return
-    if not update.message: return
-    if platform.system() != "Linux":
-        await update.message.reply_text("This command is configured to run on Linux only.")
+    """(NEW - Linux Simplified) Restarts the Plex server via a direct subprocess call."""
+    if not await is_user_authorized(update, context):
         return
-    status_message = await update.message.reply_text("Plex Restart: 🟡 Sending restart command to the server...")
-    script_path = os.path.abspath("restart_plex.sh")
-    if not os.path.exists(script_path):
-        message_text = "❌ *Error:* The `restart_plex.sh` script was not found in the bot's directory."
-        try: await status_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
+    if not update.message: return
+
+    if platform.system() != "Linux":
+        try:
+            await update.message.reply_text("This command is configured to run on Linux only.")
         except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send plex restart message: {e}")
+        return
+
+    status_message = None
+    try:
+        status_message = await update.message.reply_text("Plex Restart: 🟡 Sending restart command to the server...")
+    except BadRequest as e:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send initial plex restart message: {e}")
+        return
+        
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    script_path = os.path.abspath("restart_plex.sh")
+
+    if not os.path.exists(script_path):
+        print(f"[{ts}] [PLEX RESTART] ERROR: Wrapper script not found at {script_path}")
+        message_text = "❌ *Error:* The `restart_plex.sh` script was not found in the bot's directory."
+        try:
+            await status_message.edit_text(message_text)
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return
     
     command = ["/usr/bin/sudo", script_path]
+
     try:
+        print(f"[{ts}] [PLEX RESTART] Executing wrapper script: {' '.join(command)}")
         await asyncio.to_thread(subprocess.run, command, check=True, capture_output=True, text=True)
         message_text = "✅ *Plex Restart Successful*"
-        try: await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        try:
+            await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            if "Message is not modified" not in str(e):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+        print(f"[{ts}] [PLEX RESTART] Success!")
+
     except subprocess.CalledProcessError as e:
         error_output = e.stderr or e.stdout
-        message_text = rf"❌ *Script Failed*\n\nThis almost always means the `sudoers` rule for `restart_plex\.sh` is incorrect or missing\.\n\n*Details:*\n`{escape_markdown(error_output)}`"
-        try: await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+        message_text = rf"❌ *Script Failed*\n\nThis almost always means the `sudoers` rule for `restart_plex.sh` is incorrect or missing\.\n\n*Details:*\n`{escape_markdown(error_output)}`"
+        print(f"[{ts}] [PLEX RESTART] ERROR executing script: {error_output}")
+        try:
+            await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        except BadRequest as e_inner:
+            if "Message is not modified" not in str(e_inner):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
+
     except Exception as e:
         message_text = f"❌ *An Unexpected Error Occurred*\n\n`{escape_markdown(str(e))}`"
-        try: await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+        print(f"[{ts}] [PLEX RESTART] ERROR: {str(e)}")
+        try:
+            await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        except BadRequest as e_inner:
+            if "Message is not modified" not in str(e_inner):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
 
 async def find_magnet_link_on_page(url: str) -> List[str]:
     """
@@ -1195,193 +1318,240 @@ async def process_queue_for_user(chat_id: int, application: Application):
         print(f"[{ts}] [QUEUE_PROCESSOR] Invoked for {chat_id_str}, but their queue is empty. No action taken.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_authorized(update, context): return
+    """
+    Handles incoming messages by coordinating the torrent processing pipeline.
+    """
+    if not await is_user_authorized(update, context):
+        return
+        
     if not update.message or not update.message.text: return
-    chat_id, text, user_message_to_delete = update.message.chat_id, update.message.text.strip(), update.message
-    if context.user_data is None: context.user_data = {}
+    chat_id = update.message.chat_id
+    text = update.message.text.strip()
+    user_message_to_delete = update.message
+
+    if context.user_data is None:
+        context.user_data = {}
 
     next_action = context.user_data.get('next_action', '')
     if next_action in ['delete_movie_search', 'delete_tv_show_search']:
         media_type = "movie" if next_action == 'delete_movie_search' else "tv_show"
+        
         prompt_message_id = context.user_data.pop('prompt_message_id', None)
         context.user_data.pop('next_action', None)
         try:
             await user_message_to_delete.delete()
-            if prompt_message_id: await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
-        except BadRequest: pass
+            if prompt_message_id:
+                await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+        except BadRequest:
+            pass
 
-        status_message = await context.bot.send_message(chat_id=chat_id, text=rf"🔎 Searching for the {media_type.replace('_', ' ')}: `{escape_markdown(text)}`\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
-        found_path = await find_media_by_name(media_type, text, context.bot_data.get("SAVE_PATHS", {}))
+        status_message = None
+        message_text = rf"🔎 Searching for the {media_type.replace('_', ' ')}: `{escape_markdown(text)}`\.\.\."
+        try:
+            status_message = await context.bot.send_message(
+                chat_id=chat_id,
+                text=message_text,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+        except BadRequest as e:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send 'searching' message: {e}")
+            return
+
+        save_paths = context.bot_data.get("SAVE_PATHS", {})
+        found_path = await find_media_by_name(media_type, text, save_paths)
 
         if found_path:
             context.user_data['path_to_delete'] = found_path
-            keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-            message_text = rf"Item Found:\n`{escape_markdown(os.path.basename(found_path))}`\n\nAre you sure you want to permanently delete this\?"
-            try: await status_message.edit_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+            keyboard = [[
+                InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"),
+                InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation"),
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            base_name = os.path.basename(found_path)
+            message_text = rf"Item Found:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to permanently delete this\?"
+            try:
+                await status_message.edit_text(
+                    text=message_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
             except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                if "Message is not modified" not in str(e):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         else:
             message_text = f"❌ No item found matching: `{escape_markdown(text)}`"
-            try: await status_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
+            try:
+                await status_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
             except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                if "Message is not modified" not in str(e):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return
 
-    progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
-    try: await user_message_to_delete.delete()
-    except BadRequest as e:
-        if "Message to delete not found" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not delete user's message: {e}")
+    progress_message = None
+    try:
+        progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
+        await user_message_to_delete.delete()
+    except BadRequest:
+        pass
+
+    if not progress_message: return
 
     ti = await process_user_input(text, context, progress_message)
     if not ti: return
+
     error_message, parsed_info = await validate_and_enrich_torrent(ti, progress_message)
     if error_message or not parsed_info:
-        if 'torrent_file_path' in context.user_data and os.path.exists(context.user_data['torrent_file_path']): os.remove(context.user_data['torrent_file_path'])
+        if 'torrent_file_path' in context.user_data and os.path.exists(context.user_data['torrent_file_path']):
+            os.remove(context.user_data['torrent_file_path'])
         return
+
     await send_confirmation_prompt(progress_message, context, ti, parsed_info)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_user_authorized(update, context): return
+    """
+    Handles all button presses from inline keyboards.
+    """
+    if not await is_user_authorized(update, context):
+        return
+
     query = update.callback_query
     if not query: return
     await query.answer()
+
     message = query.message
     if not isinstance(message, Message): return
+    
     if context.user_data is None: context.user_data = {}
-    chat_id_str = str(message.chat_id)
+    chat_id = message.chat_id
+    chat_id_str = str(chat_id)
     active_downloads = context.bot_data.get('active_downloads', {})
+    
+    # Initialize variables for the final message sending
+    message_text: str = ""
+    reply_markup: Optional[InlineKeyboardMarkup] = None
+    parse_mode: Optional[str] = ParseMode.MARKDOWN_V2
 
-    reply_markup_cancel = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+    # --- THE FIX: Guard all operations on query.data ---
+    if query.data:
+        if query.data == "delete_start_movie":
+            context.user_data['next_action'] = 'delete_movie_search'
+            context.user_data['prompt_message_id'] = message.message_id
+            message_text = "🎬 Please send me the title of the movie to delete."
+            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+            parse_mode = None # No markdown in this message
 
-    if query.data == "delete_start_movie":
-        context.user_data['next_action'] = 'delete_movie_search'
-        context.user_data['prompt_message_id'] = message.message_id
-        message_text = "🎬 Please send me the title of the movie to delete."
-        try: await query.edit_message_text(text=message_text, reply_markup=reply_markup_cancel)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        return
+        elif query.data == "delete_start_tv":
+            context.user_data['next_action'] = 'delete_tv_show_search'
+            context.user_data['prompt_message_id'] = message.message_id
+            message_text = "📺 Please send me the title of the TV show to delete."
+            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+            parse_mode = None # No markdown in this message
 
-    if query.data == "delete_start_tv":
-        context.user_data['next_action'] = 'delete_tv_show_search'
-        context.user_data['prompt_message_id'] = message.message_id
-        message_text = "📺 Please send me the title of the TV show to delete."
-        try: await query.edit_message_text(text=message_text, reply_markup=reply_markup_cancel)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        return
-
-    if query.data == "confirm_delete":
-        path_to_delete = context.user_data.pop('path_to_delete', None)
-        if path_to_delete:
-            base_name = os.path.basename(path_to_delete)
-            message_text = rf"✅ Deletion confirmed for `{escape_markdown(base_name)}`\.\n\n(Note: Actual file deletion is disabled until Phase 3\.)"
-            try: await query.edit_message_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        else:
-            message_text = r"❌ Error: Path to delete not found\. The action may have expired\."
-            try: await query.edit_message_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        return
-
-    if query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
-        if chat_id_str in active_downloads:
-            download_data = active_downloads[chat_id_str]
-            lock = download_data.get('lock')
-            if not lock: return
-            async with lock:
-                if query.data == "cancel_download":
-                    download_data['cancellation_pending'] = True
-                    message_text = "Are you sure you want to cancel this download?"
-                    keyboard = [[InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"), InlineKeyboardButton("❌ No, Continue", callback_data="resume_download")]]
-                    try: await query.edit_message_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
-                    except BadRequest as e:
-                        if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-                elif query.data == "confirm_cancel":
-                    if 'task' in download_data and not download_data['task'].done(): download_data['task'].cancel()
-                    else:
-                        message_text = "ℹ️ This download has already completed or been cancelled."
-                        try: await query.edit_message_text(text=message_text, reply_markup=None)
-                        except BadRequest as e:
-                            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-                elif query.data == "resume_download":
-                    download_data['cancellation_pending'] = False
-                    message_text = "▶️ Download resuming..."
-                    try: await query.edit_message_text(text=message_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]))
-                    except BadRequest as e:
-                        if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        else:
-            message_text = "ℹ️ Could not find an active download to cancel."
-            try: await query.edit_message_text(text=message_text, reply_markup=None)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        return
-
-    if query.data == "cancel_operation":
-        message_text = "❌ Operation cancelled."
-        if 'path_to_delete' in context.user_data: context.user_data.pop('path_to_delete', None); message_text = "❌ Delete operation cancelled."
-        elif 'next_action' in context.user_data and context.user_data['next_action'].startswith('delete_'): context.user_data.pop('next_action', None); context.user_data.pop('prompt_message_id', None); message_text = "❌ Delete operation cancelled."
-        elif 'temp_magnet_choices_details' in context.user_data: context.user_data.pop('temp_magnet_choices_details', None); message_text = "❌ Selection cancelled."
-        elif 'pending_torrent' in context.user_data:
-            pending_torrent = context.user_data.pop('pending_torrent')
-            message_text = "❌ Operation cancelled by user."
-            if pending_torrent.get('type') == 'file' and pending_torrent.get('value') and os.path.exists(pending_torrent.get('value')): os.remove(pending_torrent.get('value'))
-        try: await query.edit_message_text(message_text, reply_markup=None)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        return
-
-    if query.data and query.data.startswith("select_magnet_"):
-        if 'temp_magnet_choices_details' not in context.user_data:
-            message_text = "This selection has expired. Please send the link again."
-            try: await query.edit_message_text(message_text)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-            return
-        selected_index = int(query.data.split('_')[2])
-        choices = context.user_data.pop('temp_magnet_choices_details')
-        selected_choice = next((c for c in choices if c['index'] == selected_index), None)
-        if not selected_choice:
-            message_text = "An internal error occurred. Please try again."
-            try: await query.edit_message_text(message_text)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-            return
-        bencoded_metadata = selected_choice['bencoded_metadata']; ti = lt.torrent_info(bencoded_metadata) #type: ignore
-        context.user_data['pending_magnet_link'] = selected_choice['magnet_link']
-        error_message, parsed_info = await validate_and_enrich_torrent(ti, message)
-        if error_message or not parsed_info: return
-        await send_confirmation_prompt(message, context, ti, parsed_info)
-        return
-
-    if 'pending_torrent' not in context.user_data:
-        message_text = "This action has expired. Please send the link again."
-        try: await query.edit_message_text(message_text)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        return
+        elif query.data == "confirm_delete":
+            path_to_delete = context.user_data.pop('path_to_delete', None)
+            if path_to_delete:
+                base_name = os.path.basename(path_to_delete)
+                message_text = rf"✅ Deletion confirmed for `{escape_markdown(base_name)}`\.\n\n(Note: Actual file deletion is disabled until Phase 3\.)"
+            else:
+                message_text = r"❌ Error: Path to delete not found\. The action may have expired\."
         
-    if query.data == "confirm_download":
-        pending_torrent = context.user_data.pop('pending_torrent')
-        save_paths, chat_id = context.bot_data["SAVE_PATHS"], message.chat_id
-        download_data = {'source_dict': pending_torrent, 'chat_id': chat_id, 'message_id': pending_torrent['original_message_id'], 'save_path': save_paths['default']}
-        download_queues = context.bot_data.get('download_queues', {})
-        if chat_id_str not in download_queues: download_queues[chat_id_str] = []
-        download_queues[chat_id_str].append(download_data)
-        position = len(download_queues[chat_id_str])
+        elif query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
+            if chat_id_str in active_downloads:
+                download_data = active_downloads[chat_id_str]
+                lock = download_data.get('lock')
+                if lock:
+                    async with lock:
+                        if query.data == "cancel_download":
+                            download_data['cancellation_pending'] = True
+                            message_text = "Are you sure you want to cancel this download?"
+                            reply_markup = InlineKeyboardMarkup([[
+                                InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
+                                InlineKeyboardButton("❌ No, Continue", callback_data="resume_download"),
+                            ]])
+                            parse_mode = None
+                        elif query.data == "confirm_cancel":
+                            if 'task' in download_data and not download_data['task'].done():
+                                task: asyncio.Task = download_data['task']
+                                task.cancel()
+                            message_text = "ℹ️ This download has already completed or been cancelled."
+                            parse_mode = None
+                        elif query.data == "resume_download":
+                            download_data['cancellation_pending'] = False
+                            message_text = "▶️ Download resuming..."
+                            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]])
+                            parse_mode = None
+            else:
+                message_text = "ℹ️ Could not find an active download to cancel."
+                parse_mode = None
         
-        if chat_id_str in active_downloads:
-            message_text = f"✅ Download queued. You are position #{position} in line."
-        else:
-            message_text = f"✅ Your download is next in line and will begin shortly."
-        try: await query.edit_message_text(text=message_text, reply_markup=None)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
-        
-        save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
-        await process_queue_for_user(message.chat_id, context.application)
+        elif query.data == "cancel_operation":
+            if 'path_to_delete' in context.user_data:
+                context.user_data.pop('path_to_delete', None)
+            elif 'next_action' in context.user_data:
+                context.user_data.pop('next_action', None)
+                context.user_data.pop('prompt_message_id', None)
+            elif 'temp_magnet_choices_details' in context.user_data:
+                context.user_data.pop('temp_magnet_choices_details', None)
+            elif 'pending_torrent' in context.user_data:
+                context.user_data.pop('pending_torrent', None)
+            message_text = "❌ Operation cancelled."
+            parse_mode = None
+
+        elif query.data.startswith("select_magnet_"):
+            if 'temp_magnet_choices_details' not in context.user_data:
+                message_text = "This selection has expired. Please send the link again."
+                parse_mode = None
+            else:
+                selected_index = int(query.data.split('_')[2])
+                choices = context.user_data.pop('temp_magnet_choices_details')
+                selected_choice = next((c for c in choices if c['index'] == selected_index), None)
+                if not selected_choice:
+                    message_text = "An internal error occurred. Please try again."
+                    parse_mode = None
+                else:
+                    bencoded_metadata = selected_choice['bencoded_metadata']
+                    ti = lt.torrent_info(bencoded_metadata) # type: ignore
+                    context.user_data['pending_magnet_link'] = selected_choice['magnet_link']
+                    error_message, parsed_info = await validate_and_enrich_torrent(ti, message)
+                    if error_message or not parsed_info:
+                        return # The other function already sent the error message
+                    await send_confirmation_prompt(message, context, ti, parsed_info)
+                    return # The other function handles its own message sending
+
+        elif query.data == "confirm_download":
+            pending_torrent = context.user_data.pop('pending_torrent', None)
+            if not pending_torrent:
+                message_text = "This action has expired. Please send the link again."
+                parse_mode = None
+            else:
+                ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                save_paths = context.bot_data["SAVE_PATHS"]
+                initial_save_path = save_paths['default']
+                download_data = { 'source_dict': pending_torrent, 'chat_id': chat_id, 'message_id': pending_torrent['original_message_id'], 'save_path': initial_save_path }
+                download_queues = context.bot_data.get('download_queues', {})
+                if chat_id_str not in download_queues: download_queues[chat_id_str] = []
+                download_queues[chat_id_str].append(download_data)
+                position = len(download_queues[chat_id_str])
+                print(f"[{ts}] [BUTTON_HANDLER] User {chat_id_str} confirmed download. Queued at position {position}.")
+                if chat_id_str in active_downloads:
+                    message_text = f"✅ Download queued. You are position #{position} in line."
+                else:
+                    message_text = f"✅ Your download is next in line and will begin shortly."
+                parse_mode = None
+                save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
+                await process_queue_for_user(chat_id, context.application)
+    # --- End of guarded block ---
+
+    # Fallback for any case where query.data might be None or unhandled
+    if not message_text:
+        message_text = "This action has expired or is unknown. Please try again."
+        parse_mode = None
+
+    try:
+        await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message in button_handler: {e}")
 
 class ProgressReporter:
     def __init__(self, application: Application, chat_id: int, message_id: int, parsed_info: Dict[str, Any], clean_name: str, download_data: Dict[str, Any]):
@@ -1390,37 +1560,49 @@ class ProgressReporter:
 
     async def report(self, status: lt.torrent_status): # type: ignore
         async with self.download_data['lock']:
-            if self.download_data.get('cancellation_pending', False): return
-            current_time = time.monotonic()
-            if current_time - self.last_update_time < 5: return
-            self.last_update_time = current_time
+            if self.download_data.get('cancellation_pending', False):
+                return
 
+            log_name = status.name if status.name else self.clean_name
             progress_percent = status.progress * 100
             speed_mbps = status.download_rate / 1024 / 1024
+            ts_progress = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts_progress}] [LOG] {log_name}: {progress_percent:.2f}% | Peers: {status.num_peers} | Speed: {speed_mbps:.2f} MB/s")
             
+            current_time = time.monotonic()
+            if current_time - self.last_update_time < 5:
+                return
+            self.last_update_time = current_time
+
             if self.parsed_info.get('type') == 'tv':
-                show_title = self.parsed_info.get('title', 'Unknown Show')
-                season_num = self.parsed_info.get('season', 0)
-                episode_num = self.parsed_info.get('episode', 0)
-                episode_title = self.parsed_info.get('episode_title', '')
-                
-                safe_show_title = escape_markdown(show_title)
-                safe_episode_details = escape_markdown(f'S{season_num:02d}E{episode_num:02d} - {episode_title}')
-                name_str = f"`{safe_show_title}`\n`{safe_episode_details}`"
+                seasson_str = "season"
+                episode_str = "episode"
+                episode_title_str = "episode_title"
+                empty_string = ""
+                name_str = f"`{escape_markdown(self.parsed_info.get('title', ''))}`\n`{escape_markdown(f'S{self.parsed_info.get(seasson_str, 0):02d}E{self.parsed_info.get(episode_str, 0):02d} - {self.parsed_info.get(episode_title_str, empty_string)}')}`"
             else:
                 name_str = f"`{escape_markdown(self.clean_name)}`"
-            
-            message_text = (f"⬇️ *Downloading:*\n{name_str}\n"
-                            f"*Progress:* {progress_percent:.2f}%\n"
-                            f"*State:* {escape_markdown(status.state.name)}\n"
-                            f"*Peers:* {status.num_peers}\n"
-                            f"*Speed:* {speed_mbps:.2f} MB/s")
-            
+
+            message_text = (
+                f"⬇️ *Downloading:*\n{name_str}\n"
+                f"*Progress:* {escape_markdown(f'{progress_percent:.2f}')}%\n"
+                f"*State:* {escape_markdown(status.state.name)}\n"
+                f"*Peers:* {status.num_peers}\n"
+                f"*Speed:* {escape_markdown(f'{speed_mbps:.2f}')} MB/s"
+            )
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]])
+            
             try:
-                await self.application.bot.edit_message_text(text=message_text, chat_id=self.chat_id, message_id=self.message_id, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup)
+                await self.application.bot.edit_message_text(
+                    text=message_text,
+                    chat_id=self.chat_id,
+                    message_id=self.message_id,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup
+                )
             except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+                if "Message is not modified" not in str(e):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
 def cleanup_download_resources(
     application: Application,
@@ -1576,6 +1758,9 @@ async def handle_successful_download(
     )
 
 async def start_download_task(download_data: Dict, application: Application):
+    """
+    Creates, registers, and persists a new download task.
+    """
     active_downloads = application.bot_data.get('active_downloads', {})
     download_queues = application.bot_data.get('download_queues', {})
     chat_id_str = str(download_data['chat_id'])
@@ -1586,40 +1771,77 @@ async def start_download_task(download_data: Dict, application: Application):
     active_downloads[chat_id_str] = download_data
     
     save_state(application.bot_data['persistence_file'], active_downloads, download_queues)
-    
-    message_text="▶️ Your download is now starting..."
+
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]])
+    message_text = "▶️ Your download is now starting..."
+    
     try:
-        await application.bot.edit_message_text(text=message_text, chat_id=download_data['chat_id'], message_id=download_data['message_id'], reply_markup=reply_markup)
+        await application.bot.edit_message_text(
+            text=message_text,
+            chat_id=download_data['chat_id'],
+            message_id=download_data['message_id'],
+            reply_markup=reply_markup
+        )
     except BadRequest as e:
-        if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+        if "Message is not modified" not in str(e):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit message to start queued download: {e}")
 
 async def download_task_wrapper(download_data: Dict, application: Application):
-    source_dict, chat_id, message_id, initial_save_path = download_data['source_dict'], download_data['chat_id'], download_data['message_id'], download_data['save_path']
-    source_value, source_type, clean_name, parsed_info = source_dict['value'], source_dict['type'], source_dict.get('clean_name', "Download"), source_dict.get('parsed_info', {})
-    reporter = ProgressReporter(application, chat_id, message_id, parsed_info, clean_name, download_data)
+    """
+    Wraps the entire download lifecycle, from execution to final user feedback.
+    """
+    source_dict = download_data['source_dict']
+    chat_id = download_data['chat_id']
+    message_id = download_data['message_id']
+    initial_save_path = download_data['save_path']
+    clean_name = source_dict.get('clean_name', "Download")
+    message_text = "No message"
     
+    reporter = ProgressReporter(application, chat_id, message_id, source_dict.get('parsed_info', {}), clean_name, download_data)
+
     try:
-        success, ti = await download_with_progress(source=source_value, save_path=initial_save_path, status_callback=reporter.report, bot_data=application.bot_data, allowed_extensions=ALLOWED_EXTENSIONS)
+        success, ti = await download_with_progress(
+            source=source_dict['value'], 
+            save_path=initial_save_path,
+            status_callback=reporter.report,
+            bot_data=application.bot_data,
+            allowed_extensions=ALLOWED_EXTENSIONS
+        )
+
         if success and ti:
-            message_text = await handle_successful_download(ti, parsed_info, initial_save_path, application.bot_data.get("SAVE_PATHS", {}), application.bot_data.get("PLEX_CONFIG"))
-            try: await application.bot.edit_message_text(text=message_text, chat_id=chat_id, message_id=message_id, parse_mode=ParseMode.MARKDOWN_V2)
-            except BadRequest as e:
-                if "Message is not modified" not in str(e): print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
+            message_text = await handle_successful_download(
+                ti=ti,
+                parsed_info=source_dict.get('parsed_info', {}),
+                initial_download_path=initial_save_path,
+                save_paths=application.bot_data.get("SAVE_PATHS", {}),
+                plex_config=application.bot_data.get("PLEX_CONFIG")
+            )
+        else: # Should only be reached if download_with_progress returns (False, None)
+            message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager."
+
     except asyncio.CancelledError:
-        if application.bot_data.get('is_shutting_down', False): raise
+        if application.bot_data.get('is_shutting_down', False):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Task for '{clean_name}' paused for shutdown.")
+            raise
         message_text = f"⏹️ *Cancelled*\nDownload has been stopped for:\n`{escape_markdown(clean_name)}`"
-        try: await application.bot.edit_message_text(text=message_text, chat_id=chat_id, message_id=message_id, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
-        except (BadRequest, NetworkError) as e:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send cancellation confirmation: {e}")
+            
     except Exception as e:
+        ts_except = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts_except}] [ERROR] Unexpected exception in download task for '{clean_name}': {e}")
         message_text = f"❌ *Error*\nAn unexpected error occurred:\n`{escape_markdown(str(e))}`"
-        try: await application.bot.edit_message_text(text=message_text, chat_id=chat_id, message_id=message_id, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
-        except (BadRequest, NetworkError) as e:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send final error message: {e}")
+            
     finally:
         if not application.bot_data.get('is_shutting_down', False):
-            cleanup_download_resources(application, chat_id, source_type, source_value, initial_save_path)
+            try:
+                await application.bot.edit_message_text(
+                    text=message_text, chat_id=chat_id, message_id=message_id, 
+                    parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None
+                )
+            except (BadRequest, NetworkError) as e:
+                 if "Message is not modified" not in str(e):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send final status message: {e}")
+            
+            cleanup_download_resources(application, chat_id, source_dict['type'], source_dict['value'], initial_save_path)
             await process_queue_for_user(chat_id, application)
 
 # --- MAIN SCRIPT EXECUTION ---
