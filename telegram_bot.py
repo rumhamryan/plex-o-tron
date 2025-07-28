@@ -1605,29 +1605,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles all button presses, delegating to the appropriate workflow handler.
     """
+    if not await is_user_authorized(update, context):
+        return
+
     query = update.callback_query
     if not query or not query.data: return
 
-    # --- THE REFACTOR: Delegate to the dedicated delete button handler ---
+    if context.user_data is None:
+        context.user_data = {}
+
+    # --- DELEGATION TO DELETE WORKFLOW ---
     delete_callbacks = ["delete_start_movie", "delete_start_tv", "delete_tv_all", "delete_tv_season", "delete_tv_episode", "confirm_delete"]
     if query.data in delete_callbacks:
         await handle_delete_buttons(update, context)
         return
-        
-    if context.user_data is None:
-        context.user_data = {}
 
     # Handle cancellation if it's for a delete operation
     if query.data == "cancel_operation" and any(key in context.user_data for key in ['next_action', 'show_path_to_delete']):
         await handle_delete_buttons(update, context)
         return
-    # --- End of refactor ---
+    # --- END OF DELEGATION ---
 
-    # If not a delete operation, proceed with the original torrent logic
+    # --- MAIN TORRENT WORKFLOW LOGIC ---
     await query.answer()
     message = query.message
     if not isinstance(message, Message): return
-    if context.user_data is None: context.user_data = {}
 
     chat_id = message.chat_id
     chat_id_str = str(chat_id)
@@ -1638,8 +1640,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parse_mode: Optional[str] = None
 
     if query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
-        # ... (download cancellation logic remains unchanged)
-        pass # Placeholder for brevity
+        if chat_id_str in active_downloads:
+            download_data = active_downloads[chat_id_str]
+            lock = download_data.get('lock')
+            if lock:
+                async with lock:
+                    if query.data == "cancel_download":
+                        download_data['cancellation_pending'] = True
+                        message_text = "Are you sure you want to cancel this download?"
+                        reply_markup = InlineKeyboardMarkup([[
+                            InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
+                            InlineKeyboardButton("❌ No, Continue", callback_data="resume_download"),
+                        ]])
+                    elif query.data == "confirm_cancel":
+                        if 'task' in download_data and not download_data['task'].done():
+                            task: asyncio.Task = download_data['task']
+                            task.cancel()
+                        message_text = "ℹ️ This download has already completed or been cancelled."
+                    elif query.data == "resume_download":
+                        download_data['cancellation_pending'] = False
+                        message_text = "▶️ Download resuming..."
+                        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]])
+        else:
+            message_text = "ℹ️ Could not find an active download to cancel."
 
     elif query.data == "cancel_operation":
         context.user_data.pop('temp_magnet_choices_details', None)
@@ -1647,29 +1670,50 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_text = "❌ Operation cancelled."
 
     elif query.data.startswith("select_magnet_"):
-        # ... (magnet selection logic remains unchanged)
-        pass # Placeholder for brevity
-    
-    elif query.data == "confirm_download":
-        # ... (download confirmation logic remains unchanged)
-        pass # Placeholder for brevity
-
-    # Fallback and final message sending
-    if not message_text:
-        # Re-add the logic from the previous correct version to handle the placeholders
-        if query.data == "confirm_download":
-             pending_torrent = context.user_data.pop('pending_torrent', None)
-             if not pending_torrent:
-                 message_text = "This action has expired. Please send the link again."
-             else:
-                # ... (full download confirmation logic)
-                pass
+        if 'temp_magnet_choices_details' not in context.user_data:
+            message_text = "This selection has expired. Please send the link again."
         else:
-            message_text = "This action has expired or is unknown. Please try again."
+            selected_index = int(query.data.split('_')[2])
+            choices = context.user_data.pop('temp_magnet_choices_details')
+            selected_choice = next((c for c in choices if c['index'] == selected_index), None)
+            if not selected_choice:
+                message_text = "An internal error occurred. Please try again."
+            else:
+                bencoded_metadata = selected_choice['bencoded_metadata']
+                ti = lt.torrent_info(bencoded_metadata) #type: ignore
+                context.user_data['pending_magnet_link'] = selected_choice['magnet_link']
+                error_message, parsed_info = await validate_and_enrich_torrent(ti, message)
+                if error_message or not parsed_info:
+                    return
+                await send_confirmation_prompt(message, context, ti, parsed_info)
+                return
+
+    elif query.data == "confirm_download":
+        pending_torrent = context.user_data.pop('pending_torrent', None)
+        if not pending_torrent:
+            message_text = "This action has expired. Please send the link again."
+        else:
+            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            save_paths = context.bot_data["SAVE_PATHS"]
+            initial_save_path = save_paths['default']
+            download_data = { 'source_dict': pending_torrent, 'chat_id': chat_id, 'message_id': pending_torrent['original_message_id'], 'save_path': initial_save_path }
+            download_queues = context.bot_data.get('download_queues', {})
+            if chat_id_str not in download_queues: download_queues[chat_id_str] = []
+            download_queues[chat_id_str].append(download_data)
+            position = len(download_queues[chat_id_str])
+            print(f"[{ts}] [BUTTON_HANDLER] User {chat_id_str} confirmed download. Queued at position {position}.")
+            if chat_id_str in active_downloads:
+                message_text = f"✅ Download queued. You are position #{position} in line."
+            else:
+                message_text = f"✅ Your download is next in line and will begin shortly."
+            save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
+            await process_queue_for_user(chat_id, context.application)
+    
+    if not message_text:
+        message_text = "This action has expired or is unknown. Please try again."
 
     try:
-        if message_text: # Only send if there's something to say
-            await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode=parse_mode)
+        await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode=parse_mode)
     except BadRequest as e:
         if "Message is not modified" not in str(e):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit message in main button_handler: {e}")

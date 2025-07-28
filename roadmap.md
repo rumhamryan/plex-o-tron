@@ -5,6 +5,7 @@ Reasonable features in scope and effort:
 2. change plexstatus to status
 3. change plexrestart to restart
 4. user messages to the bot must be deleted as well, to include `status` and `restart` commands
+5. delete operation, tv show matching seems broken
 
 These two are contradictory:
 - look into deleting entire chat every time to reducing remote logging
