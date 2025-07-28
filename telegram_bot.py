@@ -1312,7 +1312,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send a "searching..." message to the user
         status_message = await context.bot.send_message(
             chat_id=chat_id,
-            text=f"🔎 Searching for the {media_type.replace('_', ' ')}: `{escape_markdown(text)}`\.\.\.",
+            # --- THE FIX: Use a raw f-string (rf) ---
+            text=rf"🔎 Searching for the {media_type.replace('_', ' ')}: `{escape_markdown(text)}`\.\.\.",
             parse_mode=ParseMode.MARKDOWN_V2
         )
 
@@ -1330,15 +1331,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Display just the final folder/file name for clarity
             base_name = os.path.basename(found_path)
-            # --- THE FIX: Escaped the final question mark ---
+            # --- THE FIX: Use a raw f-string (rf) ---
             await status_message.edit_text(
-                text=f"Item Found:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to permanently delete this\?",
+                text=rf"Item Found:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to permanently delete this\?",
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN_V2
             )
-            # --- End of fix ---
         else:
             # No item was found
             await status_message.edit_text(
@@ -1414,15 +1413,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         path_to_delete = context.user_data.pop('path_to_delete', None)
         if path_to_delete:
             base_name = os.path.basename(path_to_delete)
-            # --- THE FIX: Escaped the periods in the message ---
+            # --- THE FIX: Use a raw f-string (rf) ---
             await query.edit_message_text(
-                f"✅ Deletion confirmed for `{escape_markdown(base_name)}`\.\n\n(Note: Actual file deletion is disabled until Phase 3\.)",
+                rf"✅ Deletion confirmed for `{escape_markdown(base_name)}`\.\n\n(Note: Actual file deletion is disabled until Phase 3\.)",
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=None
             )
-            # --- End of fix ---
         else:
-            await query.edit_message_text("❌ Error: Path to delete not found\. The action may have expired\.", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
+            # --- THE FIX: Use a raw string (r) ---
+            await query.edit_message_text(r"❌ Error: Path to delete not found\. The action may have expired\.", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
         return
     # --- End of new handler ---
 
