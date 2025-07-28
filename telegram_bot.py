@@ -185,6 +185,56 @@ def generate_plex_filename(parsed_info: dict, original_extension: str) -> str:
     else: # Fallback for 'unknown' type
         return f"{safe_title}{original_extension}"
     
+async def find_media_by_name(
+    media_type: str,
+    search_query: str,
+    save_paths: Dict[str, str]
+) -> Optional[str]:
+    """
+    (NEW - SAFE SEARCH) Recursively searches for a media file/folder.
+    Returns the full path of the first match found, otherwise None.
+    This function is designed to be run in a separate thread to avoid blocking.
+    """
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # --- THE FIX: Added comprehensive logging ---
+    print(f"[{ts}] [DELETE SEARCH] Initiated search for type='{media_type}', query='{search_query}'")
+    
+    search_path_key = 'movies' if media_type == 'movie' else 'tv_shows'
+    search_path = save_paths.get(search_path_key)
+    
+    if not search_path or not os.path.isdir(search_path):
+        print(f"[{ts}] [DELETE SEARCH] ERROR: Invalid or missing search path for key '{search_path_key}'. Path: '{search_path}'")
+        return None
+
+    print(f"[{ts}] [DELETE SEARCH] Starting recursive search in path: '{search_path}'")
+    query_lower = search_query.lower()
+    # --- End of fix ---
+
+    def perform_search():
+        # Using os.walk to recursively search the directory
+        for root, dirs, files in os.walk(search_path):
+            # Check directories for a match first
+            for dir_name in dirs:
+                if query_lower in dir_name.lower():
+                    # Found a match, return the full path of the directory
+                    found_path = os.path.join(root, dir_name)
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Match found (directory): {found_path}")
+                    return found_path
+            # If no directory matches, check files
+            for file_name in files:
+                if query_lower in file_name.lower():
+                    # Found a match, return the full path of the file
+                    found_path = os.path.join(root, file_name)
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Match found (file): {found_path}")
+                    return found_path
+        
+        # If the loop completes without finding anything
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Search of '{search_path}' complete. No match found.")
+        return None
+
+    return await asyncio.to_thread(perform_search)
+    
 def _extract_first_int(text: str) -> Optional[int]:
     """Safely extracts the first integer from a string, ignoring trailing characters."""
     if not text:
@@ -1244,36 +1294,59 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
 
-    # --- THE FIX: New logic to handle the delete workflow ---
+    # --- UPDATED: Logic to handle the delete workflow ---
     next_action = context.user_data.get('next_action', '')
     if next_action in ['delete_movie_search', 'delete_tv_show_search']:
-        media_type = "movie" if next_action == 'delete_movie_search' else "TV show"
+        media_type = "movie" if next_action == 'delete_movie_search' else "tv_show"
         
-        # Clean up the state and get the prompt message ID
+        # Clean up state and messages from the previous step
         prompt_message_id = context.user_data.pop('prompt_message_id', None)
         context.user_data.pop('next_action', None)
-
-        # Delete the user's message with the title
         try:
             await user_message_to_delete.delete()
-        except BadRequest:
-            pass # Ignore if it's already gone
-
-        # Delete the bot's prompt message ("Please send me the title...")
-        if prompt_message_id:
-            try:
+            if prompt_message_id:
                 await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
-            except BadRequest:
-                pass # Ignore if it's already gone
-            
-        # Send a new message to acknowledge the input
-        await context.bot.send_message(
+        except BadRequest:
+            pass
+
+        # Send a "searching..." message to the user
+        status_message = await context.bot.send_message(
             chat_id=chat_id,
-            text=f"Searching for the {media_type}: '{text}'.\n\n(Note: Search and delete logic is not yet implemented in this phase.)"
+            text=f"🔎 Searching for the {media_type.replace('_', ' ')}: `{escape_markdown(text)}`\.\.\.",
+            parse_mode=ParseMode.MARKDOWN_V2
         )
-        return # Stop further processing of this message
-    # --- End of fix ---
-    
+
+        # Perform the actual search
+        save_paths = context.bot_data.get("SAVE_PATHS", {})
+        found_path = await find_media_by_name(media_type, text, save_paths)
+
+        if found_path:
+            # Item was found, store its path for the next step
+            context.user_data['path_to_delete'] = found_path
+            
+            keyboard = [[
+                InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"),
+                InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation"),
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Display just the final folder/file name for clarity
+            base_name = os.path.basename(found_path)
+            # --- THE FIX: Escaped the final question mark ---
+            await status_message.edit_text(
+                text=f"Item Found:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to permanently delete this\?",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+            # --- End of fix ---
+        else:
+            # No item was found
+            await status_message.edit_text(
+                text=f"❌ No item found matching: `{escape_markdown(text)}`",
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+        return # Stop further processing
+
     progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
 
     try:
@@ -1321,33 +1394,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id_str = str(chat_id)
     active_downloads = context.bot_data.get('active_downloads', {})
 
-    # Create a reusable keyboard for the cancel action
     cancel_keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
     reply_markup = InlineKeyboardMarkup(cancel_keyboard)
 
     if query.data == "delete_start_movie":
         context.user_data['next_action'] = 'delete_movie_search'
-        # --- THE FIX: Store the message ID before editing it ---
         context.user_data['prompt_message_id'] = message.message_id
-        # --- End of fix ---
-        await query.edit_message_text(
-            "🎬 Please send me the title of the movie to delete.",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text("🎬 Please send me the title of the movie to delete.", reply_markup=reply_markup)
         return
 
     if query.data == "delete_start_tv":
         context.user_data['next_action'] = 'delete_tv_show_search'
-        # --- THE FIX: Store the message ID before editing it ---
         context.user_data['prompt_message_id'] = message.message_id
-        # --- End of fix ---
-        await query.edit_message_text(
-            "📺 Please send me the title of the TV show to delete.",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text("📺 Please send me the title of the TV show to delete.", reply_markup=reply_markup)
         return
 
-    # --- THE FIX: Cancellation logic is now wrapped in a lock ---
+    # --- NEW: Handler for the final delete confirmation ---
+    if query.data == "confirm_delete":
+        path_to_delete = context.user_data.pop('path_to_delete', None)
+        if path_to_delete:
+            base_name = os.path.basename(path_to_delete)
+            # --- THE FIX: Escaped the periods in the message ---
+            await query.edit_message_text(
+                f"✅ Deletion confirmed for `{escape_markdown(base_name)}`\.\n\n(Note: Actual file deletion is disabled until Phase 3\.)",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=None
+            )
+            # --- End of fix ---
+        else:
+            await query.edit_message_text("❌ Error: Path to delete not found\. The action may have expired\.", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
+        return
+    # --- End of new handler ---
+
     if query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
         if chat_id_str in active_downloads:
             download_data = active_downloads[chat_id_str]
@@ -1384,31 +1462,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text("ℹ️ Could not find an active download to cancel.", reply_markup=None)
         return
-    # --- End of fix ---
 
+    # --- UPDATED: Centralized cancellation logic ---
     if query.data == "cancel_operation":
-        # Handle cancellation of the 'delete title' prompt
-        if 'next_action' in context.user_data and context.user_data['next_action'].startswith('delete_'):
-            context.user_data.pop('next_action', None)
-            await query.edit_message_text("❌ Delete operation cancelled.")
+        message_text = "❌ Operation cancelled."
         
-        # Handle cancellation of the multi-magnet selection
+        if 'path_to_delete' in context.user_data:
+            context.user_data.pop('path_to_delete', None)
+            message_text = "❌ Delete operation cancelled."
+        elif 'next_action' in context.user_data and context.user_data['next_action'].startswith('delete_'):
+            context.user_data.pop('next_action', None)
+            context.user_data.pop('prompt_message_id', None)
+            message_text = "❌ Delete operation cancelled."
         elif 'temp_magnet_choices_details' in context.user_data:
             context.user_data.pop('temp_magnet_choices_details', None)
-            await query.edit_message_text("❌ Selection cancelled.")
-        
-        # Handle cancellation of the download confirmation prompt
+            message_text = "❌ Selection cancelled."
         elif 'pending_torrent' in context.user_data:
             pending_torrent = context.user_data.pop('pending_torrent')
-            await query.edit_message_text("❌ Operation cancelled by user.")
+            message_text = "❌ Operation cancelled by user."
             if pending_torrent.get('type') == 'file' and pending_torrent.get('value') and os.path.exists(pending_torrent.get('value')):
                 os.remove(pending_torrent.get('value'))
         
-        # --- THE FIX: Catch-all for the initial, stateless prompt ---
-        else:
-            await query.edit_message_text("❌ Operation cancelled.")
-        
-        return # IMPORTANT: Exit the function after handling any cancellation.
+        await query.edit_message_text(message_text, reply_markup=None)
+        return
 
     if query.data and query.data.startswith("select_magnet_"):
         if 'temp_magnet_choices_details' not in context.user_data:
