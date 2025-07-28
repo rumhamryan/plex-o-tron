@@ -1,10 +1,9 @@
 ToDo:
 
 Reasonable features in scope and effort:
-4. pause download button would be cool
-5. A delete function that can remove files from the library (maybe not though, manual deletion will be safe and more deliberate)
-  - Should include query about movie or tv show with buttons, then the prompt for what to delete
-  - need to account for folder or file deletion paths
+1. pause download button would be cool
+2. change plexstatus to status
+3. change plexrestart to restart
 
 These two are contradictory:
 - look into deleting entire chat every time to reducing remote logging
@@ -12,7 +11,7 @@ These two are contradictory:
 
 These are the big ones:
 - multi-download support
-- auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
+2. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
     - yts.mx
     - 1337x.to

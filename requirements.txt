@@ -4,3 +4,5 @@ lxml
 flask
 python-telegram-bot
 wikipedia
+libtorrent
+plexapi
