@@ -1141,12 +1141,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not update.message: return
     
+    # Correctly formatted multi-line string for MarkdownV2.
+    # Newlines (\n) are interpreted by Python.
+    # Escaped characters (\- and \.) are passed to Telegram.
     message_text = (
-        r"Here are the available commands:\n\n"
-        r"`start` \- Show welcome message\.\n"
-        r"`plexstatus` \- Check Plex\.\n"
-        r"`plexrestart` \- Restart Plex\.\n"
-        r"`delete` \- Delete media from the library\."
+        "Here are the available commands:\n\n"
+        "`start` \- Shows the welcome message\.\n"
+        "`status` \- Checks Plex server status\.\n"
+        "`restart` \- Restarts the Plex Server\.\n"
+        "`delete` \- Delete Movies or TV Shows\."
     )
     
     try:
@@ -1996,10 +1999,9 @@ if __name__ == '__main__':
     })
     
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?hello$', re.IGNORECASE)), start_command))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?start$', re.IGNORECASE)), start_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?plexstatus$', re.IGNORECASE)), plex_status_command))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?plexrestart$', re.IGNORECASE)), plex_restart_command))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?status$', re.IGNORECASE)), plex_status_command))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?restart$', re.IGNORECASE)), plex_restart_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?delete$', re.IGNORECASE)), delete_command))
         
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

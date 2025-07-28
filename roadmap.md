@@ -4,6 +4,7 @@ Reasonable features in scope and effort:
 1. pause download button would be cool
 2. change plexstatus to status
 3. change plexrestart to restart
+4. user messages to the bot must be deleted as well, to include `status` and `restart` commands
 
 These two are contradictory:
 - look into deleting entire chat every time to reducing remote logging
@@ -11,7 +12,7 @@ These two are contradictory:
 
 These are the big ones:
 - multi-download support
-2. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
+4. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
     - yts.mx
     - 1337x.to
