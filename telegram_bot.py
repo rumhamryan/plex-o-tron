@@ -1085,13 +1085,13 @@ async def post_shutdown(application: Application):
 from telegram import Update
 from telegram.ext import CallbackContext
 
-async def start_command(update: Update, context: CallbackContext) -> None:
+async def links_command(update: Update, context: CallbackContext) -> None:
     """Sends a message with instructions and torrent site links when the /start command is issued."""
     if update.message is None:
         return
 
     message_text = """
-Send me a .torrent or .magnet link!
+I can scrape webpages for magnet and torrent links, send me a URL!
 
 For Movies:
 https://yts.mx/
@@ -1146,10 +1146,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Escaped characters (\- and \.) are passed to Telegram.
     message_text = (
         "Here are the available commands:\n\n"
-        "`start` \- Shows the welcome message\.\n"
-        "`status` \- Checks Plex server status\.\n"
+        "`links`     \- Lists popular torrent sites\.\n"
+        "`status`   \- Checks Plex server status\.\n"
         "`restart` \- Restarts the Plex Server\.\n"
-        "`delete` \- Delete Movies or TV Shows\."
+        "`delete`   \- Delete Movies or TV Shows\."
     )
     
     try:
@@ -2042,7 +2042,7 @@ if __name__ == '__main__':
         'dht_bootstrap_nodes': 'router.utorrent.com:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881'
     })
     
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?hello$', re.IGNORECASE)), start_command))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?links$', re.IGNORECASE)), links_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?status$', re.IGNORECASE)), plex_status_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?restart$', re.IGNORECASE)), plex_restart_command))

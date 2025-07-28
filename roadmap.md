@@ -1,11 +1,14 @@
 ToDo:
 
 Reasonable features in scope and effort:
-1. pause download button would be cool
-2. change plexstatus to status
-3. change plexrestart to restart
-4. user messages to the bot must be deleted as well, to include `status` and `restart` commands
-5. delete operation, tv show matching seems broken
+1. delete operation, tv show matching seems broken
+  - Have not tested with movies in folders, not sure the movie search is recursive
+  - Need to implement phase 3 once tv show path search path is working
+2. pause download
+  - send paused torrent to the back of the queue
+  - once it is the last torrent in the queue it is started again
+3. user messages to the bot must be deleted as well, to include `status` and `restart` commands
+
 
 These two are contradictory:
 - look into deleting entire chat every time to reducing remote logging
