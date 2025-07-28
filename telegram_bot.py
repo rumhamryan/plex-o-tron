@@ -1384,16 +1384,16 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
     text = update.message.text.strip()
     next_action = context.user_data.get('next_action', '')
 
-    # Clean up the previous bot prompt and the user's message
     prompt_message_id = context.user_data.pop('prompt_message_id', None)
     try:
         await update.message.delete()
         if prompt_message_id:
             await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
     except BadRequest:
-        pass # Ignore if messages are already gone
+        pass
 
-    # This is the state machine for the delete conversation
+    status_message: Message
+    # --- Start of State Machine ---
     if next_action == 'delete_movie_search':
         status_message = await context.bot.send_message(chat_id=chat_id, text=rf"🔎 Searching for movie: `{escape_markdown(text)}`\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
         save_paths = context.bot_data.get("SAVE_PATHS", {})
@@ -1440,19 +1440,19 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 keyboard = [[InlineKeyboardButton("✅ Yes, Delete Season", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
                 await status_message.edit_text(rf"Found:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to delete this entire season\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
             else:
-                await status_message.edit_text(f"❌ Could not find Season {text} in that show.", parse_mode=ParseMode.MARKDOWN_V2)
+                await status_message.edit_text(rf"❌ Could not find Season {escape_markdown(text)} in that show\.", parse_mode=ParseMode.MARKDOWN_V2)
         else:
-            await status_message.edit_text("❌ Invalid input or show context lost. Please start over.", parse_mode=ParseMode.MARKDOWN_V2)
+            await status_message.edit_text(r"❌ Invalid input or show context lost\. Please start over\.", parse_mode=ParseMode.MARKDOWN_V2)
 
     elif next_action == 'delete_tv_episode_season_prompt':
         show_path = context.user_data.get('show_path_to_delete')
         if show_path and text.isdigit():
             context.user_data['season_to_delete_num'] = int(text)
             context.user_data['next_action'] = 'delete_tv_episode_episode_prompt'
-            new_prompt = await context.bot.send_message(chat_id=chat_id, text=f"📺 Season {text} selected. Now, please send the episode number to delete.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]))
+            new_prompt = await context.bot.send_message(chat_id=chat_id, text=rf"📺 Season {escape_markdown(text)} selected\. Now, please send the episode number to delete\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]), parse_mode=ParseMode.MARKDOWN_V2)
             context.user_data['prompt_message_id'] = new_prompt.message_id
         else:
-            await context.bot.send_message(chat_id=chat_id, text="❌ Invalid season number. Please start over.", parse_mode=ParseMode.MARKDOWN_V2)
+            await context.bot.send_message(chat_id=chat_id, text=r"❌ Invalid season number\. Please start over\.", parse_mode=ParseMode.MARKDOWN_V2)
             context.user_data.pop('next_action', None)
 
     elif next_action == 'delete_tv_episode_episode_prompt':
@@ -1471,11 +1471,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                     keyboard = [[InlineKeyboardButton("✅ Yes, Delete Episode", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
                     await status_message.edit_text(rf"Found episode:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to delete this file\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
                 else:
-                    await status_message.edit_text(f"❌ Could not find Episode {text} in that season.", parse_mode=ParseMode.MARKDOWN_V2)
+                    await status_message.edit_text(rf"❌ Could not find Episode {escape_markdown(text)} in that season\.", parse_mode=ParseMode.MARKDOWN_V2)
             else:
-                await status_message.edit_text(f"❌ Could not find Season {season_num} to look for the episode in.", parse_mode=ParseMode.MARKDOWN_V2)
+                # This was the line from the traceback. It is now fixed.
+                await status_message.edit_text(rf"❌ Could not find Season {season_num} to look for the episode in\.", parse_mode=ParseMode.MARKDOWN_V2)
         else:
-            await status_message.edit_text("❌ Invalid input or context lost. Please start over.", parse_mode=ParseMode.MARKDOWN_V2)
+            await status_message.edit_text(r"❌ Invalid input or context lost\. Please start over\.", parse_mode=ParseMode.MARKDOWN_V2)
 
 async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
