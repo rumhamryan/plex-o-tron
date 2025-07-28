@@ -1426,34 +1426,45 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id_str = str(chat_id)
     active_downloads = context.bot_data.get('active_downloads', {})
     
-    # Initialize variables for the final message sending
     message_text: str = ""
     reply_markup: Optional[InlineKeyboardMarkup] = None
     parse_mode: Optional[str] = ParseMode.MARKDOWN_V2
 
-    # --- THE FIX: Guard all operations on query.data ---
     if query.data:
         if query.data == "delete_start_movie":
             context.user_data['next_action'] = 'delete_movie_search'
             context.user_data['prompt_message_id'] = message.message_id
             message_text = "🎬 Please send me the title of the movie to delete."
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
-            parse_mode = None # No markdown in this message
+            parse_mode = None
 
         elif query.data == "delete_start_tv":
             context.user_data['next_action'] = 'delete_tv_show_search'
             context.user_data['prompt_message_id'] = message.message_id
             message_text = "📺 Please send me the title of the TV show to delete."
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
-            parse_mode = None # No markdown in this message
+            parse_mode = None
 
         elif query.data == "confirm_delete":
             path_to_delete = context.user_data.pop('path_to_delete', None)
             if path_to_delete:
                 base_name = os.path.basename(path_to_delete)
-                message_text = rf"✅ Deletion confirmed for `{escape_markdown(base_name)}`\.\n\n(Note: Actual file deletion is disabled until Phase 3\.)"
+                
+                # --- THE FIX: Adopt a safer pattern for escaping text ---
+                # 1. Escape the dynamic part of the message.
+                escaped_base_name = escape_markdown(base_name)
+                # 2. Define the static note text.
+                note_text = "(Note: Actual file deletion is disabled until Phase 3.)"
+                # 3. Escape the entire static note text using the helper.
+                escaped_note_text = escape_markdown(note_text)
+                # 4. Construct the final message. Only markdown formatting characters (` `) are outside the escape calls.
+                message_text = f"✅ Deletion confirmed for `{escaped_base_name}`\.\n\n{escaped_note_text}"
+                # --- End of fix ---
+
             else:
-                message_text = r"❌ Error: Path to delete not found\. The action may have expired\."
+                # Apply the same safe pattern to the error message.
+                error_text = "Error: Path to delete not found. The action may have expired."
+                message_text = f"❌ {escape_markdown(error_text)}"
         
         elif query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
             if chat_id_str in active_downloads:
@@ -1510,13 +1521,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode = None
                 else:
                     bencoded_metadata = selected_choice['bencoded_metadata']
-                    ti = lt.torrent_info(bencoded_metadata) # type: ignore
+                    ti = lt.torrent_info(bencoded_metadata) #type: ignore
                     context.user_data['pending_magnet_link'] = selected_choice['magnet_link']
                     error_message, parsed_info = await validate_and_enrich_torrent(ti, message)
                     if error_message or not parsed_info:
-                        return # The other function already sent the error message
+                        return
                     await send_confirmation_prompt(message, context, ti, parsed_info)
-                    return # The other function handles its own message sending
+                    return
 
         elif query.data == "confirm_download":
             pending_torrent = context.user_data.pop('pending_torrent', None)
@@ -1540,9 +1551,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode = None
                 save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
                 await process_queue_for_user(chat_id, context.application)
-    # --- End of guarded block ---
 
-    # Fallback for any case where query.data might be None or unhandled
     if not message_text:
         message_text = "This action has expired or is unknown. Please try again."
         parse_mode = None
