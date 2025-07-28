@@ -995,8 +995,31 @@ https://1337x.to/
 """
     await update.message.reply_text(welcome_message)
 
-# You would then register this handler in your main bot setup, for example:
-# application.add_handler(CommandHandler("start", start))
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(NEW) Starts the conversation to delete media from the library."""
+    if not await is_user_authorized(update, context):
+        return
+    if not update.message: return
+
+    # Delete the user's /delete command message to keep the chat clean
+    try:
+        await update.message.delete()
+    except BadRequest as e:
+        if "Message to delete not found" not in str(e):
+             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not delete user's /delete command: {e}")
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🎬 Movie", callback_data="delete_start_movie"),
+            InlineKeyboardButton("📺 TV Show", callback_data="delete_start_tv"),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "What type of media do you want to delete?", reply_markup=reply_markup
+    )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides a formatted list of available commands."""
@@ -1220,6 +1243,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data is None:
         context.user_data = {}
+
+    # Check if we are waiting for a title to delete
+    next_action = context.user_data.get('next_action', '')
+    if next_action in ['delete_movie_search', 'delete_tv_show_search']:
+        media_type = "movie" if next_action == 'delete_movie_search' else "TV show"
+        
+        # Acknowledge the input and clear the state
+        await update.message.reply_text(
+            f"Received request to find the {media_type}: '{text}'.\n\n(Note: Search and delete logic is not yet implemented in this phase.)"
+        )
+        context.user_data.pop('next_action', None)
+        return # Stop further processing of this message
     
     progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
 
@@ -1267,6 +1302,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = message.chat_id
     chat_id_str = str(chat_id)
     active_downloads = context.bot_data.get('active_downloads', {})
+
+    if query.data == "delete_start_movie":
+        context.user_data['next_action'] = 'delete_movie_search'
+        await query.edit_message_text(
+            "🎬 Please send me the title of the movie to delete.",
+            reply_markup=None # Remove buttons
+        )
+        return
+
+    if query.data == "delete_start_tv":
+        context.user_data['next_action'] = 'delete_tv_show_search'
+        await query.edit_message_text(
+            "📺 Please send me the title of the TV show to delete.",
+            reply_markup=None # Remove buttons
+        )
+        return
 
     # --- THE FIX: Cancellation logic is now wrapped in a lock ---
     if query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
@@ -1776,6 +1827,7 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?plexstatus$', re.IGNORECASE)), plex_status_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?plexrestart$', re.IGNORECASE)), plex_restart_command))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?delete$', re.IGNORECASE)), delete_command))
         
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_handler))
