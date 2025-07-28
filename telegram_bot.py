@@ -158,6 +158,10 @@ def parse_torrent_name(name: str) -> dict:
     title = re.sub(r'\s+', ' ', title).strip()
     return {'type': 'unknown', 'title': title}
 
+def _normalize_for_comparison(text: str) -> str:
+    """Converts text to lowercase and removes all non-alphanumeric characters for fuzzy matching."""
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
 def generate_plex_filename(parsed_info: dict, original_extension: str) -> str:
     """Generates a clean, Plex-friendly filename from the parsed info."""
     title = parsed_info.get('title', 'Unknown Title')
@@ -197,7 +201,6 @@ async def find_media_by_name(
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    # --- THE FIX: Added comprehensive logging ---
     print(f"[{ts}] [DELETE SEARCH] Initiated search for type='{media_type}', query='{search_query}'")
     
     search_path_key = 'movies' if media_type == 'movie' else 'tv_shows'
@@ -207,29 +210,29 @@ async def find_media_by_name(
         print(f"[{ts}] [DELETE SEARCH] ERROR: Invalid or missing search path for key '{search_path_key}'. Path: '{search_path}'")
         return None
 
-    print(f"[{ts}] [DELETE SEARCH] Starting recursive search in path: '{search_path}'")
-    query_lower = search_query.lower()
-    # --- End of fix ---
+    normalized_query = _normalize_for_comparison(search_query)
+    print(f"[{ts}] [DELETE SEARCH] Starting recursive search in path: '{search_path}' for normalized query: '{normalized_query}'")
 
     def perform_search():
-        # Using os.walk to recursively search the directory
         for root, dirs, files in os.walk(search_path):
-            # Check directories for a match first
+            # Check directories
             for dir_name in dirs:
-                if query_lower in dir_name.lower():
-                    # Found a match, return the full path of the directory
+                # --- THE FIX: Normalize the directory name before comparing ---
+                normalized_dir_name = _normalize_for_comparison(dir_name)
+                if normalized_query in normalized_dir_name:
                     found_path = os.path.join(root, dir_name)
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Match found (directory): {found_path}")
                     return found_path
-            # If no directory matches, check files
+            
+            # Check files
             for file_name in files:
-                if query_lower in file_name.lower():
-                    # Found a match, return the full path of the file
+                # --- THE FIX: Normalize the file name before comparing ---
+                normalized_file_name = _normalize_for_comparison(file_name)
+                if normalized_query in normalized_file_name:
                     found_path = os.path.join(root, file_name)
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Match found (file): {found_path}")
                     return found_path
         
-        # If the loop completes without finding anything
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Search of '{search_path}' complete. No match found.")
         return None
 
