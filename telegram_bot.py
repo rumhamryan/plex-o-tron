@@ -1244,17 +1244,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
 
-    # Check if we are waiting for a title to delete
+    # --- THE FIX: New logic to handle the delete workflow ---
     next_action = context.user_data.get('next_action', '')
     if next_action in ['delete_movie_search', 'delete_tv_show_search']:
         media_type = "movie" if next_action == 'delete_movie_search' else "TV show"
         
-        # Acknowledge the input and clear the state
-        await update.message.reply_text(
-            f"Received request to find the {media_type}: '{text}'.\n\n(Note: Search and delete logic is not yet implemented in this phase.)"
-        )
+        # Clean up the state and get the prompt message ID
+        prompt_message_id = context.user_data.pop('prompt_message_id', None)
         context.user_data.pop('next_action', None)
+
+        # Delete the user's message with the title
+        try:
+            await user_message_to_delete.delete()
+        except BadRequest:
+            pass # Ignore if it's already gone
+
+        # Delete the bot's prompt message ("Please send me the title...")
+        if prompt_message_id:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+            except BadRequest:
+                pass # Ignore if it's already gone
+            
+        # Send a new message to acknowledge the input
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"Searching for the {media_type}: '{text}'.\n\n(Note: Search and delete logic is not yet implemented in this phase.)"
+        )
         return # Stop further processing of this message
+    # --- End of fix ---
     
     progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
 
@@ -1303,19 +1321,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id_str = str(chat_id)
     active_downloads = context.bot_data.get('active_downloads', {})
 
+    # Create a reusable keyboard for the cancel action
+    cancel_keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+    reply_markup = InlineKeyboardMarkup(cancel_keyboard)
+
     if query.data == "delete_start_movie":
         context.user_data['next_action'] = 'delete_movie_search'
+        # --- THE FIX: Store the message ID before editing it ---
+        context.user_data['prompt_message_id'] = message.message_id
+        # --- End of fix ---
         await query.edit_message_text(
             "🎬 Please send me the title of the movie to delete.",
-            reply_markup=None # Remove buttons
+            reply_markup=reply_markup
         )
         return
 
     if query.data == "delete_start_tv":
         context.user_data['next_action'] = 'delete_tv_show_search'
+        # --- THE FIX: Store the message ID before editing it ---
+        context.user_data['prompt_message_id'] = message.message_id
+        # --- End of fix ---
         await query.edit_message_text(
             "📺 Please send me the title of the TV show to delete.",
-            reply_markup=None # Remove buttons
+            reply_markup=reply_markup
         )
         return
 
@@ -1359,16 +1387,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- End of fix ---
 
     if query.data == "cancel_operation":
-        if 'temp_magnet_choices_details' in context.user_data:
+        # Handle cancellation of the 'delete title' prompt
+        if 'next_action' in context.user_data and context.user_data['next_action'].startswith('delete_'):
+            context.user_data.pop('next_action', None)
+            await query.edit_message_text("❌ Delete operation cancelled.")
+        
+        # Handle cancellation of the multi-magnet selection
+        elif 'temp_magnet_choices_details' in context.user_data:
             context.user_data.pop('temp_magnet_choices_details', None)
             await query.edit_message_text("❌ Selection cancelled.")
-            return
-        if 'pending_torrent' in context.user_data:
+        
+        # Handle cancellation of the download confirmation prompt
+        elif 'pending_torrent' in context.user_data:
             pending_torrent = context.user_data.pop('pending_torrent')
             await query.edit_message_text("❌ Operation cancelled by user.")
             if pending_torrent.get('type') == 'file' and pending_torrent.get('value') and os.path.exists(pending_torrent.get('value')):
                 os.remove(pending_torrent.get('value'))
-            return
+        
+        # --- THE FIX: Catch-all for the initial, stateless prompt ---
+        else:
+            await query.edit_message_text("❌ Operation cancelled.")
+        
+        return # IMPORTANT: Exit the function after handling any cancellation.
 
     if query.data and query.data.startswith("select_magnet_"):
         if 'temp_magnet_choices_details' not in context.user_data:
