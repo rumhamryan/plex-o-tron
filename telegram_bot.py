@@ -240,24 +240,28 @@ async def find_media_by_name(
 
 async def find_season_directory(show_path: str, season_number: int) -> Optional[str]:
     """
-    (NEW) Finds a season directory within a show's directory.
-    Looks for formats like 'Season 01', 'Season 1', etc.
+    (REBUILT) Finds a season directory using a flexible regex search.
+    Looks for the season number as a whole word (e.g., '1' or '01').
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{ts}] [DELETE SEARCH] Searching for season {season_number} in path: {show_path}")
 
     def perform_search():
-        # Common season folder formats
-        search_patterns = [f"season {season_number}", f"season{season_number}", f"season_{season_number}"]
+        # --- THE FIX: Use a robust regular expression ---
+        # This pattern looks for the season number as a whole word.
+        # \b ensures that searching for '1' doesn't match '10'.
+        # It checks for both the plain number (1) and the zero-padded version (01).
+        pattern = re.compile(rf'\b({season_number}|{str(season_number).zfill(2)})\b')
         
         for item in os.listdir(show_path):
             item_path = os.path.join(show_path, item)
             if os.path.isdir(item_path):
-                for pattern in search_patterns:
-                    # Check for "Season 01" and "Season 1" by using zfill
-                    if pattern.lower() == item.lower() or f"season {str(season_number).zfill(2)}" == item.lower():
-                        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Found season directory: {item_path}")
-                        return item_path
+                # Check if the directory name contains the season number as a whole word.
+                if pattern.search(item):
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Flexible match found for season directory: {item_path}")
+                    return item_path
+        # --- End of fix ---
+        
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] No season directory found for season {season_number}.")
         return None
 
