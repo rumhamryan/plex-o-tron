@@ -1218,9 +1218,7 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] Success! Connected.")
         
         message_text = (
-            f"Plex Status: ✅ *Connected*\n\n"
-            f"*Server Version:* `{escape_markdown(server_version)}`\n"
-            f"*Platform:* `{escape_markdown(server_platform)}`"
+            f"Plex Status: ✅ *Connected*"
         )
         try:
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
@@ -1230,9 +1228,10 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Unauthorized:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] ERROR: Unauthorized.")
+        # --- FIX: Changed from rf"..." to f"..." and ensured newlines and escapes are correct. ---
         message_text = (
-            rf"Plex Status: ❌ *Authentication Failed*\n\n"
-            rf"The Plex API token is incorrect\. Please check your `config\.ini` file\."
+            f"Plex Status: ❌ *Authentication Failed*\n\n"
+            f"The Plex API token is incorrect\\. Please check your `config\\.ini` file\\."
         )
         try:
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
@@ -1242,10 +1241,11 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Exception as e:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] ERROR: {e}")
+        # --- FIX: Changed from rf"..." to f"..." and ensured newlines and escapes are correct. ---
         message_text = (
-            rf"Plex Status: ❌ *Connection Failed*\n"
-            rf"Could not connect to the Plex server at `{escape_markdown(plex_config['url'])}`\. "
-            rf"Please ensure the server is running and accessible\."
+            f"Plex Status: ❌ *Connection Failed*\n"
+            f"Could not connect to the Plex server at `{escape_markdown(plex_config['url'])}`\\. "
+            f"Please ensure the server is running and accessible\\."
         )
         try:
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
@@ -1301,7 +1301,8 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     except subprocess.CalledProcessError as e:
         error_output = e.stderr or e.stdout
-        message_text = rf"❌ *Script Failed*\n\nThis almost always means the `sudoers` rule for `restart_plex.sh` is incorrect or missing\.\n\n*Details:*\n`{escape_markdown(error_output)}`"
+        # --- FIX: Changed from rf"..." to f"..." and ensured newlines and escapes are correct. ---
+        message_text = f"❌ *Script Failed*\n\nThis almost always means the `sudoers` rule for `restart_plex\\.sh` is incorrect or missing\\.\n\n*Details:*\n`{escape_markdown(error_output)}`"
         print(f"[{ts}] [PLEX RESTART] ERROR executing script: {error_output}")
         try:
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
@@ -1567,12 +1568,11 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         if show_path:
             context.user_data['path_to_delete'] = show_path
             base_name = os.path.basename(show_path)
-            # --- THE FIX: Added the full path to the confirmation message ---
+            # --- FIX: Changed from rf"..." to f"..." and ensured newlines and escapes are correct. ---
             message_text = (
-                rf"Are you sure you want to delete the ENTIRE show `{escape_markdown(base_name)}` and all its contents\?"
-                rf"\n\n*Path:*\n`{escape_markdown(show_path)}`"
+                f"Are you sure you want to delete the ENTIRE show `{escape_markdown(base_name)}` and all its contents\\?\n\n"
+                f"*Path:*\n`{escape_markdown(show_path)}`"
             )
-            # --- End of fix ---
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Yes, Delete All", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]])
             parse_mode = ParseMode.MARKDOWN_V2
         else:
