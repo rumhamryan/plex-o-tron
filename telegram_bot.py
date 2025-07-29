@@ -38,7 +38,7 @@ ALLOWED_EXTENSIONS = ['.mkv', '.mp4']
 
 def escape_markdown(text: str) -> str:
     """Helper function to escape telegram's special characters."""
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    escape_chars = r'_*[]()~`>#+-=|{}.!\\'
     return re.sub(rf'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 def get_configuration() -> tuple[str, dict, list[int], dict]:
@@ -1404,6 +1404,8 @@ async def process_queue_for_user(chat_id: int, application: Application):
     else:
         print(f"[{ts}] [QUEUE_PROCESSOR] Invoked for {chat_id_str}, but their queue is empty. No action taken.")
 
+# NO CHANGES ARE NEEDED IN THIS FUNCTION.
+# It is now fixed because it calls the updated escape_markdown() helper.
 async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     (NEW) Manages the entire multi-step conversation for deleting media.
@@ -1436,14 +1438,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data['path_to_delete'] = found_path
             base_name = os.path.basename(found_path)
             keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-            # --- THE FIX: Changed from rf"..." to f"..." to correctly process \n ---
             message_text = (
                 f"Item Found:\n`{escape_markdown(base_name)}`\n\n"
                 f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
                 f"Are you sure you want to permanently delete this\\?"
             )
             await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
-            # --- End of fix ---
         else:
             await status_message.edit_text(f"❌ No movie found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -1477,14 +1477,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 context.user_data['path_to_delete'] = found_path
                 base_name = os.path.basename(found_path)
                 keyboard = [[InlineKeyboardButton("✅ Yes, Delete Season", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-                # --- THE FIX: Changed from rf"..." to f"..." to correctly process \n ---
                 message_text = (
                     f"Found Season:\n`{escape_markdown(base_name)}`\n\n"
                     f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
                     f"Are you sure you want to delete this entire season\\?"
                 )
                 await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
-                # --- End of fix ---
             else:
                 await status_message.edit_text(rf"❌ Could not find Season {escape_markdown(text)} in that show\.", parse_mode=ParseMode.MARKDOWN_V2)
         else:
@@ -1515,14 +1513,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                     context.user_data['path_to_delete'] = found_path
                     base_name = os.path.basename(found_path)
                     keyboard = [[InlineKeyboardButton("✅ Yes, Delete Episode", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-                    # --- THE FIX: Changed from rf"..." to f"..." to correctly process \n ---
                     message_text = (
                         f"Found Episode:\n`{escape_markdown(base_name)}`\n\n"
                         f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
                         f"Are you sure you want to delete this file\\?"
                     )
                     await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
-                    # --- End of fix ---
                 else:
                     await status_message.edit_text(rf"❌ Could not find Episode {escape_markdown(text)} in that season\.", parse_mode=ParseMode.MARKDOWN_V2)
             else:
