@@ -1,13 +1,10 @@
 ToDo:
 
 Reasonable features in scope and effort:
-1. delete operation, tv show matching seems broken
-  - Have not tested with movies in folders, not sure the movie search is recursive
-  - Need to implement phase 3 once tv show path search path is working
-2. pause download
+1. pause download
   - send paused torrent to the back of the queue
   - once it is the last torrent in the queue it is started again
-3. user messages to the bot must be deleted as well, to include `status` and `restart` commands
+2. user messages to the bot must be deleted as well, to include `status` and `restart` commands
 
 
 These two are contradictory:
@@ -16,7 +13,7 @@ These two are contradictory:
 
 These are the big ones:
 - multi-download support
-4. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
+3. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
     - yts.mx
     - 1337x.to

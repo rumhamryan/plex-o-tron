@@ -209,9 +209,9 @@ async def find_media_by_name(
     search_target: str = 'any'  # 'any', 'directory', or 'file'
 ) -> Optional[str]:
     """
-    (NEW - SAFE SEARCH) Recursively searches for a media file/folder.
-    Returns the full path of the first match found, otherwise None.
-    This function is designed to be run in a separate thread to avoid blocking.
+    (REVISED - BEST MATCH) Recursively searches for a media file/folder. It now finds all
+    potential matches and returns the one with the shortest name, which is the most likely
+    to be the correct one.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
@@ -224,37 +224,39 @@ async def find_media_by_name(
         print(f"[{ts}] [DELETE SEARCH] ERROR: Invalid or missing search path for key '{search_path_key}'. Path: '{search_path}'")
         return None
 
-    if media_type == 'movie':
-        normalize_func = _normalize_movie_name_for_search
-        normalized_query = normalize_func(search_query)
-    else:
-        normalize_func = _normalize_for_comparison
-        normalized_query = normalize_func(search_query)
+    normalize_func = _normalize_movie_name_for_search if media_type == 'movie' else _normalize_for_comparison
+    normalized_query = normalize_func(search_query)
 
     print(f"[{ts}] [DELETE SEARCH] Starting recursive search in path: '{search_path}' for normalized query: '{normalized_query}'")
 
-    def perform_search():
+    def perform_search() -> Optional[str]:
+        """Synchronous helper to find the best match."""
+        potential_matches: List[Tuple[str, str]] = []
+
         for root, dirs, files in os.walk(search_path):
-            # Search directories if requested
+            items_to_check = []
             if search_target in ['directory', 'any']:
-                for dir_name in dirs:
-                    normalized_dir_name = normalize_func(dir_name)
-                    if normalized_query in normalized_dir_name:
-                        found_path = os.path.join(root, dir_name)
-                        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Match found (directory): {found_path}")
-                        return found_path
-            
-            # Search files if requested
+                items_to_check.extend(dirs)
             if search_target in ['file', 'any']:
-                for file_name in files:
-                    normalized_file_name = normalize_func(file_name)
-                    if normalized_query in normalized_file_name:
-                        found_path = os.path.join(root, file_name)
-                        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Match found (file): {found_path}")
-                        return found_path
+                items_to_check.extend(files)
+
+            for item_name in items_to_check:
+                normalized_item_name = normalize_func(item_name)
+                if normalized_query in normalized_item_name:
+                    full_path = os.path.join(root, item_name)
+                    potential_matches.append((full_path, normalized_item_name))
+
+        if not potential_matches:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Search of '{search_path}' complete. No match found.")
+            return None
+
+        # Sort matches by the length of the normalized name. Shorter is better.
+        potential_matches.sort(key=lambda x: len(x[1]))
         
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Search of '{search_path}' complete. No match found.")
-        return None
+        best_match_path = potential_matches[0][0]
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Found {len(potential_matches)} potential match(es). Best match: {best_match_path}")
+        
+        return best_match_path
 
     return await asyncio.to_thread(perform_search)
 
@@ -1501,7 +1503,7 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 [InlineKeyboardButton("▶️ Episode", callback_data="delete_tv_episode")],
                 [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
             ]
-            await status_message.edit_text(rf"Found show: `{escape_markdown(base_name)}`\.\n\nWhat would you like to delete\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+            await status_message.edit_text(f"Found show: `{escape_markdown(base_name)}`\.\n\nWhat would you like to delete\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         else:
             await status_message.edit_text(f"❌ No TV show found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -1523,7 +1525,7 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 )
                 await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
             else:
-                await status_message.edit_text(rf"❌ Could not find Season {escape_markdown(text)} in that show\.", parse_mode=ParseMode.MARKDOWN_V2)
+                await status_message.edit_text(f"❌ Could not find Season {escape_markdown(text)} in that show\.", parse_mode=ParseMode.MARKDOWN_V2)
         else:
             await status_message.edit_text(r"❌ Invalid input or show context lost\. Please start over\.", parse_mode=ParseMode.MARKDOWN_V2)
 
