@@ -601,13 +601,15 @@ async def _update_fetch_timer(progress_message: Message, timeout: int, cancel_ev
         if elapsed > timeout:
             break
             
+        # --- THE FIX: Changed from rf"..." to f"..." to correctly process \n ---
         message_text = (
-            rf"⬇️ *Fetching Metadata\.\.\.*\n"
-            rf"`Magnet Link`\n\n"
-            rf"*Please wait, this can be slow\.*\n"
-            rf"*The bot is NOT frozen\.*\n\n"
-            rf"Elapsed Time: `{elapsed}s`"
+            f"⬇️ *Fetching Metadata\\.\\.\\.*\n"
+            f"`Magnet Link`\n\n"
+            f"*Please wait, this can be slow\\.*\n"
+            f"*The bot is NOT frozen\\.*\n\n"
+            f"Elapsed Time: `{elapsed}s`"
         )
+        # --- End of fix ---
         try:
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
@@ -961,7 +963,7 @@ async def send_confirmation_prompt(
         display_name = f"{parsed_info['title']} ({parsed_info['year']})"
     elif parsed_info['type'] == 'tv':
         base_name = f"{parsed_info['title']} - S{parsed_info['season']:02d}E{parsed_info['episode']:02d}"
-        display_name = f"{base_name} - {parsed_info['episode_title']}" if parsed_info.get('episode_title') else base_name
+        display_name = f"{base_name} - {parsed_info.get('episode_title')}" if parsed_info.get('episode_title') else base_name
     else:
         display_name = parsed_info['title']
 
@@ -970,12 +972,14 @@ async def send_confirmation_prompt(
     total_size_str = format_bytes(ti.total_size())
     details_line = f"{resolution} | {file_type_str} | {total_size_str}"
 
+    # --- THE FIX: Using a standard multi-line f-string for proper newlines ---
     message_text = (
         f"✅ *Validation Passed*\n\n"
         f"*Name:* {escape_markdown(display_name)}\n"
         f"*Details:* `{escape_markdown(details_line)}`\n\n"
         f"Do you want to start this download?"
     )
+    # --- End of fix ---
 
     keyboard = [[
         InlineKeyboardButton("✅ Confirm Download", callback_data="confirm_download"),
@@ -1431,11 +1435,11 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data['path_to_delete'] = found_path
             base_name = os.path.basename(found_path)
             keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-            # --- THE FIX: Added the full path to the confirmation message ---
+            # --- THE FIX: Changed from rf"..." to f"..." to correctly process \n ---
             message_text = (
-                rf"Item Found:\n`{escape_markdown(base_name)}`\n\n"
-                rf"*Path:*\n`{escape_markdown(found_path)}`\n\n"
-                rf"Are you sure you want to permanently delete this\?"
+                f"Item Found:\n`{escape_markdown(base_name)}`\n\n"
+                f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
+                f"Are you sure you want to permanently delete this\\?"
             )
             await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
             # --- End of fix ---
@@ -1472,11 +1476,11 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 context.user_data['path_to_delete'] = found_path
                 base_name = os.path.basename(found_path)
                 keyboard = [[InlineKeyboardButton("✅ Yes, Delete Season", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-                # --- THE FIX: Added the full path to the confirmation message ---
+                # --- THE FIX: Changed from rf"..." to f"..." to correctly process \n ---
                 message_text = (
-                    rf"Found Season:\n`{escape_markdown(base_name)}`\n\n"
-                    rf"*Path:*\n`{escape_markdown(found_path)}`\n\n"
-                    rf"Are you sure you want to delete this entire season\?"
+                    f"Found Season:\n`{escape_markdown(base_name)}`\n\n"
+                    f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
+                    f"Are you sure you want to delete this entire season\\?"
                 )
                 await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
                 # --- End of fix ---
@@ -1510,11 +1514,11 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                     context.user_data['path_to_delete'] = found_path
                     base_name = os.path.basename(found_path)
                     keyboard = [[InlineKeyboardButton("✅ Yes, Delete Episode", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-                    # --- THE FIX: Added the full path to the confirmation message ---
+                    # --- THE FIX: Changed from rf"..." to f"..." to correctly process \n ---
                     message_text = (
-                        rf"Found Episode:\n`{escape_markdown(base_name)}`\n\n"
-                        rf"*Path:*\n`{escape_markdown(found_path)}`\n\n"
-                        rf"Are you sure you want to delete this file\?"
+                        f"Found Episode:\n`{escape_markdown(base_name)}`\n\n"
+                        f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
+                        f"Are you sure you want to delete this file\\?"
                     )
                     await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
                     # --- End of fix ---
@@ -1793,6 +1797,7 @@ class ProgressReporter:
             else:
                 name_str = f"`{escape_markdown(self.clean_name)}`"
 
+            # --- THE FIX: Using a standard multi-line f-string for proper newlines ---
             message_text = (
                 f"⬇️ *Downloading:*\n{name_str}\n"
                 f"*Progress:* {escape_markdown(f'{progress_percent:.2f}')}%\n"
@@ -1800,6 +1805,7 @@ class ProgressReporter:
                 f"*Peers:* {status.num_peers}\n"
                 f"*Speed:* {escape_markdown(f'{speed_mbps:.2f}')} MB/s"
             )
+            # --- End of fix ---
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]])
             
             try:
