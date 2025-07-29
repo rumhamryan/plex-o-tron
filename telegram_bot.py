@@ -1431,7 +1431,14 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data['path_to_delete'] = found_path
             base_name = os.path.basename(found_path)
             keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-            await status_message.edit_text(rf"Item Found:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to permanently delete this\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+            # --- THE FIX: Added the full path to the confirmation message ---
+            message_text = (
+                rf"Item Found:\n`{escape_markdown(base_name)}`\n\n"
+                rf"*Path:*\n`{escape_markdown(found_path)}`\n\n"
+                rf"Are you sure you want to permanently delete this\?"
+            )
+            await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+            # --- End of fix ---
         else:
             await status_message.edit_text(f"❌ No movie found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -1465,7 +1472,14 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 context.user_data['path_to_delete'] = found_path
                 base_name = os.path.basename(found_path)
                 keyboard = [[InlineKeyboardButton("✅ Yes, Delete Season", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-                await status_message.edit_text(rf"Found:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to delete this entire season\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+                # --- THE FIX: Added the full path to the confirmation message ---
+                message_text = (
+                    rf"Found Season:\n`{escape_markdown(base_name)}`\n\n"
+                    rf"*Path:*\n`{escape_markdown(found_path)}`\n\n"
+                    rf"Are you sure you want to delete this entire season\?"
+                )
+                await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+                # --- End of fix ---
             else:
                 await status_message.edit_text(rf"❌ Could not find Season {escape_markdown(text)} in that show\.", parse_mode=ParseMode.MARKDOWN_V2)
         else:
@@ -1496,11 +1510,17 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                     context.user_data['path_to_delete'] = found_path
                     base_name = os.path.basename(found_path)
                     keyboard = [[InlineKeyboardButton("✅ Yes, Delete Episode", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-                    await status_message.edit_text(rf"Found episode:\n`{escape_markdown(base_name)}`\n\nAre you sure you want to delete this file\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+                    # --- THE FIX: Added the full path to the confirmation message ---
+                    message_text = (
+                        rf"Found Episode:\n`{escape_markdown(base_name)}`\n\n"
+                        rf"*Path:*\n`{escape_markdown(found_path)}`\n\n"
+                        rf"Are you sure you want to delete this file\?"
+                    )
+                    await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+                    # --- End of fix ---
                 else:
                     await status_message.edit_text(rf"❌ Could not find Episode {escape_markdown(text)} in that season\.", parse_mode=ParseMode.MARKDOWN_V2)
             else:
-                # This was the line from the traceback. It is now fixed.
                 await status_message.edit_text(rf"❌ Could not find Season {season_num} to look for the episode in\.", parse_mode=ParseMode.MARKDOWN_V2)
         else:
             await status_message.edit_text(r"❌ Invalid input or context lost\. Please start over\.", parse_mode=ParseMode.MARKDOWN_V2)
@@ -1543,7 +1563,12 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         if show_path:
             context.user_data['path_to_delete'] = show_path
             base_name = os.path.basename(show_path)
-            message_text = rf"Are you sure you want to delete the ENTIRE show `{escape_markdown(base_name)}` and all its contents\?"
+            # --- THE FIX: Added the full path to the confirmation message ---
+            message_text = (
+                rf"Are you sure you want to delete the ENTIRE show `{escape_markdown(base_name)}` and all its contents\?"
+                rf"\n\n*Path:*\n`{escape_markdown(show_path)}`"
+            )
+            # --- End of fix ---
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Yes, Delete All", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]])
             parse_mode = ParseMode.MARKDOWN_V2
         else:
