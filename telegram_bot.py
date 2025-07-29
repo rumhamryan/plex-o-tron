@@ -1127,8 +1127,22 @@ from telegram import Update
 from telegram.ext import CallbackContext
 
 async def links_command(update: Update, context: CallbackContext) -> None:
-    """Sends a message with instructions and torrent site links when the /start command is issued."""
+    """Sends a message with instructions and torrent site links when the /links command is issued."""
+    if not await is_user_authorized(update, context):
+        return
     if update.message is None:
+        return
+
+    try:
+        await update.message.delete()
+    except BadRequest:
+        # This can happen if the bot doesn't have delete permissions
+        # or if the message is too old. It's safe to ignore.
+        pass
+
+    chat = update.effective_chat
+    if not chat:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] links_command was triggered but could not find an effective_chat.")
         return
 
     message_text = """
@@ -1144,10 +1158,11 @@ https://eztvx.to/
 https://1337x.to/
 """
     try:
-        await update.message.reply_text(message_text)
+        # Now we use the guarded 'chat' variable
+        await context.bot.send_message(chat_id=chat.id, text=message_text)
     except BadRequest as e:
         if "Message is not modified" not in str(e):
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send start message: {e}")
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send links message: {e}")
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """(NEW) Starts the conversation to delete media from the library."""
@@ -1181,20 +1196,30 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_user_authorized(update, context):
         return
     if not update.message: return
+
+    try:
+        await update.message.delete()
+    except BadRequest:
+        pass
+
+    chat = update.effective_chat
+    if not chat:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] help_command was triggered but could not find an effective_chat.")
+        return
     
-    # Correctly formatted multi-line string for MarkdownV2.
-    # Newlines (\n) are interpreted by Python.
-    # Escaped characters (\- and \.) are passed to Telegram.
     message_text = (
         "Here are the available commands:\n\n"
+        "`delete`   \- Delete Movies or TV Shows\.\n"
+        "`help`       \- Displays this message\. \n"
         "`links`     \- Lists popular torrent sites\.\n"
-        "`status`   \- Checks Plex server status\.\n"
         "`restart` \- Restarts the Plex Server\.\n"
-        "`delete`   \- Delete Movies or TV Shows\."
+        "`status`   \- Checks Plex server status\."
     )
     
     try:
-        await update.message.reply_text(
+        # Use the guarded 'chat' variable
+        await context.bot.send_message(
+            chat_id=chat.id,
             text=message_text,
             parse_mode=ParseMode.MARKDOWN_V2
         )
@@ -1208,9 +1233,20 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     if not update.message: return
 
+    try:
+        await update.message.delete()
+    except BadRequest:
+        pass
+
+    chat = update.effective_chat
+    if not chat:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] plex_status_command was triggered but could not find an effective_chat.")
+        return
+
     status_message = None
     try:
-        status_message = await update.message.reply_text("Plex Status: 🟡 Checking connection...")
+        # Use the guarded 'chat' variable
+        status_message = await context.bot.send_message(chat_id=chat.id, text="Plex Status: 🟡 Checking connection...")
     except BadRequest as e:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send initial plex status message: {e}")
         return
@@ -1230,6 +1266,7 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         print(f"[{ts}] [PLEX STATUS] Attempting to connect to Plex server...")
         plex = await asyncio.to_thread(PlexServer, plex_config['url'], plex_config['token'])
+        # These values are retrieved but not used in the message, which is fine.
         server_version = plex.version
         server_platform = plex.platform
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] Success! Connected.")
@@ -1245,7 +1282,6 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Unauthorized:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] ERROR: Unauthorized.")
-        # --- FIX: Changed from rf"..." to f"..." and ensured newlines and escapes are correct. ---
         message_text = (
             f"Plex Status: ❌ *Authentication Failed*\n\n"
             f"The Plex API token is incorrect\\. Please check your `config\\.ini` file\\."
@@ -1258,7 +1294,6 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Exception as e:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PLEX STATUS] ERROR: {e}")
-        # --- FIX: Changed from rf"..." to f"..." and ensured newlines and escapes are correct. ---
         message_text = (
             f"Plex Status: ❌ *Connection Failed*\n"
             f"Could not connect to the Plex server at `{escape_markdown(plex_config['url'])}`\\. "
@@ -1276,16 +1311,28 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     if not update.message: return
 
+    try:
+        await update.message.delete()
+    except BadRequest:
+        pass
+
+    chat = update.effective_chat
+    if not chat:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] plex_restart_command was triggered but could not find an effective_chat.")
+        return
+
     if platform.system() != "Linux":
         try:
-            await update.message.reply_text("This command is configured to run on Linux only.")
+            # Use the guarded 'chat' variable
+            await context.bot.send_message(chat_id=chat.id, text="This command is configured to run on Linux only.")
         except BadRequest as e:
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send plex restart message: {e}")
         return
 
     status_message = None
     try:
-        status_message = await update.message.reply_text("Plex Restart: 🟡 Sending restart command to the server...")
+        # Use the guarded 'chat' variable
+        status_message = await context.bot.send_message(chat_id=chat.id, text="Plex Restart: 🟡 Sending restart command to the server...")
     except BadRequest as e:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send initial plex restart message: {e}")
         return
@@ -1297,7 +1344,7 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
         print(f"[{ts}] [PLEX RESTART] ERROR: Wrapper script not found at {script_path}")
         message_text = "❌ *Error:* The `restart_plex.sh` script was not found in the bot's directory."
         try:
-            await status_message.edit_text(message_text)
+            await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
@@ -1318,7 +1365,6 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     except subprocess.CalledProcessError as e:
         error_output = e.stderr or e.stdout
-        # --- FIX: Changed from rf"..." to f"..." and ensured newlines and escapes are correct. ---
         message_text = f"❌ *Script Failed*\n\nThis almost always means the `sudoers` rule for `restart_plex\\.sh` is incorrect or missing\\.\n\n*Details:*\n`{escape_markdown(error_output)}`"
         print(f"[{ts}] [PLEX RESTART] ERROR executing script: {error_output}")
         try:
