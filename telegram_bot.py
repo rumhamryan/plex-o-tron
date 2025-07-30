@@ -15,7 +15,7 @@ import configparser
 import sys
 import urllib.parse
 import math
-from typing import Optional, Dict, Tuple, List, Set, Any
+from typing import Optional, Dict, Tuple, List, Set, Any, Union
 import shutil
 import subprocess
 import platform
@@ -212,74 +212,85 @@ async def find_media_by_name(
     media_type: str,
     search_query: str,
     save_paths: Dict[str, str],
-    search_target: str = 'any'  # 'any', 'directory', or 'file'
-) -> Optional[str]:
+    search_target: str = 'any'
+) -> Union[str, List[str], None]:
     """
-    (FINAL REVISION) Finds the best media match using a robust two-stage process.
-    1. First, it seeks a perfect name match (ignoring case, year, etc.).
-    2. If no perfect match is found, it falls back to fuzzy matching.
+    (CORRECTED) Finds media by name, returning a single path for a unique best
+    match, or a list of paths if multiple matches share the top score.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
     print(f"[{ts}] [DELETE SEARCH] Initiated for type='{media_type}', query='{search_query}'")
-    
+
     search_path_key = 'movies' if media_type == 'movie' else 'tv_shows'
     search_path_str = save_paths.get(search_path_key)
-    
-    if not search_path_str or not Path(search_path_str).is_dir():
-        print(f"[{ts}] [DELETE SEARCH] ERROR: Invalid or missing search path for key '{search_path_key}'.")
-        return None
-        
-    search_dir = Path(search_path_str)
 
-    def perform_search() -> Optional[str]:
-        # --- STAGE 1: Find a Perfect Match ---
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Stage 1: Searching for a perfect match.")
-        
-        # Normalize the user's query once
-        normalized_query = _normalize_movie_name_for_search(search_query)
-        
-        candidates = []
+    if not search_path_str or not Path(search_path_str).is_dir():
+        print(f"[{ts}] [DELETE SEARCH] ERROR: Invalid or missing path for '{search_path_key}'.")
+        return None
+
+    search_dir = Path(search_path_str)
+    normalized_query = _normalize_movie_name_for_search(search_query)
+
+    def perform_search() -> Union[str, List[str], None]:
+        all_candidates = []
+        perfect_matches = []
+
+        # --- STAGE 1: Scan and find Perfect Matches ---
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Stage 1: Scanning for perfect matches.")
         for p in search_dir.rglob('*'):
-            # Filter by target type (file/dir)
-            if (search_target == 'directory' and p.is_dir()) or \
-               (search_target == 'file' and p.is_file()) or \
-               (search_target == 'any'):
-                candidates.append(p)
-                # Check for a perfect match during the initial scan
-                normalized_candidate_name = _normalize_movie_name_for_search(p.name)
-                if normalized_candidate_name == normalized_query:
-                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Perfect match found: {p}")
-                    return str(p)
+            is_correct_type = (search_target == 'any') or \
+                              (search_target == 'directory' and p.is_dir()) or \
+                              (search_target == 'file' and p.is_file())
+
+            if is_correct_type:
+                all_candidates.append(p)
+                if _normalize_movie_name_for_search(p.name) == normalized_query:
+                    perfect_matches.append(str(p))
+
+        if len(perfect_matches) == 1:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Found single perfect match: {perfect_matches[0]}")
+            return perfect_matches[0]
+        if len(perfect_matches) > 1:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Found {len(perfect_matches)} perfect matches. Returning list for user selection.")
+            return perfect_matches
 
         # --- STAGE 2: Fallback to Fuzzy Matching ---
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] No perfect match found. Proceeding to Stage 2: Fuzzy matching.")
-
-        if not candidates:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] No files or directories found to search.")
+        if not all_candidates:
             return None
 
-        choices = {p.name: p for p in candidates}
+        choices = {str(p): p.name for p in all_candidates}
         
-        result = process.extractOne(
-            search_query, 
-            choices.keys(), 
-            scorer=fuzz.token_set_ratio, 
-            score_cutoff=80
+        # --- THE FIX: Call extract first, then filter the results ---
+        results = process.extract(
+            search_query,
+            choices,
+            scorer=fuzz.token_set_ratio,
+            limit=5 
         )
+        
+        # Manually filter results by score
+        filtered_results = [res for res in results if res[1] >= 80]
+        # --- End of fix ---
 
-        if not result:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Fuzzy search found no match with a score of 80 or higher.")
+        if not filtered_results:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Fuzzy search found no results above score threshold.")
             return None
 
-        best_match_name, best_match_score, *_ = result
-        best_match_path = choices[best_match_name]
+        highest_score = filtered_results[0][1]
+        best_matches = [res[0] for res in filtered_results if res[1] == highest_score]
 
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Best fuzzy match found: '{best_match_path}' with score {best_match_score}")
-        
-        return str(best_match_path)
+        if len(best_matches) == 1:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Found single best fuzzy match: '{best_matches[0]}' with score {highest_score}")
+            return best_matches[0]
+        else:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Found {len(best_matches)} fuzzy matches sharing the top score of {highest_score}. Returning list.")
+            return best_matches
 
-    return await asyncio.to_thread(perform_search)
+    # --- THE FIX: Assign to a typed variable before returning to help the linter ---
+    final_result: Union[str, List[str], None] = await asyncio.to_thread(perform_search)
+    return final_result
+    # --- End of fix ---
 
 async def find_season_directory(show_path: str, season_number: int) -> Optional[str]:
     """
@@ -1489,80 +1500,89 @@ async def process_queue_for_user(chat_id: int, application: Application):
     else:
         print(f"[{ts}] [QUEUE_PROCESSOR] Invoked for {chat_id_str}, but their queue is empty. No action taken.")
 
+# file: telegram_bot.py
+
 async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (NEW) Manages the entire multi-step conversation for deleting media.
-    This function acts as a state machine for the delete feature.
+    (CORRECTED) Manages the multi-step conversation for deleting media, now
+    handling multiple search results by prompting the user for selection.
     """
     if not update.message or not update.message.text: return
+    # This guard prevents user_data from ever being None.
     if context.user_data is None: context.user_data = {}
 
     chat_id = update.message.chat_id
     text = update.message.text.strip()
     next_action = context.user_data.get('next_action', '')
-
     prompt_message_id = context.user_data.pop('prompt_message_id', None)
 
-    # --- THE FIX: Catch TimedOut and log it instead of crashing ---
     try:
         await update.message.delete()
         if prompt_message_id:
             await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
     except (BadRequest, TimedOut) as e:
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        # This error is not critical, the bot can continue. We just log it.
         print(f"[{ts}] [WARN] Non-critical error while deleting message: {e}")
-        # 'pass' allows the function to continue executing.
         pass
-    # --- End of fix ---
 
     status_message: Message
+
+    # --- THE FIX: Pass `context` as an explicit argument ---
+    async def present_results(
+        results: Union[str, List[str], None], 
+        s_message: Message, 
+        media_name: str, 
+        ctx: ContextTypes.DEFAULT_TYPE
+    ):
+        if ctx.user_data is None: ctx.user_data = {} # Extra safety guard
+
+        if isinstance(results, str): # Single result
+            ctx.user_data['path_to_delete'] = results
+            base_name = os.path.basename(results)
+            keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
+            message_text = (
+                f"Found:\n`{escape_markdown(base_name)}`\n\n"
+                f"*Path:*\n`{escape_markdown(results)}`\n\n"
+                f"Are you sure you want to permanently delete this item?"
+            )
+            await s_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        elif isinstance(results, list): # Multiple results
+            ctx.user_data['selection_choices'] = results
+            keyboard = []
+            for i, path in enumerate(results):
+                button_label = os.path.basename(path)
+                keyboard.append([InlineKeyboardButton(button_label, callback_data=f"delete_select_{i}")])
+            keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+            message_text = "Multiple matches found, which one?"
+            await s_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+        else: # No results
+            await s_message.edit_text(f"❌ No {media_name} found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
+    # --- End of fix ---
 
     if next_action == 'delete_movie_collection_search':
         status_message = await context.bot.send_message(chat_id=chat_id, text=rf"🔎 Searching for movie collection: `{escape_markdown(text)}`\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
         save_paths = context.bot_data.get("SAVE_PATHS", {})
-        found_path = await find_media_by_name('movie', text, save_paths, search_target='directory')
+        found_results = await find_media_by_name('movie', text, save_paths, search_target='directory')
         context.user_data.pop('next_action', None)
-
-        if found_path:
-            context.user_data['path_to_delete'] = found_path
-            base_name = os.path.basename(found_path)
-            keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-            message_text = (
-                f"Collection Found:\n`{escape_markdown(base_name)}`\n\n"
-                f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
-                f"Are you sure you want to permanently delete this folder and all its contents\\?"
-            )
-            await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
-        else:
-            await status_message.edit_text(f"❌ No movie collection found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
+        # Pass context to the helper function
+        await present_results(found_results, status_message, "movie collection", context)
 
     elif next_action == 'delete_movie_single_search':
         status_message = await context.bot.send_message(chat_id=chat_id, text=rf"🔎 Searching for single movie: `{escape_markdown(text)}`\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
         save_paths = context.bot_data.get("SAVE_PATHS", {})
-        found_path = await find_media_by_name('movie', text, save_paths, search_target='file')
+        found_results = await find_media_by_name('movie', text, save_paths, search_target='file')
         context.user_data.pop('next_action', None)
+        # Pass context to the helper function
+        await present_results(found_results, status_message, "single movie", context)
 
-        if found_path:
-            context.user_data['path_to_delete'] = found_path
-            base_name = os.path.basename(found_path)
-            keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
-            message_text = (
-                f"File Found:\n`{escape_markdown(base_name)}`\n\n"
-                f"*Path:*\n`{escape_markdown(found_path)}`\n\n"
-                f"Are you sure you want to permanently delete this file\\?"
-            )
-            await status_message.edit_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
-        else:
-            await status_message.edit_text(f"❌ No single movie file found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
-
+    # (The rest of the function remains the same as before)
     elif next_action == 'delete_tv_show_search':
         status_message = await context.bot.send_message(chat_id=chat_id, text=rf"🔎 Searching for TV show: `{escape_markdown(text)}`\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
         save_paths = context.bot_data.get("SAVE_PATHS", {})
-        found_path = await find_media_by_name('tv_show', text, save_paths)
+        found_path = await find_media_by_name('tv_show', text, save_paths) # TV show logic remains singular
         context.user_data.pop('next_action', None)
 
-        if found_path:
+        if isinstance(found_path, str):
             context.user_data['show_path_to_delete'] = found_path
             base_name = os.path.basename(found_path)
             keyboard = [
@@ -1573,7 +1593,8 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             ]
             await status_message.edit_text(f"Found show: `{escape_markdown(base_name)}`\.\n\nWhat would you like to delete\?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         else:
-            await status_message.edit_text(f"❌ No TV show found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
+            # This part handles None or a list (which isn't expected for TV shows yet)
+            await status_message.edit_text(f"❌ No single TV show directory found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
 
     elif next_action == 'delete_tv_season_search':
         status_message = await context.bot.send_message(chat_id=chat_id, text=rf"🔎 Searching for season `{escape_markdown(text)}`\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
@@ -1638,7 +1659,8 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
 
 async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (NEW) Handles all button presses related to the delete media workflow.
+    (REVISED) Handles all button presses for the delete workflow, including
+    the new user selection from a list of multiple matches.
     """
     query = update.callback_query
     if not query or not query.data: return
@@ -1654,7 +1676,30 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
     reply_markup: Optional[InlineKeyboardMarkup] = None
     parse_mode: Optional[str] = None
 
-    if query.data == "delete_start_movie":
+    # --- NEW: Handle user's selection from multiple choices ---
+    if query.data.startswith("delete_select_"):
+        choices = context.user_data.pop('selection_choices', [])
+        try:
+            index = int(query.data.split('_')[2])
+            if 0 <= index < len(choices):
+                path_to_delete = choices[index]
+                context.user_data['path_to_delete'] = path_to_delete
+                base_name = os.path.basename(path_to_delete)
+                message_text = (
+                    f"You selected:\n`{escape_markdown(base_name)}`\n\n"
+                    f"Are you sure you want to permanently delete this item?"
+                )
+                reply_markup = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"),
+                    InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")
+                ]])
+                parse_mode = ParseMode.MARKDOWN_V2
+            else:
+                message_text = "❌ Error: Invalid selection index. Please start over."
+        except (ValueError, IndexError):
+            message_text = "❌ Error: Could not process selection. Please start over."
+
+    elif query.data == "delete_start_movie":
         message_text = "Which would you like to delete?"
         keyboard = [
             [
@@ -1665,6 +1710,8 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+    # (The rest of the function is unchanged)
+    # ...
     elif query.data == "delete_movie_collection":
         context.user_data['next_action'] = 'delete_movie_collection_search'
         context.user_data['prompt_message_id'] = message.message_id
@@ -1717,16 +1764,11 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
             base_name = os.path.basename(path_to_delete)
             display_name = base_name
 
-            # --- THE FIX: Create a more descriptive name for TV show parts ---
-            # Check if this deletion came from the TV show workflow
             if show_path_context:
                 show_name = os.path.basename(show_path_context)
-                # If we deleted the whole show, the names are the same, so do nothing.
-                # Otherwise, combine the show name and the part name (season/episode).
                 if base_name != show_name:
                     display_name = f"{show_name} - {base_name}"
-            # --- End of fix ---
-
+            
             note_text = "(Note: Actual file deletion is disabled until Phase 3.)"
             escaped_note_text = escape_markdown(note_text)
             message_text = f"✅ Deletion confirmed for `{escape_markdown(display_name)}`\.\n\n{escaped_note_text}"
@@ -1736,13 +1778,12 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
             message_text = f"❌ {escape_markdown(error_text)}"
             parse_mode = ParseMode.MARKDOWN_V2
         
-        # Clean up all temporary keys regardless of outcome
-        keys_to_clear = ['show_path_to_delete', 'next_action', 'prompt_message_id', 'season_to_delete_num']
+        keys_to_clear = ['show_path_to_delete', 'next_action', 'prompt_message_id', 'season_to_delete_num', 'selection_choices']
         for key in keys_to_clear:
             context.user_data.pop(key, None)
     
     elif query.data == "cancel_operation":
-        keys_to_clear = ['path_to_delete', 'show_path_to_delete', 'next_action', 'prompt_message_id', 'season_to_delete_num']
+        keys_to_clear = ['path_to_delete', 'show_path_to_delete', 'next_action', 'prompt_message_id', 'season_to_delete_num', 'selection_choices']
         for key in keys_to_clear:
             context.user_data.pop(key, None)
         message_text = "❌ Operation cancelled."
