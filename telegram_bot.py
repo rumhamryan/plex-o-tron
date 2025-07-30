@@ -37,6 +37,7 @@ from download_torrent import download_with_progress
 MAX_TORRENT_SIZE_GB = 10
 MAX_TORRENT_SIZE_BYTES = MAX_TORRENT_SIZE_GB * (1024**3)
 ALLOWED_EXTENSIONS = ['.mkv', '.mp4']
+DELETION_ENABLED = False
 
 def escape_markdown(text: str) -> str:
     """Helper function to escape telegram's special characters."""
@@ -1659,8 +1660,8 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
 
 async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (REVISED) Handles all button presses for the delete workflow, including
-    the new user selection from a list of multiple matches.
+    (FINAL CORRECTION) Handles all button presses for the delete workflow, with
+    the proper MarkdownV2 escapes for all special characters.
     """
     query = update.callback_query
     if not query or not query.data: return
@@ -1676,7 +1677,6 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
     reply_markup: Optional[InlineKeyboardMarkup] = None
     parse_mode: Optional[str] = None
 
-    # --- NEW: Handle user's selection from multiple choices ---
     if query.data.startswith("delete_select_"):
         choices = context.user_data.pop('selection_choices', [])
         try:
@@ -1710,8 +1710,6 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # (The rest of the function is unchanged)
-    # ...
     elif query.data == "delete_movie_collection":
         context.user_data['next_action'] = 'delete_movie_collection_search'
         context.user_data['prompt_message_id'] = message.message_id
@@ -1742,7 +1740,7 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Yes, Delete All", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]])
             parse_mode = ParseMode.MARKDOWN_V2
         else:
-            message_text = "❌ Error: Show context lost. Please start over."
+            message_text = f"❌ Error: Show context lost. Please start over."
 
     elif query.data == "delete_tv_season":
         context.user_data['next_action'] = 'delete_tv_season_search'
@@ -1758,26 +1756,43 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif query.data == "confirm_delete":
         path_to_delete = context.user_data.pop('path_to_delete', None)
-        show_path_context = context.user_data.get('show_path_to_delete')
-
-        if path_to_delete:
-            base_name = os.path.basename(path_to_delete)
-            display_name = base_name
-
-            if show_path_context:
-                show_name = os.path.basename(show_path_context)
-                if base_name != show_name:
-                    display_name = f"{show_name} - {base_name}"
-            
-            note_text = "(Note: Actual file deletion is disabled until Phase 3.)"
-            escaped_note_text = escape_markdown(note_text)
-            message_text = f"✅ Deletion confirmed for `{escape_markdown(display_name)}`\.\n\n{escaped_note_text}"
-            parse_mode = ParseMode.MARKDOWN_V2
-        else:
-            error_text = "Error: Path to delete not found. The action may have expired."
-            message_text = f"❌ {escape_markdown(error_text)}"
-            parse_mode = ParseMode.MARKDOWN_V2
         
+        if not path_to_delete:
+            message_text = f"❌ Error: Path to delete not found. The action may have expired."
+        elif not DELETION_ENABLED:
+            message_text = f"ℹ️ *Deletion Confirmed*\n\nActual file deletion is disabled by the administrator"
+        else:
+            try:
+                if os.path.exists(path_to_delete):
+                    show_path_context = context.user_data.get('show_path_to_delete')
+                    base_name = os.path.basename(path_to_delete)
+                    display_name = base_name
+
+                    if show_path_context:
+                        show_name = os.path.basename(show_path_context)
+                        if base_name != show_name:
+                            display_name = f"{show_name} - {base_name}"
+                    
+                    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    if os.path.isfile(path_to_delete):
+                        print(f"[{ts}] [DELETE] Deleting file: {path_to_delete}")
+                        await asyncio.to_thread(os.remove, path_to_delete)
+                        message_text = f"🗑️ *Successfully Deleted File*\n`{escape_markdown(display_name)}`"
+                    elif os.path.isdir(path_to_delete):
+                        print(f"[{ts}] [DELETE] Deleting directory and all contents: {path_to_delete}")
+                        await asyncio.to_thread(shutil.rmtree, path_to_delete)
+                        message_text = f"🗑️ *Successfully Deleted Directory*\n`{escape_markdown(display_name)}`"
+                    else:
+                        message_text = f"❌ *Deletion Failed*\nCould not delete `{escape_markdown(base_name)}` because it is neither a file nor a directory."
+                else:
+                    message_text = f"❌ *Deletion Failed*\nThe path no longer exists on the server."
+            
+            except (OSError, PermissionError) as e:
+                ts_err = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[{ts_err}] [DELETE ERROR] An OS error occurred: {e}")
+                message_text = f"❌ *Deletion Failed*\nAn error occurred on the server:\n`{escape_markdown(str(e))}`"
+        
+        parse_mode = ParseMode.MARKDOWN_V2
         keys_to_clear = ['show_path_to_delete', 'next_action', 'prompt_message_id', 'season_to_delete_num', 'selection_choices']
         for key in keys_to_clear:
             context.user_data.pop(key, None)
@@ -1828,8 +1843,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await send_confirmation_prompt(progress_message, context, ti, parsed_info)
 
-# file: telegram_bot.py
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     (CORRECTED) Handles all button presses, delegating to the appropriate workflow handler.
@@ -1843,20 +1856,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
 
-    # --- THE FIX: Broaden delegation for the delete workflow ---
-    # By checking the prefix, we catch all delete-related callbacks,
-    # including "delete_start_movie", "delete_tv_all", and "delete_select_0".
-    if query.data.startswith("delete_"):
-        await handle_delete_buttons(update, context)
-        return
+    # --- THE FIX: Correctly delegate ALL delete-related callbacks ---
+    # This now includes "confirm_delete" and the more specific "cancel_operation" check.
+    is_delete_action = query.data.startswith("delete_") or query.data == "confirm_delete"
+    is_cancel_for_delete = (
+        query.data == "cancel_operation" and 
+        any(key in context.user_data for key in ['next_action', 'show_path_to_delete', 'selection_choices'])
+    )
 
-    # Make the cancel operation check more robust by including the new key.
-    if query.data == "cancel_operation" and any(key in context.user_data for key in ['next_action', 'show_path_to_delete', 'selection_choices']):
+    if is_delete_action or is_cancel_for_delete:
         await handle_delete_buttons(update, context)
         return
     # --- END OF FIX ---
 
-    # --- MAIN TORRENT WORKFLOW LOGIC (Unchanged) ---
+    # --- MAIN TORRENT WORKFLOW LOGIC ---
     await query.answer()
     message = query.message
     if not isinstance(message, Message): return

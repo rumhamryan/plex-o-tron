@@ -1,8 +1,7 @@
 ToDo:
 
 Reasonable features in scope and effort:
-1. Find a way to make the search more flexible, maybe there is a module on pypi
-2. pause download
+1. pause download
   - send paused torrent to the back of the queue
   - once it is the last torrent in the queue it is started again
 
@@ -13,7 +12,7 @@ These two are contradictory:
 
 These are the big ones:
 - multi-download support
-3. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
+2. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
     - yts.mx
     - 1337x.to
