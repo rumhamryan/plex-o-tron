@@ -6,3 +6,5 @@ python-telegram-bot
 wikipedia
 libtorrent
 plexapi
+thefuzz
+python-Levenshtein

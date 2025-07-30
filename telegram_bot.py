@@ -19,6 +19,8 @@ from typing import Optional, Dict, Tuple, List, Set, Any
 import shutil
 import subprocess
 import platform
+from pathlib import Path
+from thefuzz import process, fuzz
 
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized
@@ -158,10 +160,6 @@ def parse_torrent_name(name: str) -> dict:
     title = re.sub(r'\s+', ' ', title).strip()
     return {'type': 'unknown', 'title': title}
 
-def _normalize_for_comparison(text: str) -> str:
-    """Converts text to lowercase and removes all non-alphanumeric characters for fuzzy matching."""
-    return re.sub(r'[^a-z0-9]', '', text.lower())
-
 def generate_plex_filename(parsed_info: dict, original_extension: str) -> str:
     """Generates a clean, Plex-friendly filename from the parsed info."""
     title = parsed_info.get('title', 'Unknown Title')
@@ -191,15 +189,23 @@ def generate_plex_filename(parsed_info: dict, original_extension: str) -> str:
     
 def _normalize_movie_name_for_search(text: str) -> str:
     """
-    Normalizes a movie title for searching by:
-    1. Stripping leading "## - " or "##. " type prefixes.
-    2. Converting to lowercase.
-    3. Removing all non-alphanumeric characters.
+    (CORRECTED) Normalizes a movie title for searching by:
+    1. Removing the file extension.
+    2. Removing the year in parentheses (e.g., "(1986)").
+    3. Stripping leading "## - " or "##. " type prefixes.
+    4. Converting to lowercase.
+    5. Removing all non-alphanumeric characters.
     """
-    # 1. Strip leading "## - " or "##. " prefixes
-    name_without_prefix = re.sub(r'^\s*\d+\s*[\-.]\s*', '', text)
+    # 1. Remove extension (This was the missing, critical step)
+    name_without_ext, _ = os.path.splitext(text)
     
-    # 2. Lowercase and remove non-alphanumeric characters
+    # 2. Remove year in parentheses
+    name_without_year = re.sub(r'\s*\(\d{4}\)', '', name_without_ext)
+    
+    # 3. Strip leading prefixes
+    name_without_prefix = re.sub(r'^\s*\d+\s*[\-.]\s*', '', name_without_year)
+    
+    # 4 & 5. Lowercase and remove non-alphanumeric
     return re.sub(r'[^a-z0-9]', '', name_without_prefix.lower())
     
 async def find_media_by_name(
@@ -209,54 +215,69 @@ async def find_media_by_name(
     search_target: str = 'any'  # 'any', 'directory', or 'file'
 ) -> Optional[str]:
     """
-    (REVISED - BEST MATCH) Recursively searches for a media file/folder. It now finds all
-    potential matches and returns the one with the shortest name, which is the most likely
-    to be the correct one.
+    (FINAL REVISION) Finds the best media match using a robust two-stage process.
+    1. First, it seeks a perfect name match (ignoring case, year, etc.).
+    2. If no perfect match is found, it falls back to fuzzy matching.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    print(f"[{ts}] [DELETE SEARCH] Initiated search for type='{media_type}', query='{search_query}', target='{search_target}'")
+    print(f"[{ts}] [DELETE SEARCH] Initiated for type='{media_type}', query='{search_query}'")
     
     search_path_key = 'movies' if media_type == 'movie' else 'tv_shows'
-    search_path = save_paths.get(search_path_key)
+    search_path_str = save_paths.get(search_path_key)
     
-    if not search_path or not os.path.isdir(search_path):
-        print(f"[{ts}] [DELETE SEARCH] ERROR: Invalid or missing search path for key '{search_path_key}'. Path: '{search_path}'")
+    if not search_path_str or not Path(search_path_str).is_dir():
+        print(f"[{ts}] [DELETE SEARCH] ERROR: Invalid or missing search path for key '{search_path_key}'.")
         return None
-
-    normalize_func = _normalize_movie_name_for_search if media_type == 'movie' else _normalize_for_comparison
-    normalized_query = normalize_func(search_query)
-
-    print(f"[{ts}] [DELETE SEARCH] Starting recursive search in path: '{search_path}' for normalized query: '{normalized_query}'")
+        
+    search_dir = Path(search_path_str)
 
     def perform_search() -> Optional[str]:
-        """Synchronous helper to find the best match."""
-        potential_matches: List[Tuple[str, str]] = []
+        # --- STAGE 1: Find a Perfect Match ---
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Stage 1: Searching for a perfect match.")
+        
+        # Normalize the user's query once
+        normalized_query = _normalize_movie_name_for_search(search_query)
+        
+        candidates = []
+        for p in search_dir.rglob('*'):
+            # Filter by target type (file/dir)
+            if (search_target == 'directory' and p.is_dir()) or \
+               (search_target == 'file' and p.is_file()) or \
+               (search_target == 'any'):
+                candidates.append(p)
+                # Check for a perfect match during the initial scan
+                normalized_candidate_name = _normalize_movie_name_for_search(p.name)
+                if normalized_candidate_name == normalized_query:
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Perfect match found: {p}")
+                    return str(p)
 
-        for root, dirs, files in os.walk(search_path):
-            items_to_check = []
-            if search_target in ['directory', 'any']:
-                items_to_check.extend(dirs)
-            if search_target in ['file', 'any']:
-                items_to_check.extend(files)
+        # --- STAGE 2: Fallback to Fuzzy Matching ---
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] No perfect match found. Proceeding to Stage 2: Fuzzy matching.")
 
-            for item_name in items_to_check:
-                normalized_item_name = normalize_func(item_name)
-                if normalized_query in normalized_item_name:
-                    full_path = os.path.join(root, item_name)
-                    potential_matches.append((full_path, normalized_item_name))
-
-        if not potential_matches:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Search of '{search_path}' complete. No match found.")
+        if not candidates:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] No files or directories found to search.")
             return None
 
-        # Sort matches by the length of the normalized name. Shorter is better.
-        potential_matches.sort(key=lambda x: len(x[1]))
+        choices = {p.name: p for p in candidates}
         
-        best_match_path = potential_matches[0][0]
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Found {len(potential_matches)} potential match(es). Best match: {best_match_path}")
+        result = process.extractOne(
+            search_query, 
+            choices.keys(), 
+            scorer=fuzz.token_set_ratio, 
+            score_cutoff=80
+        )
+
+        if not result:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Fuzzy search found no match with a score of 80 or higher.")
+            return None
+
+        best_match_name, best_match_score, *_ = result
+        best_match_path = choices[best_match_name]
+
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DELETE SEARCH] Best fuzzy match found: '{best_match_path}' with score {best_match_score}")
         
-        return best_match_path
+        return str(best_match_path)
 
     return await asyncio.to_thread(perform_search)
 
