@@ -1063,6 +1063,7 @@ def save_state(file_path: str, active_downloads: Dict, download_queues: Dict):
     for chat_id, download_data in active_downloads.items():
         data_copy = download_data.copy()
         data_copy.pop('task', None)
+        data_copy.pop('lock', None)
         serializable_active[chat_id] = data_copy
 
     data_to_save = {
