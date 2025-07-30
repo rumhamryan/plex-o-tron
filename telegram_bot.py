@@ -1828,9 +1828,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await send_confirmation_prompt(progress_message, context, ti, parsed_info)
 
+# file: telegram_bot.py
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles all button presses, delegating to the appropriate workflow handler.
+    (CORRECTED) Handles all button presses, delegating to the appropriate workflow handler.
     """
     if not await is_user_authorized(update, context):
         return
@@ -1841,23 +1843,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
 
-    # --- DELEGATION TO DELETE WORKFLOW ---
-    delete_callbacks = [
-        "delete_start_movie", "delete_movie_collection", "delete_movie_single",
-        "delete_start_tv", "delete_tv_all", "delete_tv_season", "delete_tv_episode", 
-        "confirm_delete"
-    ]
-    if query.data in delete_callbacks:
+    # --- THE FIX: Broaden delegation for the delete workflow ---
+    # By checking the prefix, we catch all delete-related callbacks,
+    # including "delete_start_movie", "delete_tv_all", and "delete_select_0".
+    if query.data.startswith("delete_"):
         await handle_delete_buttons(update, context)
         return
 
-    # Handle cancellation if it's for a delete operation
-    if query.data == "cancel_operation" and any(key in context.user_data for key in ['next_action', 'show_path_to_delete']):
+    # Make the cancel operation check more robust by including the new key.
+    if query.data == "cancel_operation" and any(key in context.user_data for key in ['next_action', 'show_path_to_delete', 'selection_choices']):
         await handle_delete_buttons(update, context)
         return
-    # --- END OF DELEGATION ---
+    # --- END OF FIX ---
 
-    # --- MAIN TORRENT WORKFLOW LOGIC ---
+    # --- MAIN TORRENT WORKFLOW LOGIC (Unchanged) ---
     await query.answer()
     message = query.message
     if not isinstance(message, Message): return
@@ -1887,7 +1886,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if 'task' in download_data and not download_data['task'].done():
                             task: asyncio.Task = download_data['task']
                             task.cancel()
-                        message_text = "ℹ️ This download has already completed or been cancelled."
+                        message_text = "✅ Download has been cancelled."
                     elif query.data == "resume_download":
                         download_data['cancellation_pending'] = False
                         message_text = "▶️ Download resuming..."
