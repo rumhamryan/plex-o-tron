@@ -116,6 +116,117 @@ def get_configuration() -> tuple[str, dict, list[int], dict]:
 
     return token, paths, allowed_ids, plex_config
 
+async def _perform_chat_clear(chat_id: int, up_to_message_id: int, application: Application):
+    """
+    (REVISED) Core logic to delete messages, now with summarized logging
+    for non-deletable messages.
+    """
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts}] [CORE CLEAR] Performing clear for chat {chat_id} up to message {up_to_message_id}.")
+    
+    # --- REVISED LOGIC: Collect failed IDs instead of logging them one by one ---
+    failed_to_delete_ids = []
+
+    for message_id in range(up_to_message_id, 0, -1):
+        try:
+            await application.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except BadRequest as e:
+            # Check for expected errors (old message, not found)
+            if "message can't be deleted" in str(e) or "message to delete not found" in str(e):
+                failed_to_delete_ids.append(message_id)
+            else:
+                # Log only truly unexpected errors
+                # print(f"[{ts}] [CORE CLEAR] Unexpected error deleting message {message_id}: {e}")
+                pass
+        except Exception:
+            # Catch any other network-related errors silently
+            failed_to_delete_ids.append(message_id)
+
+    # After the loop, log the summary of non-deletable messages
+    if failed_to_delete_ids:
+        compressed_output = _compress_message_ranges(failed_to_delete_ids)
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CORE CLEAR] Could not delete messages (too old or not found): {compressed_output}")
+
+async def schedule_delayed_clear(chat_id: int, last_message_id: int, application: Application):
+    """
+    (REVISED) Schedules a chat clear operation using the Application object,
+    making it type-safe for background execution.
+    """
+    # Access the user-specific data dictionary via the application.
+    # This will never be None.
+    user_data = application.user_data[chat_id]
+
+    if user_data.get('pending_clear_task'):
+        return
+
+    async def clear_task():
+        """The actual task that waits and then performs the clear."""
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts}] [AUTO-CLEAR] Starting 30-second countdown for chat {chat_id}.")
+        await asyncio.sleep(30)
+        
+        # Re-fetch user_data in case it was modified elsewhere, though it's unlikely.
+        current_user_data = application.user_data[chat_id]
+        
+        # Access bot_data via the application instance
+        queues = application.bot_data.get('download_queues', {})
+        if queues.get(str(chat_id)):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Aborting clear for chat {chat_id}; new item was queued.")
+            current_user_data.pop('pending_clear_task', None)
+            return
+
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Countdown finished. Executing clear for chat {chat_id}.")
+        # Pass the application object down to the core helper
+        await _perform_chat_clear(chat_id, last_message_id, application)
+        
+        current_user_data.pop('pending_clear_task', None)
+
+    task = asyncio.create_task(clear_task())
+    user_data['pending_clear_task'] = task
+
+async def clear_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    (REVISED) Manually triggers the chat clearing process.
+    """
+    if not await is_user_authorized(update, context):
+        return
+    if not update.message: return
+
+    # Pass the application object from the context
+    await _perform_chat_clear(update.message.chat_id, update.message.message_id, context.application)
+
+def _compress_message_ranges(message_ids: List[int]) -> str:
+    """
+    (NEW HELPER) Compresses a list of integers into a string of ranges.
+    Example: [56, 55, 54, 50, 49, 40] -> "56-54, 50-49, 40"
+    """
+    if not message_ids:
+        return ""
+
+    # Sort the unique IDs in descending order to create ranges like "56-1"
+    sorted_ids = sorted(list(set(message_ids)), reverse=True)
+    
+    ranges = []
+    range_start = sorted_ids[0]
+
+    for i in range(1, len(sorted_ids)):
+        # If the current ID is not consecutive, the previous range has ended
+        if sorted_ids[i] != sorted_ids[i-1] - 1:
+            range_end = sorted_ids[i-1]
+            if range_start == range_end:
+                ranges.append(str(range_start))
+            else:
+                ranges.append(f"{range_start}-{range_end}")
+            range_start = sorted_ids[i]
+    
+    # Add the final range after the loop is done
+    if range_start == sorted_ids[-1]:
+        ranges.append(str(range_start))
+    else:
+        ranges.append(f"{range_start}-{sorted_ids[-1]}")
+        
+    return ", ".join(ranges)
+
 def parse_torrent_name(name: str) -> dict:
     """
     Parses a torrent name to identify if it's a movie or a TV show
@@ -2196,9 +2307,12 @@ async def start_download_task(download_data: Dict, application: Application):
         if "Message is not modified" not in str(e):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit message to start queued download: {e}")
 
+# file: telegram_bot.py
+
 async def download_task_wrapper(download_data: Dict, application: Application):
     """
-    Wraps the entire download lifecycle, from execution to final user feedback.
+    (REVISED) Wraps the entire download lifecycle, now with a trigger
+    for the automated chat clearing.
     """
     source_dict = download_data['source_dict']
     chat_id = download_data['chat_id']
@@ -2226,7 +2340,7 @@ async def download_task_wrapper(download_data: Dict, application: Application):
                 save_paths=application.bot_data.get("SAVE_PATHS", {}),
                 plex_config=application.bot_data.get("PLEX_CONFIG")
             )
-        else: # Should only be reached if download_with_progress returns (False, None)
+        else:
             message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager."
 
     except asyncio.CancelledError:
@@ -2242,8 +2356,10 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             
     finally:
         if not application.bot_data.get('is_shutting_down', False):
+            final_message = None
             try:
-                await application.bot.edit_message_text(
+                # Store the final message so we can get its ID for the clear command
+                final_message = await application.bot.edit_message_text(
                     text=message_text, chat_id=chat_id, message_id=message_id, 
                     parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None
                 )
@@ -2253,6 +2369,15 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             
             cleanup_download_resources(application, chat_id, source_dict['type'], source_dict['value'], initial_save_path)
             await process_queue_for_user(chat_id, application)
+
+            # --- THE NEW TRIGGER LOGIC ---
+            # After processing the next user, check if their queue is now empty.
+            queues = application.bot_data.get('download_queues', {})
+            if not queues.get(str(chat_id)) and final_message:
+                ts_trigger = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[{ts_trigger}] [TRIGGER] Queue for chat {chat_id} is empty. Scheduling delayed clear.")
+                await schedule_delayed_clear(chat_id, final_message.message_id, application)
+            # --- END OF TRIGGER ---
 
 # --- MAIN SCRIPT EXECUTION ---
 if __name__ == '__main__':
@@ -2289,6 +2414,7 @@ if __name__ == '__main__':
     
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?links$', re.IGNORECASE)), links_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?start$', re.IGNORECASE)), help_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?status$', re.IGNORECASE)), plex_status_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?restart$', re.IGNORECASE)), plex_restart_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?delete$', re.IGNORECASE)), delete_command))

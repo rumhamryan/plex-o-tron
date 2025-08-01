@@ -5,13 +5,7 @@ Reasonable features in scope and effort:
   - send paused torrent to the back of the queue
   - once it is the last torrent in the queue it is started again
 
-
-These two are contradictory:
-- look into deleting entire chat every time to reducing remote logging
-- notification of new movie/tv show in the plex library to other users
-
-These are the big ones:
-- multi-download support
+These are the big one:
 2. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
     - yts.mx
