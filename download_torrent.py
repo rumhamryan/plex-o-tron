@@ -13,6 +13,7 @@ async def download_with_progress(
     save_path: str, 
     status_callback: StatusCallback,
     bot_data: dict,
+    download_data: dict, # The download-specific state dictionary
     allowed_extensions: list[str]
 ) -> Tuple[bool, Optional[lt.torrent_info]]: #type: ignore
     ses = lt.session({'listen_interfaces': '0.0.0.0:6881'})  # type: ignore
@@ -29,12 +30,18 @@ async def download_with_progress(
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Invalid .torrent file provided: {source}")
             return False, None
 
+    download_data['handle'] = handle
+
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Waiting for metadata...")
     while not handle.status().has_metadata:
         try:
+            if download_data.get('requeued', False):
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Requeue signal received during metadata fetch. Aborting task.")
+                ses.remove_torrent(handle)
+                return False, None
             await asyncio.sleep(1)
         except asyncio.CancelledError:
-            if not bot_data.get('is_shutting_down', False):
+            if not bot_data.get('is_shutting_down', False) and not download_data.get('requeued', False):
                 ses.remove_torrent(handle, lt.session.delete_files) # type: ignore
             else:
                 ses.remove_torrent(handle)
@@ -56,17 +63,40 @@ async def download_with_progress(
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [PRIORITY] Disabling download for: {file_path}")
         handle.prioritize_files(priorities)
 
+    # --- THE FIX: Use a cross-platform compatible strftime format ---
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Starting main download loop.")
+    # --- End of fix ---
     while True:
+        # 1. Manage the physical state of the torrent (pause/resume).
+        should_be_paused = download_data.get('is_paused', False)
+        is_physically_paused = (handle.flags() & lt.torrent_flags.paused) # type: ignore
+
+        if should_be_paused and not is_physically_paused:
+            handle.pause()
+            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts}] [PAUSE] Pausing download for: {handle.name()}")
+        elif not should_be_paused and is_physically_paused:
+            handle.resume()
+            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts}] [RESUME] Resuming download for: {handle.name()}")
+
+        # 2. ALWAYS get the latest status and report it to the user.
         s = handle.status()
         await status_callback(s)
+
+        # 3. Check if the download is complete.
         if s.state == lt.torrent_status.states.seeding or s.state == lt.torrent_status.states.finished: #type: ignore
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Download loop finished. Final state: {s.state.name}")
             break
+        
+        # 4. Wait for the next cycle.
         try:
-            await asyncio.sleep(5) 
+            # Use a slightly shorter sleep when paused to keep the UI feeling responsive.
+            sleep_duration = 2 if should_be_paused else 5
+            await asyncio.sleep(sleep_duration) 
         except asyncio.CancelledError:
-            if not bot_data.get('is_shutting_down', False):
+            # The cancellation logic remains the same.
+            if not bot_data.get('is_shutting_down', False) and not download_data.get('requeued', False):
                 ses.remove_torrent(handle, lt.session.delete_files) # type: ignore
             else:
                 ses.remove_torrent(handle)
@@ -74,12 +104,10 @@ async def download_with_progress(
             
     await status_callback(handle.status())
     
-    # --- THE FIX: Gracefully shut down the session to finalize files ---
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Shutting down libtorrent session gracefully to finalize files.")
     ses.pause()
-    await asyncio.sleep(1) # Allow a moment for the session to process finalization
-    torrent_info_to_return = handle.torrent_file() # Get info before session is deleted
+    await asyncio.sleep(1) 
+    torrent_info_to_return = handle.torrent_file() 
     del ses
-    # --- End of fix ---
 
     return True, torrent_info_to_return

@@ -44,6 +44,17 @@ def escape_markdown(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!\\'
     return re.sub(rf'([{re.escape(escape_chars)}])', r'\\\1', text)
 
+def get_help_message_text() -> str:
+    """(NEW) Returns the formatted help message string to be reused."""
+    return (
+        "Here are the available commands:\n\n"
+        "`delete`   \- Delete Movies or TV Shows\.\n"
+        "`help`       \- Displays this message\. \n"
+        "`links`     \- Lists popular torrent sites\.\n"
+        "`restart` \- Restarts the Plex Server\.\n"
+        "`status`   \- Checks Plex server status\."
+    )
+
 def get_configuration() -> tuple[str, dict, list[int], dict]:
     """
     Reads bot token, paths, allowed IDs, and Plex config from the config.ini file.
@@ -149,26 +160,21 @@ async def _perform_chat_clear(chat_id: int, up_to_message_id: int, application: 
 
 async def schedule_delayed_clear(chat_id: int, last_message_id: int, application: Application):
     """
-    (REVISED) Schedules a chat clear operation using the Application object,
-    making it type-safe for background execution.
+    (REVISED) Schedules a chat clear operation and sends a help message upon completion.
     """
-    # Access the user-specific data dictionary via the application.
-    # This will never be None.
     user_data = application.user_data[chat_id]
 
     if user_data.get('pending_clear_task'):
         return
 
     async def clear_task():
-        """The actual task that waits and then performs the clear."""
+        """The actual task that waits, clears, and then sends the help message."""
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{ts}] [AUTO-CLEAR] Starting 30-second countdown for chat {chat_id}.")
-        await asyncio.sleep(30)
+        await asyncio.sleep(15)
         
-        # Re-fetch user_data in case it was modified elsewhere, though it's unlikely.
         current_user_data = application.user_data[chat_id]
         
-        # Access bot_data via the application instance
         queues = application.bot_data.get('download_queues', {})
         if queues.get(str(chat_id)):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Aborting clear for chat {chat_id}; new item was queued.")
@@ -176,9 +182,23 @@ async def schedule_delayed_clear(chat_id: int, last_message_id: int, application
             return
 
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Countdown finished. Executing clear for chat {chat_id}.")
-        # Pass the application object down to the core helper
         await _perform_chat_clear(chat_id, last_message_id, application)
         
+        # --- THE FIX: Send the "hello" message after clearing ---
+        try:
+            ts_hello = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts_hello}] [AUTO-CLEAR] Sending post-clear help message to chat {chat_id}.")
+            help_text = get_help_message_text()
+            await application.bot.send_message(
+                chat_id=chat_id,
+                text=help_text,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+        except Exception as e:
+            ts_err = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts_err}] [AUTO-CLEAR] Failed to send post-clear help message: {e}")
+        # --- End of fix ---
+
         current_user_data.pop('pending_clear_task', None)
 
     task = asyncio.create_task(clear_task())
@@ -1337,7 +1357,7 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send delete prompt: {e}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Provides a formatted list of available commands."""
+    """(REVISED) Provides a formatted list of available commands by calling the helper."""
     if not await is_user_authorized(update, context):
         return
     if not update.message: return
@@ -1352,17 +1372,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] help_command was triggered but could not find an effective_chat.")
         return
     
-    message_text = (
-        "Here are the available commands:\n\n"
-        "`delete`   \- Delete Movies or TV Shows\.\n"
-        "`help`       \- Displays this message\. \n"
-        "`links`     \- Lists popular torrent sites\.\n"
-        "`restart` \- Restarts the Plex Server\.\n"
-        "`status`   \- Checks Plex server status\."
-    )
+    # Use the new helper function to get the message text
+    message_text = get_help_message_text()
     
     try:
-        # Use the guarded 'chat' variable
         await context.bot.send_message(
             chat_id=chat.id,
             text=message_text,
@@ -1956,7 +1969,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    (CORRECTED) Handles all button presses, delegating to the appropriate workflow handler.
+    (CORRECTED) Handles all button presses, ensuring the pause button only
+    updates the keyboard, not the message text.
     """
     if not await is_user_authorized(update, context):
         return
@@ -1967,8 +1981,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
 
-    # --- THE FIX: Correctly delegate ALL delete-related callbacks ---
-    # This now includes "confirm_delete" and the more specific "cancel_operation" check.
     is_delete_action = query.data.startswith("delete_") or query.data == "confirm_delete"
     is_cancel_for_delete = (
         query.data == "cancel_operation" and 
@@ -1978,9 +1990,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_delete_action or is_cancel_for_delete:
         await handle_delete_buttons(update, context)
         return
-    # --- END OF FIX ---
 
-    # --- MAIN TORRENT WORKFLOW LOGIC ---
     await query.answer()
     message = query.message
     if not isinstance(message, Message): return
@@ -1988,33 +1998,78 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = message.chat_id
     chat_id_str = str(chat_id)
     active_downloads = context.bot_data.get('active_downloads', {})
+    download_queues = context.bot_data.get('download_queues', {})
     
     message_text: str = ""
     reply_markup: Optional[InlineKeyboardMarkup] = None
     parse_mode: Optional[str] = None
 
-    if query.data in ["cancel_download", "confirm_cancel", "resume_download"]:
+    if query.data == "pause_download":
+        if chat_id_str in active_downloads:
+            download_data = active_downloads[chat_id_str]
+            lock = download_data.get('lock')
+            if lock:
+                async with lock:
+                    queue_for_user = download_queues.get(chat_id_str, [])
+                    if queue_for_user:
+                        # This case requeues the download, so a text update is appropriate.
+                        message_text = "⏸️ Paused and moved to the back of the queue."
+                        download_data['requeued'] = True
+                        if 'task' in download_data and not download_data['task'].done():
+                            download_data['task'].cancel()
+                        await query.edit_message_text(text=message_text)
+                    else:
+                        # --- THE FIX: Only update the buttons, not the text. ---
+                        download_data['is_paused'] = True
+                        reply_markup = InlineKeyboardMarkup([[
+                            InlineKeyboardButton("▶️ Resume", callback_data="resume_download"),
+                            InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download"),
+                        ]])
+                        await query.edit_message_reply_markup(reply_markup=reply_markup)
+                        # --- End of fix ---
+                return # We've handled the edit, so we can exit the function.
+        else:
+            message_text = "ℹ️ Could not find an active download to pause."
+    
+    elif query.data == "resume_download":
+        if chat_id_str in active_downloads:
+            download_data = active_downloads[chat_id_str]
+            lock = download_data.get('lock')
+            if lock:
+                async with lock:
+                    download_data['is_paused'] = False
+                    # Let the ProgressReporter handle the message update on its next cycle.
+                    # We just need to update the buttons for immediate feedback.
+                    reply_markup = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("⏸️ Pause", callback_data="pause_download"),
+                        InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download"),
+                    ]])
+                    await query.edit_message_reply_markup(reply_markup=reply_markup)
+            return # We've handled the edit, so we can exit.
+        else:
+            message_text = "ℹ️ This download is in the queue and will resume automatically in its turn."
+            
+    elif query.data in ["cancel_download", "confirm_cancel"]:
         if chat_id_str in active_downloads:
             download_data = active_downloads[chat_id_str]
             lock = download_data.get('lock')
             if lock:
                 async with lock:
                     if query.data == "cancel_download":
-                        download_data['cancellation_pending'] = True
+                        continue_callback = "resume_download" if download_data.get('is_paused') else "pause_download_noop"
+                        continue_text = "❌ No, Continue"
+                        
                         message_text = "Are you sure you want to cancel this download?"
                         reply_markup = InlineKeyboardMarkup([[
                             InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
-                            InlineKeyboardButton("❌ No, Continue", callback_data="resume_download"),
+                            InlineKeyboardButton(continue_text, callback_data=continue_callback),
                         ]])
                     elif query.data == "confirm_cancel":
+                        download_data.pop('is_paused', None)
+                        download_data.pop('requeued', None)
                         if 'task' in download_data and not download_data['task'].done():
-                            task: asyncio.Task = download_data['task']
-                            task.cancel()
+                            download_data['task'].cancel()
                         message_text = "✅ Download has been cancelled."
-                    elif query.data == "resume_download":
-                        download_data['cancellation_pending'] = False
-                        message_text = "▶️ Download resuming..."
-                        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]])
         else:
             message_text = "ℹ️ Could not find an active download to cancel."
 
@@ -2048,23 +2103,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_text = "This action has expired. Please send the link again."
         else:
             ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            if chat_id_str in active_downloads:
+                active_data = active_downloads[chat_id_str]
+                if active_data.get('is_paused', False):
+                    print(f"[{ts}] [BUTTON_HANDLER] New download added while one is paused. Requeueing the paused one.")
+                    active_data['requeued'] = True
+                    if 'task' in active_data and not active_data['task'].done():
+                        active_data['task'].cancel()
+
             save_paths = context.bot_data["SAVE_PATHS"]
             initial_save_path = save_paths['default']
             download_data = { 'source_dict': pending_torrent, 'chat_id': chat_id, 'message_id': pending_torrent['original_message_id'], 'save_path': initial_save_path }
-            download_queues = context.bot_data.get('download_queues', {})
+            
             if chat_id_str not in download_queues: download_queues[chat_id_str] = []
             download_queues[chat_id_str].append(download_data)
             position = len(download_queues[chat_id_str])
             print(f"[{ts}] [BUTTON_HANDLER] User {chat_id_str} confirmed download. Queued at position {position}.")
-            if chat_id_str in active_downloads:
+            
+            is_truly_active = chat_id_str in active_downloads and not active_downloads[chat_id_str].get('requeued')
+            if is_truly_active:
                 message_text = f"✅ Download queued. You are position #{position} in line."
             else:
                 message_text = f"✅ Your download is next in line and will begin shortly."
+                
             save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
             await process_queue_for_user(chat_id, context.application)
     
+    if query.data == "pause_download_noop":
+         if chat_id_str in active_downloads:
+            download_data = active_downloads[chat_id_str]
+            download_data['cancellation_pending'] = False
+            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏸️ Pause", callback_data="pause_download"), InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download")]])
+            await query.edit_message_reply_markup(reply_markup=reply_markup)
+            return
+
     if not message_text:
-        message_text = "This action has expired or is unknown. Please try again."
+        return
 
     try:
         await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -2086,7 +2161,10 @@ class ProgressReporter:
             progress_percent = status.progress * 100
             speed_mbps = status.download_rate / 1024 / 1024
             ts_progress = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts_progress}] [LOG] {log_name}: {progress_percent:.2f}% | Peers: {status.num_peers} | Speed: {speed_mbps:.2f} MB/s")
+            
+            # Reduce log spam by only logging active downloads
+            if not self.download_data.get('is_paused', False):
+                print(f"[{ts_progress}] [LOG] {log_name}: {progress_percent:.2f}% | Peers: {status.num_peers} | Speed: {speed_mbps:.2f} MB/s")
             
             current_time = time.monotonic()
             if current_time - self.last_update_time < 5:
@@ -2102,16 +2180,31 @@ class ProgressReporter:
             else:
                 name_str = f"`{escape_markdown(self.clean_name)}`"
 
-            # --- THE FIX: Using a standard multi-line f-string for proper newlines ---
+            # --- THE FIX: Conditionally set the header AND the state string ---
+            is_paused = self.download_data.get('is_paused', False)
+            
+            header_str = "⏸️ *Paused:*" if is_paused else "⬇️ *Downloading:*"
+            state_str = "*paused*" if is_paused else escape_markdown(status.state.name)
+            
             message_text = (
-                f"⬇️ *Downloading:*\n{name_str}\n"
+                f"{header_str}\n{name_str}\n"
                 f"*Progress:* {escape_markdown(f'{progress_percent:.2f}')}%\n"
-                f"*State:* {escape_markdown(status.state.name)}\n"
+                f"*State:* {state_str}\n"
                 f"*Peers:* {status.num_peers}\n"
                 f"*Speed:* {escape_markdown(f'{speed_mbps:.2f}')} MB/s"
             )
+
+            if is_paused:
+                reply_markup = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("▶️ Resume", callback_data="resume_download"),
+                    InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download")
+                ]])
+            else:
+                reply_markup = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("⏸️ Pause", callback_data="pause_download"),
+                    InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download")
+                ]])
             # --- End of fix ---
-            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]])
             
             try:
                 await self.application.bot.edit_message_text(
@@ -2307,12 +2400,10 @@ async def start_download_task(download_data: Dict, application: Application):
         if "Message is not modified" not in str(e):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit message to start queued download: {e}")
 
-# file: telegram_bot.py
-
 async def download_task_wrapper(download_data: Dict, application: Application):
     """
     (REVISED) Wraps the entire download lifecycle, now with a trigger
-    for the automated chat clearing.
+    for the automated chat clearing and handling for being paused and requeued.
     """
     source_dict = download_data['source_dict']
     chat_id = download_data['chat_id']
@@ -2329,6 +2420,7 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             save_path=initial_save_path,
             status_callback=reporter.report,
             bot_data=application.bot_data,
+            download_data=download_data, # Pass the dictionary through
             allowed_extensions=ALLOWED_EXTENSIONS
         )
 
@@ -2341,13 +2433,21 @@ async def download_task_wrapper(download_data: Dict, application: Application):
                 plex_config=application.bot_data.get("PLEX_CONFIG")
             )
         else:
-            message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager."
+            # If success is false, it could be a requeue, check the flag.
+            if not download_data.get('requeued', False):
+                message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager."
 
     except asyncio.CancelledError:
-        if application.bot_data.get('is_shutting_down', False):
+        # --- THE FIX: Check for requeue signal before setting cancel message ---
+        if download_data.get('requeued', False):
+             ts_requeue = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+             print(f"[{ts_requeue}] [INFO] Task for '{clean_name}' cancelled for requeue.")
+             # Message is handled by the finally block logic.
+        elif application.bot_data.get('is_shutting_down', False):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Task for '{clean_name}' paused for shutdown.")
-            raise
-        message_text = f"⏹️ *Cancelled*\nDownload has been stopped for:\n`{escape_markdown(clean_name)}`"
+            raise # Re-raise to be handled by post_shutdown
+        else: # This is a true user cancellation
+            message_text = f"⏹️ *Cancelled*\nDownload has been stopped for:\n`{escape_markdown(clean_name)}`"
             
     except Exception as e:
         ts_except = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -2355,10 +2455,37 @@ async def download_task_wrapper(download_data: Dict, application: Application):
         message_text = f"❌ *Error*\nAn unexpected error occurred:\n`{escape_markdown(str(e))}`"
             
     finally:
-        if not application.bot_data.get('is_shutting_down', False):
+        # --- THE FIX: This block now handles requeueing as well as final states ---
+        if download_data.get('requeued', False):
+            ts_requeue_fin = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts_requeue_fin}] [REQUEUE] Moving paused/interrupted download to back of queue.")
+            
+            chat_id_str = str(chat_id)
+            active_downloads = application.bot_data.get('active_downloads', {})
+            download_queues = application.bot_data.get('download_queues', {})
+
+            # Clean up the download data for requeueing but keep pause state
+            download_data.pop('task', None)
+            download_data.pop('handle', None)
+            download_data.pop('requeued', None)
+            download_data['is_paused'] = True # Ensure it's marked as paused for the queue
+            
+            # Add to the back of the queue
+            if chat_id_str not in download_queues:
+                download_queues[chat_id_str] = []
+            download_queues[chat_id_str].append(download_data)
+            
+            # Remove from active downloads
+            if chat_id_str in active_downloads:
+                del active_downloads[chat_id_str]
+            
+            save_state(application.bot_data['persistence_file'], active_downloads, download_queues)
+            await process_queue_for_user(chat_id, application) # Start the next download
+        
+        elif not application.bot_data.get('is_shutting_down', False):
+            # This is the original cleanup logic for a completed/failed/cancelled download
             final_message = None
             try:
-                # Store the final message so we can get its ID for the clear command
                 final_message = await application.bot.edit_message_text(
                     text=message_text, chat_id=chat_id, message_id=message_id, 
                     parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None
@@ -2371,13 +2498,11 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             await process_queue_for_user(chat_id, application)
 
             # --- THE NEW TRIGGER LOGIC ---
-            # After processing the next user, check if their queue is now empty.
             queues = application.bot_data.get('download_queues', {})
             if not queues.get(str(chat_id)) and final_message:
                 ts_trigger = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 print(f"[{ts_trigger}] [TRIGGER] Queue for chat {chat_id} is empty. Scheduling delayed clear.")
                 await schedule_delayed_clear(chat_id, final_message.message_id, application)
-            # --- END OF TRIGGER ---
 
 # --- MAIN SCRIPT EXECUTION ---
 if __name__ == '__main__':

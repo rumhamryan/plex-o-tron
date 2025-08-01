@@ -1,12 +1,8 @@
 ToDo:
 
-Reasonable features in scope and effort:
-1. pause download
-  - send paused torrent to the back of the queue
-  - once it is the last torrent in the queue it is started again
+MAKE SURE THE DELETE OPERATION TRIGGERS A PLEX LIBRARY SCAN AFTER VERIFYING DELETION
 
-These are the big one:
-2. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
+1. auto-search, type a movie or tv show, below is the site heirarchy, but there is more tribal knowledge to dump here before implementation
   - movies
     - yts.mx
     - 1337x.to
