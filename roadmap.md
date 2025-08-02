@@ -2,7 +2,7 @@ ToDo:
 
 # **Project: `search` Command Integration**
 
-**Objective:** To implement a new `/search` command that allows users to find and download movies and TV shows by searching configured torrent websites, filtering the results based on user-defined preferences, and presenting the best options for download.
+**Objective:** To implement a new `/search` command that allows users to find and download movies and TV shows by searching configured torrent websites, filtering the results based on user-defined preferences, and presenting the best options for download. Python 3.11.8 environment.
 
 ---
 

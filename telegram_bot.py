@@ -1334,11 +1334,17 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_user_authorized(update, context):
         return
     if not update.message: return
+    # This guard prevents user_data from ever being None.
+    if context.user_data is None: context.user_data = {}
 
     try:
         await update.message.delete()
     except BadRequest:
         pass
+
+    # --- THE FIX: Set the workflow state immediately ---
+    context.user_data['active_workflow'] = 'delete'
+    # --- End of fix ---
 
     keyboard = [
         [
@@ -1539,6 +1545,42 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
         except BadRequest as e_inner:
             if "Message is not modified" not in str(e_inner):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(NEW) Starts the conversation to search for media."""
+    if not await is_user_authorized(update, context):
+        return
+    if not update.message: return
+    # This guard prevents user_data from ever being None.
+    if context.user_data is None: context.user_data = {}
+
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    user = update.effective_user
+    if user:
+        print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) initiated /search command.")
+    else:
+        print(f"[{ts}] [SEARCH] An anonymous user initiated /search command.")
+        
+    # --- THE FIX: Set the workflow state immediately ---
+    context.user_data['active_workflow'] = 'search'
+    # --- End of fix ---
+
+    try:
+        await update.message.delete()
+    except BadRequest:
+        pass
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🎬 Movie", callback_data="search_start_movie"),
+            InlineKeyboardButton("📺 TV Show", callback_data="search_start_tv"),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    message_text = "What type of media do you want to search for?"
+    
+    await update.message.reply_text(text=message_text, reply_markup=reply_markup)
 
 async def find_magnet_link_on_page(url: str) -> List[str]:
     """
@@ -1933,6 +1975,45 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         if "Message is not modified" not in str(e):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit message in delete_button_handler: {e}")
 
+async def handle_search_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    (NEW) Manages the multi-step conversation for searching for media.
+    """
+    if not update.message or not update.message.text: return
+    if context.user_data is None: context.user_data = {}
+
+    chat_id = update.message.chat_id
+    text = update.message.text.strip()
+    next_action = context.user_data.get('next_action', '')
+    prompt_message_id = context.user_data.pop('prompt_message_id', None)
+
+    try:
+        await update.message.delete()
+        if prompt_message_id:
+            await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+    except (BadRequest, TimedOut):
+        pass
+
+    if next_action in ['search_movie_title', 'search_tv_title']:
+        media_type = "movie" if next_action == 'search_movie_title' else "TV show"
+        context.user_data.pop('next_action', None)
+        
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        user = update.effective_user
+        if user:
+            print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) is searching for {media_type}: '{text}'")
+        else:
+            print(f"[{ts}] [SEARCH] An anonymous user is searching for {media_type}: '{text}'")
+
+        # Add a cancel button to the placeholder message
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"Searching for {media_type}: {text}...",
+            reply_markup=reply_markup
+        )
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles incoming messages, delegating to the appropriate workflow.
@@ -1946,8 +2027,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
 
     # --- THE REFACTOR: Delegate to the dedicated delete handler ---
-    if context.user_data.get('next_action', '').startswith('delete_'):
+    next_action = context.user_data.get('next_action', '')
+    if next_action.startswith('delete_'):
         await handle_delete_workflow(update, context)
+        return
+    elif next_action.startswith('search_'):
+        await handle_search_workflow(update, context)
         return
     # --- End of refactor ---
 
@@ -1984,7 +2069,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_delete_action = query.data.startswith("delete_") or query.data == "confirm_delete"
     is_cancel_for_delete = (
         query.data == "cancel_operation" and 
-        any(key in context.user_data for key in ['next_action', 'show_path_to_delete', 'selection_choices'])
+        context.user_data.get('active_workflow') == 'delete'
     )
 
     if is_delete_action or is_cancel_for_delete:
@@ -2004,7 +2089,35 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup: Optional[InlineKeyboardMarkup] = None
     parse_mode: Optional[str] = None
 
-    if query.data == "pause_download":
+    if query.data == "search_start_movie":
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        user = query.from_user
+        if user:
+            print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) selected 'Movie' for search.")
+        else:
+            print(f"[{ts}] [SEARCH] An anonymous user selected 'Movie' for search.")
+        
+        context.user_data['next_action'] = 'search_movie_title'
+        context.user_data['active_workflow'] = 'search' # Set persistent workflow state
+        context.user_data['prompt_message_id'] = message.message_id
+        message_text = "🎬 Please send me the title of the movie to search for."
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+
+    elif query.data == "search_start_tv":
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        user = query.from_user
+        if user:
+            print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) selected 'TV Show' for search.")
+        else:
+            print(f"[{ts}] [SEARCH] An anonymous user selected 'TV Show' for search.")
+
+        context.user_data['next_action'] = 'search_tv_title'
+        context.user_data['active_workflow'] = 'search' # Set persistent workflow state
+        context.user_data['prompt_message_id'] = message.message_id
+        message_text = "📺 Please send me the title of the TV show to search for."
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+
+    elif query.data == "pause_download":
         if chat_id_str in active_downloads:
             download_data = active_downloads[chat_id_str]
             lock = download_data.get('lock')
@@ -2012,22 +2125,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 async with lock:
                     queue_for_user = download_queues.get(chat_id_str, [])
                     if queue_for_user:
-                        # This case requeues the download, so a text update is appropriate.
                         message_text = "⏸️ Paused and moved to the back of the queue."
                         download_data['requeued'] = True
                         if 'task' in download_data and not download_data['task'].done():
                             download_data['task'].cancel()
                         await query.edit_message_text(text=message_text)
                     else:
-                        # --- THE FIX: Only update the buttons, not the text. ---
                         download_data['is_paused'] = True
                         reply_markup = InlineKeyboardMarkup([[
                             InlineKeyboardButton("▶️ Resume", callback_data="resume_download"),
                             InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download"),
                         ]])
                         await query.edit_message_reply_markup(reply_markup=reply_markup)
-                        # --- End of fix ---
-                return # We've handled the edit, so we can exit the function.
+                return
         else:
             message_text = "ℹ️ Could not find an active download to pause."
     
@@ -2038,14 +2148,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if lock:
                 async with lock:
                     download_data['is_paused'] = False
-                    # Let the ProgressReporter handle the message update on its next cycle.
-                    # We just need to update the buttons for immediate feedback.
                     reply_markup = InlineKeyboardMarkup([[
                         InlineKeyboardButton("⏸️ Pause", callback_data="pause_download"),
                         InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download"),
                     ]])
                     await query.edit_message_reply_markup(reply_markup=reply_markup)
-            return # We've handled the edit, so we can exit.
+            return
         else:
             message_text = "ℹ️ This download is in the queue and will resume automatically in its turn."
             
@@ -2074,8 +2182,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_text = "ℹ️ Could not find an active download to cancel."
 
     elif query.data == "cancel_operation":
-        context.user_data.pop('temp_magnet_choices_details', None)
-        context.user_data.pop('pending_torrent', None)
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        user = query.from_user
+        
+        # Check the persistent workflow state to log the correct cancellation type
+        workflow = context.user_data.get('active_workflow')
+        if workflow == 'search':
+            log_msg = f"[{ts}] [SEARCH] User {user.id} ({user.username}) cancelled the search workflow." if user else f"[{ts}] [SEARCH] An anonymous user cancelled the search workflow."
+            print(log_msg)
+        elif 'pending_torrent' in context.user_data:
+            log_msg = f"[{ts}] [DOWNLOAD] User {user.id} ({user.username}) cancelled a download confirmation." if user else f"[{ts}] [DOWNLOAD] An anonymous user cancelled a download confirmation."
+            print(log_msg)
+        
+        keys_to_clear = [
+            'temp_magnet_choices_details', 'pending_torrent', 'next_action', 
+            'prompt_message_id', 'active_workflow'
+        ]
+        for key in keys_to_clear:
+            context.user_data.pop(key, None)
         message_text = "❌ Operation cancelled."
 
     elif query.data.startswith("select_magnet_"):
@@ -2537,6 +2661,7 @@ if __name__ == '__main__':
         'dht_bootstrap_nodes': 'router.utorrent.com:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881'
     })
     
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?search$', re.IGNORECASE)), search_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?links$', re.IGNORECASE)), links_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?start$', re.IGNORECASE)), help_command))
