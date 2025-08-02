@@ -61,21 +61,38 @@ ToDo:
     }
 
     preferences = {
-        "resolutions": {
-            "4k": 5,
-            "2160p": 5,
-            "1080p": 3,
-            "720p": 1
-        },
-        "codecs": {
-            "x265": 2,
-            "hevc": 2,
-            "x264": 1
-        },
-        "uploaders": {
-            "EZTV": 5,
-            "MeGusta": 5
-        }
+      "movies": {
+          "resolutions": {
+              "4k": 5,
+              "2160p": 5,
+              "1080p": 3,
+              "720p": 1
+          },
+          "codecs": {
+              "x265": 2,
+              "hevc": 2,
+              "x264": 1
+          },
+          "uploaders": {
+              "mazemaze16": 5,
+              "QxR": 5
+          }
+      }, 
+      "tv": {
+          "resolutions": {
+              "1080p": 5,
+              "720p": 2
+          },
+          "codecs": {
+              "x265": 2,
+              "hevc": 2,
+              "x264": 1
+          },
+          "uploaders": {
+              "EZTV": 5,
+              "MeGusta": 5
+          }
+      }, 
     }
     ```
 

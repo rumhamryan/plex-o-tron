@@ -202,42 +202,52 @@ async def schedule_delayed_clear(chat_id: int, last_message_id: int, application
     """
     (REVISED) Schedules a chat clear operation and sends a help message upon completion.
     """
-    user_data = application.user_data[chat_id]
+    user_data = application.user_data.get(chat_id, {})
 
     if user_data.get('pending_clear_task'):
         return
 
     async def clear_task():
-        """The actual task that waits, clears, and then sends the help message."""
+        """
+        The actual task that waits, sends the new help message first, and then
+        clears the old messages in the background.
+        """
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{ts}] [AUTO-CLEAR] Starting 30-second countdown for chat {chat_id}.")
-        await asyncio.sleep(15)
+        print(f"[{ts}] [AUTO-CLEAR] Starting 10-second countdown for chat {chat_id}.")
+        await asyncio.sleep(10)
         
-        current_user_data = application.user_data[chat_id]
+        current_user_data = application.user_data.get(chat_id, {})
         
         queues = application.bot_data.get('download_queues', {})
-        if queues.get(str(chat_id)):
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Aborting clear for chat {chat_id}; new item was queued.")
+        active_downloads = application.bot_data.get('active_downloads', {})
+        if queues.get(str(chat_id)) or active_downloads.get(str(chat_id)):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Aborting clear for chat {chat_id}; an item was queued or is active.")
             current_user_data.pop('pending_clear_task', None)
             return
 
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Countdown finished. Executing clear for chat {chat_id}.")
-        await _perform_chat_clear(chat_id, last_message_id, application)
-        
-        # --- THE FIX: Send the "hello" message after clearing ---
+        # --- THE FIX: Send the new message BEFORE starting the slow deletion ---
+        new_message = None
         try:
             ts_hello = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts_hello}] [AUTO-CLEAR] Sending post-clear help message to chat {chat_id}.")
+            print(f"[{ts_hello}] [AUTO-CLEAR] Sending pre-clear help message to chat {chat_id} first.")
             help_text = get_help_message_text()
-            await application.bot.send_message(
+            new_message = await application.bot.send_message(
                 chat_id=chat_id,
                 text=help_text,
                 parse_mode=ParseMode.MARKDOWN_V2
             )
         except Exception as e:
             ts_err = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts_err}] [AUTO-CLEAR] Failed to send post-clear help message: {e}")
+            print(f"[{ts_err}] [AUTO-CLEAR] Failed to send pre-clear help message: {e}")
         # --- End of fix ---
+
+        # The message ID to clear up to is the one right before the new message we just sent.
+        # If sending failed, we fall back to the original last_message_id.
+        clear_up_to_id = new_message.message_id -1 if new_message else last_message_id
+
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Countdown finished. Executing background clear for chat {chat_id} up to message {clear_up_to_id}.")
+        await _perform_chat_clear(chat_id, clear_up_to_id, application)
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTO-CLEAR] Background clear completed for chat {chat_id}.")
 
         current_user_data.pop('pending_clear_task', None)
 
