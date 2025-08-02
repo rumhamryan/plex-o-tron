@@ -55,77 +55,117 @@ def get_help_message_text() -> str:
         "`status`   \- Checks Plex server status\."
     )
 
-def get_configuration() -> tuple[str, dict, list[int], dict]:
+def get_configuration() -> tuple[str, dict, list[int], dict, dict]:
     """
-    Reads bot token, paths, allowed IDs, and Plex config from the config.ini file.
-    (Refactored to correctly expand user home directory paths)
+    Reads bot token, paths, allowed IDs, Plex and Search config from the config.ini file.
+    (Refactored to manually parse the [search] section and feed a cleaned config
+    to the standard parser to avoid parsing errors.)
     """
-    config = configparser.ConfigParser()
     config_path = 'config.ini'
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file '{config_path}' not found. Please create it.")
+
+    with open(config_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
     
-    config.read(config_path)
+    # --- STEP 1: Manually find and parse the [search] section ---
+    search_config = {}
+    search_section_content = {}
+    in_search_section = False
+    current_key = None
     
-    token = config.get('telegram', 'bot_token', fallback=None)
+    for line in lines:
+        stripped_line = line.strip()
+        if stripped_line == '[search]':
+            in_search_section = True
+            continue
+
+        if in_search_section:
+            if stripped_line.startswith('[') and stripped_line.endswith(']'):
+                # We've reached the next section, so stop processing for search.
+                in_search_section = False
+                continue
+            
+            # Identify new key=value pairs within the search section
+            if '=' in line and line.strip().startswith(('websites', 'preferences')):
+                key, value = line.split('=', 1)
+                current_key = key.strip()
+                search_section_content[current_key] = value.strip()
+            # Append subsequent lines of a multiline value
+            elif current_key and not stripped_line.startswith('['):
+                 search_section_content[current_key] += '\n' + line
+    
+    try:
+        if 'websites' in search_section_content:
+            search_config['websites'] = json.loads(search_section_content['websites'])
+        if 'preferences' in search_section_content:
+            search_config['preferences'] = json.loads(search_section_content['preferences'])
+        
+        if search_config:
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CONFIG] Search configuration loaded successfully.")
+    except json.JSONDecodeError as e:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CRITICAL] Failed to parse JSON from [search] section: {e}")
+        raise ValueError(f"Invalid JSON in [search] section: {e}")
+
+    # --- STEP 2: Create a clean config for the standard parser ---
+    # This version of the config has the [search] section removed.
+    config_for_parser = configparser.ConfigParser()
+    clean_lines = [line for line in lines if not line.strip().startswith(('websites =', 'preferences =')) and '[search]' not in line]
+    
+    # Heuristically remove the JSON content lines
+    final_clean_lines = []
+    in_multiline = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == '[search]':
+            in_multiline = True # Start skipping lines from here
+        elif stripped.startswith('[') and stripped.endswith(']'):
+            in_multiline = False # Stop skipping when a new section is found
+        
+        if not in_multiline:
+            final_clean_lines.append(line)
+
+    config_for_parser.read_string("".join(final_clean_lines))
+
+    # --- STEP 3: Read all other values using the clean parser object ---
+    token = config_for_parser.get('telegram', 'bot_token', fallback=None)
     if not token or token == "PLACE_TOKEN_HERE":
         raise ValueError(f"Bot token not found or not set in '{config_path}'.")
         
     paths = {
-        'default': config.get('host', 'default_save_path', fallback=None),
-        'movies': config.get('host', 'movies_save_path', fallback=None),
-        'tv_shows': config.get('host', 'tv_shows_save_path', fallback=None)
+        'default': config_for_parser.get('host', 'default_save_path', fallback=None),
+        'movies': config_for_parser.get('host', 'movies_save_path', fallback=None),
+        'tv_shows': config_for_parser.get('host', 'tv_shows_save_path', fallback=None)
     }
 
-    # --- THE FIX: Expand the user tilde (~) and resolve to absolute paths ---
-    # This ensures that paths like '~/Downloads' are correctly interpreted.
     for key, value in paths.items():
         if value:
-            paths[key] = os.path.expanduser(value)
+            paths[key] = os.path.expanduser(value.strip())
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [CONFIG] Resolved path for '{key}': {paths[key]}")
-    # --- End of fix ---
 
     if not paths['default']:
         raise ValueError("'default_save_path' is mandatory and was not found in the config file.")
 
-    if not paths['movies']:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] 'movies_save_path' not set. Falling back to default path for movies.")
-        paths['movies'] = paths['default']
-    if not paths['tv_shows']:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] 'tv_shows_save_path' not set. Falling back to default path for TV shows.")
-        paths['tv_shows'] = paths['default']
-    
     for path_type, path_value in paths.items():
-        if path_value is not None:
-            # The directory existence check will now work on the correct, expanded path
-            if not os.path.exists(path_value):
-                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INFO: {path_type.capitalize()} path '{path_value}' not found. Creating it.")
-                os.makedirs(path_value)
+        if path_value and not os.path.exists(path_value):
+            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] INFO: {path_type.capitalize()} path '{path_value}' not found. Creating it.")
+            os.makedirs(path_value)
 
-    allowed_ids_str = config.get('telegram', 'allowed_user_ids', fallback='')
-    allowed_ids = []
-    if not allowed_ids_str:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] 'allowed_user_ids' is empty. The bot will be accessible to everyone.")
-    else:
-        try:
-            allowed_ids = [int(id.strip()) for id in allowed_ids_str.split(',') if id.strip()]
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Bot access is restricted to the following User IDs: {allowed_ids}")
-        except ValueError:
-            raise ValueError("Invalid entry in 'allowed_user_ids'.")
+    allowed_ids_str = config_for_parser.get('telegram', 'allowed_user_ids', fallback='')
+    allowed_ids = [int(id.strip()) for id in allowed_ids_str.split(',') if id.strip()] if allowed_ids_str else []
 
     plex_config = {}
-    if config.has_section('plex'):
-        plex_url = config.get('plex', 'plex_url', fallback=None)
-        plex_token = config.get('plex', 'plex_token', fallback=None)
+    if config_for_parser.has_section('plex'):
+        plex_url = config_for_parser.get('plex', 'plex_url', fallback=None)
+        plex_token = config_for_parser.get('plex', 'plex_token', fallback=None)
         if plex_url and plex_token and plex_token != "YOUR_PEX_TOKEN_HERE":
             plex_config = {'url': plex_url, 'token': plex_token}
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Plex configuration loaded successfully.")
-        else:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Plex section found, but URL or token is missing or default. Plex scanning will be disabled.")
-    else:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] No [plex] section in config file. Plex scanning will be disabled.")
 
-    return token, paths, allowed_ids, plex_config
+    if not search_config:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] No [search] section found or it was empty. Search command will be disabled.")
+
+    return token, paths, allowed_ids, plex_config, search_config
 
 async def _perform_chat_clear(chat_id: int, up_to_message_id: int, application: Application):
     """
@@ -2633,7 +2673,7 @@ if __name__ == '__main__':
     PERSISTENCE_FILE = 'persistence.json'
 
     try:
-        BOT_TOKEN, SAVE_PATHS, ALLOWED_USER_IDS, PLEX_CONFIG = get_configuration()
+        BOT_TOKEN, SAVE_PATHS, ALLOWED_USER_IDS, PLEX_CONFIG, SEARCH_CONFIG = get_configuration()
     except (FileNotFoundError, ValueError) as e:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] CRITICAL ERROR: {e}")
         sys.exit(1)
@@ -2650,6 +2690,7 @@ if __name__ == '__main__':
     
     application.bot_data["SAVE_PATHS"] = SAVE_PATHS
     application.bot_data["PLEX_CONFIG"] = PLEX_CONFIG
+    application.bot_data["SEARCH_CONFIG"] = SEARCH_CONFIG
     application.bot_data["persistence_file"] = PERSISTENCE_FILE
     application.bot_data["ALLOWED_USER_IDS"] = ALLOWED_USER_IDS
     application.bot_data.setdefault('active_downloads', {})
