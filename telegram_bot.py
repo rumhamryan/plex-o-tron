@@ -544,6 +544,102 @@ async def find_episode_file(season_path: str, season_number: int, episode_number
         return None
         
     return await asyncio.to_thread(perform_search)
+
+async def _scrape_yts(query: str, search_url_template: str) -> List[Dict[str, Any]]:
+    """
+    (REBUILT) Scrapes YTS.mx. This version's sole purpose is to find movie
+    titles, years, and the URL to their dedicated page. It no longer
+    searches for magnet links directly.
+    """
+    page_links = []
+    formatted_query = urllib.parse.quote_plus(query)
+    search_url = search_url_template.replace("{query}", formatted_query)
+    
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts}] [SCRAPER] Scraping YTS for page links: {search_url}")
+
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            response = await client.get(search_url, headers=headers)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'lxml')
+
+        movie_wrappers = soup.find_all('div', class_='browse-movie-wrap')
+        if not movie_wrappers:
+            print(f"[{ts}] [SCRAPER] No 'browse-movie-wrap' elements found.")
+            return []
+
+        for movie in movie_wrappers:
+            if not isinstance(movie, Tag): continue
+
+            title_tag = movie.find('a', class_='browse-movie-title')
+            year_tag = movie.find('div', class_='browse-movie-year')
+
+            if not isinstance(title_tag, Tag) or not isinstance(year_tag, Tag): continue
+
+            # The page URL is the href of the title link
+            page_url = title_tag.get('href')
+            if not isinstance(page_url, str): continue
+
+            title = title_tag.get_text(strip=True)
+            year = year_tag.get_text(strip=True)
+            score = fuzz.ratio(query.lower(), title.lower())
+            
+            page_links.append({
+                'title': title,
+                'year': year,
+                'page_url': page_url, # The crucial piece of new data
+                'score': score
+            })
+
+    except httpx.RequestError as e:
+        print(f"[{ts}] [SCRAPER ERROR] HTTP request failed for YTS: {e}")
+    except Exception as e:
+        print(f"[{ts}] [SCRAPER ERROR] An unexpected error occurred during YTS scrape: {e}")
+    
+    print(f"[{ts}] [SCRAPER] YTS scrape finished. Found {len(page_links)} potential movie links.")
+    return page_links
+
+async def _search_for_media(
+    query: str, 
+    media_type: str, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    site_index: int = 0
+) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    (MODIFIED) Orchestrates scraping, applies a score filter, and sorts results.
+    """
+    search_config = context.bot_data.get("SEARCH_CONFIG", {})
+    if not search_config: return [], "Search Not Configured"
+
+    websites = search_config.get("websites", {}).get(media_type, [])
+    if not websites or site_index >= len(websites): return [], "No sites available"
+
+    site_to_search = websites[site_index]
+    site_name, search_url = site_to_search.get("name"), site_to_search.get("search_url")
+
+    if not site_name or not search_url: return [], "Invalid site config"
+    
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts}] [SEARCH] Routing search for '{query}' to site: {site_name}")
+
+    results = []
+    if site_name == "YTS.mx":
+        results = await _scrape_yts(query, search_url)
+    else:
+        print(f"[{ts}] [SEARCH] No scraper implemented for '{site_name}' yet.")
+
+    # Filter results by score and then sort
+    if results:
+        # Keep only results with a reasonable similarity
+        filtered_results = [res for res in results if res.get('score', 0) >= 85]
+        # Sort the filtered results by score in descending order
+        filtered_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+        print(f"[{ts}] [SEARCH] Filtered {len(filtered_results)} candidates with score >= 85.")
+        return filtered_results, site_name
+
+    return [], site_name
     
 def _extract_first_int(text: str) -> Optional[int]:
     """Safely extracts the first integer from a string, ignoring trailing characters."""
@@ -2027,7 +2123,9 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def handle_search_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (NEW) Manages the multi-step conversation for searching for media.
+    (REBUILT) Manages the search workflow. After finding the best match,
+    it now passes the movie's dedicated page URL to the main
+    process_user_input function, leveraging the existing download flow.
     """
     if not update.message or not update.message.text: return
     if context.user_data is None: context.user_data = {}
@@ -2038,31 +2136,45 @@ async def handle_search_workflow(update: Update, context: ContextTypes.DEFAULT_T
     prompt_message_id = context.user_data.pop('prompt_message_id', None)
 
     try:
-        await update.message.delete()
         if prompt_message_id:
             await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+        await update.message.delete()
     except (BadRequest, TimedOut):
         pass
 
     if next_action in ['search_movie_title', 'search_tv_title']:
-        media_type = "movie" if next_action == 'search_movie_title' else "TV show"
+        config_media_type = "movies"
         context.user_data.pop('next_action', None)
         
-        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        user = update.effective_user
-        if user:
-            print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) is searching for {media_type}: '{text}'")
-        else:
-            print(f"[{ts}] [SEARCH] An anonymous user is searching for {media_type}: '{text}'")
-
-        # Add a cancel button to the placeholder message
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+        status_message = await context.bot.send_message(chat_id=chat_id, text=f"🔎 Searching for *{escape_markdown(text)}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
         
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"Searching for {media_type}: {text}...",
-            reply_markup=reply_markup
-        )
+        results, site_name = await _search_for_media(query=text, media_type=config_media_type, context=context)
+
+        if not results:
+            await status_message.edit_text(f"❌ No results found for '`{escape_markdown(text)}`' on *{escape_markdown(site_name)}*\\.", parse_mode=ParseMode.MARKDOWN_V2)
+            return
+
+        highest_score = results[0]['score']
+        top_results = [res for res in results if res['score'] == highest_score]
+        unique_top_movies = list({f"{res['title']} ({res['year']})": res for res in top_results}.values())
+
+        if len(unique_top_movies) > 1:
+            context.user_data['search_ambiguous_choices'] = unique_top_movies
+            keyboard = []
+            for i, movie in enumerate(unique_top_movies):
+                keyboard.append([InlineKeyboardButton(f"{movie['title']} ({movie['year']})", callback_data=f"search_clarify_{i}")])
+            keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+            await status_message.edit_text("Multiple possible matches found\\. Please select the correct one:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        else:
+            # Single best match found, proceed directly
+            best_match = unique_top_movies[0]
+            page_url_to_process = best_match['page_url']
+            
+            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts}] [SEARCH] Single best match found: '{best_match['title']}'. Passing URL to handler: {page_url_to_process}")
+            
+            # --- HANDOFF TO EXISTING WORKFLOW ---
+            await process_user_input(page_url_to_process, context, status_message)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -2303,6 +2415,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
             await process_queue_for_user(chat_id, context.application)
+
+    elif query.data.startswith("search_clarify_"):
+        choices = context.user_data.pop('search_ambiguous_choices', [])
+        message = query.message
+        if not isinstance(message, Message): return
+
+        if not choices:
+            await query.edit_message_text(text="❌ This selection has expired. Please start the search again.")
+        else:
+            try:
+                choice_index = int(query.data.split('_')[2])
+                selected_movie = choices[choice_index]
+                page_url_to_process = selected_movie['page_url']
+
+                ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[{ts}] [SEARCH] User clarified selection: '{selected_movie['title']}'. Passing URL to handler: {page_url_to_process}")
+
+                # --- HANDOFF TO EXISTING WORKFLOW ---
+                # Pass the original message object to be edited by the subsequent functions
+                await process_user_input(page_url_to_process, context, message)
+
+            except (ValueError, IndexError):
+                await query.edit_message_text(text="❌ An error occurred with your selection. Please try again.")
+        return # Explicitly return to prevent any other logic from running
     
     if query.data == "pause_download_noop":
          if chat_id_str in active_downloads:
