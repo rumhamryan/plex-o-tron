@@ -574,6 +574,40 @@ async def find_episode_file(season_path: str, season_number: int, episode_number
         
     return await asyncio.to_thread(perform_search)
 
+def _parse_codec(title: str) -> str:
+    """(NEW) Extracts a video codec from a torrent title string."""
+    title_lower = title.lower()
+    if 'x265' in title_lower or 'hevc' in title_lower:
+        return "x265"
+    if 'x264' in title_lower:
+        return "x264"
+    return "N/A"
+
+def _parse_size_to_gb(size_str: str) -> float:
+    """(NEW) Parses a size string (e.g., '2.4 GiB', '800 MB') and returns size in GB."""
+    if not isinstance(size_str, str):
+        return 0.0
+    
+    size_str = size_str.strip().upper().replace("GIB", "GB").replace("MIB", "MB")
+    
+    try:
+        match = re.search(r'([\d\.]+)', size_str)
+        if not match:
+            return 0.0
+        
+        value = float(match.group(1))
+        
+        if 'GB' in size_str:
+            return value
+        elif 'MB' in size_str:
+            return value / 1024
+        elif 'KB' in size_str:
+            return value / (1024 * 1024)
+        else:
+            return 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
 def _score_1337x_result(name: str, uploader: str, preferences: dict) -> int:
     """
     Calculates a score for a torrent result based on configured preferences.
@@ -611,7 +645,7 @@ async def _scrape_1337x(
     context: ContextTypes.DEFAULT_TYPE
 ) -> List[Dict[str, Any]]:
     """
-    (REVISED) Scrapes 1337x.to, now also extracting the torrent size for each result.
+    (REVISED) Scrapes 1337x.to, now extracting size, seeders, and codec.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     results = []
@@ -653,10 +687,10 @@ async def _scrape_1337x(
 
             name_cell = row.find('td', class_='name')
             uploader_cell = row.find('td', class_='user')
-            # --- THE CHANGE: Find the size cell ---
             size_cell = row.find('td', class_='size')
+            seeds_cell = row.find('td', class_='seeds') # --- ADDED ---
 
-            if not isinstance(name_cell, Tag) or not isinstance(uploader_cell, Tag) or not isinstance(size_cell, Tag):
+            if not isinstance(name_cell, Tag) or not isinstance(uploader_cell, Tag) or not isinstance(size_cell, Tag) or not isinstance(seeds_cell, Tag):
                 continue
             
             link_tag = name_cell.find_all('a')[-1]
@@ -667,8 +701,8 @@ async def _scrape_1337x(
             title = link_tag.get_text(strip=True)
             page_url_relative = link_tag.get('href')
             uploader = uploader_tag.get_text(strip=True) if isinstance(uploader_tag, Tag) else "Anonymous"
-            # --- THE CHANGE: Extract the size text ---
-            size_text = size_cell.get_text(strip=True)
+            size_str = size_cell.get_text(strip=True)
+            seeds_str = seeds_cell.get_text(strip=True)
 
             if not title or not page_url_relative:
                 continue
@@ -683,7 +717,9 @@ async def _scrape_1337x(
                     'score': score,
                     'source': '1337x',
                     'uploader': uploader,
-                    'size': size_text # <-- THE ADDITION
+                    'size_gb': _parse_size_to_gb(size_str),
+                    'codec': _parse_codec(title),
+                    'seeders': int(seeds_str) if seeds_str.isdigit() else 0
                 })
 
     except httpx.RequestError as e:
@@ -712,11 +748,9 @@ async def _scrape_yts(
     if not preferences: return []
     
     try:
-        # --- THE FIX: Use a single client for all requests in the function ---
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
             
-            # --- STAGE 1: Find Movie ID ---
             movie_id = None
             formatted_query = urllib.parse.quote_plus(query)
             search_url = search_url_template.replace("{query}", formatted_query)
@@ -747,7 +781,6 @@ async def _scrape_yts(
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SCRAPER ERROR] YTS Stage 1: Could not find data-movie-id on page {best_page_url}")
                 return []
 
-            # --- STAGE 2: Call API ---
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SCRAPER] YTS Stage 2: Calling API with movie_id '{movie_id}' for resolution '{resolution}'")
             results = []
             api_url = f"https://yts.mx/api/v2/movie_details.json?movie_id={movie_id}"
@@ -763,14 +796,11 @@ async def _scrape_yts(
             movie_data = api_data['data']['movie']
             movie_title = movie_data.get('title_long', query)
             api_torrents = movie_data.get('torrents', [])
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SCRAPER DEBUG] YTS API returned {len(api_torrents)} torrents.")
             
             for torrent in api_torrents:
                 quality = torrent.get('quality', '').lower()
                 if resolution and resolution.lower() in quality:
-                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SCRAPER DEBUG] >>> MATCH FOUND! Processing torrent with quality '{quality}'.")
                     full_title = f"{movie_title} [{torrent.get('quality')}.{torrent.get('type')}] [YTS.MX]"
-                    size_text = torrent.get('size', 'N/A')
                     info_hash = torrent.get('hash')
                     
                     if info_hash:
@@ -779,8 +809,14 @@ async def _scrape_yts(
                         score = _score_torrent_result(full_title, "YTS", preferences)
                         
                         results.append({
-                            'title': full_title, 'page_url': magnet_link,
-                            'score': score, 'source': 'YTS.mx', 'uploader': 'YTS', 'size': size_text
+                            'title': full_title,
+                            'page_url': magnet_link,
+                            'score': score,
+                            'source': 'YTS.mx',
+                            'uploader': 'YTS',
+                            'size_gb': torrent.get('size_bytes', 0) / (1024**3),
+                            'codec': _parse_codec(full_title),
+                            'seeders': torrent.get('seeds', 0)
                         })
             
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SCRAPER] YTS API scrape finished. Found {len(results)} matching torrents.")
@@ -2722,14 +2758,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not isinstance(message, Message): return
     if context.user_data is None: context.user_data = {}
     
-    # --- SEARCH WORKFLOW ---
     if query.data.startswith("search_start_"):
         await query.answer()
         if query.data == 'search_start_movie':
             context.user_data['next_action'] = 'search_movie_get_title'
-            # --- THE FIX: Escape parentheses. ---
             prompt_text = "🎬 Please send me the title of the movie to search for \\(you can include the year\\)\\."
-        else: # 'search_start_tv'
+        else:
             context.user_data['next_action'] = 'handle_title_for_tv'
             prompt_text = "📺 Please send me the title of the TV show to search for\\."
         
@@ -2752,7 +2786,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.edit_text("❌ Search context has expired. Please start over.")
             return
 
-        # --- THE FIX: Escape the ellipsis. ---
         await message.edit_text(
             text=f"🔎 Searching all sources for *{escape_markdown(final_title)}* in *{resolution}*\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2
@@ -2779,19 +2812,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['search_results'] = results
         keyboard = []
         
+        results_text = f"Found {len(results)} results for *{escape_markdown(final_title)}* in `{resolution}`\\. Please select one to download:"
+        
         for i, result in enumerate(results[:10]):
-            title_res = result.get('title', 'Unknown Title')
-            size = result.get('size', 'N/A')
-            source = result.get('source', 'N/A')
+            score = result.get('score', 0)
+            codec = result.get('codec', 'N/A')
+            size_gb = result.get('size_gb', 0.0)
+            seeders = result.get('seeders', 0)
             
-            button_label = f"{title_res} | {size} [{source}]"
-            if len(button_label) > 64:
-                button_label = button_label[:61] + "..."
+            button_label = f"[{score}] | {codec} | {size_gb:.2f} GB | S: {seeders}"
             
             keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")])
 
         keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
-        results_text = f"Found {len(results)} results for *{escape_markdown(final_title)}* in `{resolution}`\\. Please select one to download:"
         await message.edit_text(
             text=results_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -2810,10 +2843,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             choice_index = int(query.data.split('_')[2])
             selected_result = search_results[choice_index]
+            
+            # --- THE FIX: Add the full title to the message before processing the link ---
+            # This provides better context for the user.
+            full_title = selected_result.get('title', 'Unknown Title')
+            await message.edit_text(
+                text=f"✅ Selection: `{escape_markdown(full_title)}`\n\nInitiating download process\\.\\.\\.",
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+            
             page_url_to_process = selected_result['page_url']
-
             ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts}] [SEARCH] User selected '{selected_result['title']}'. Passing URL to handler: {page_url_to_process}")
+            print(f"[{ts}] [SEARCH] User selected '{selected_result['title']}'. Passing URL/Magnet to handler: {page_url_to_process}")
 
             await process_user_input(page_url_to_process, context, message)
         except (ValueError, IndexError):
@@ -2923,7 +2964,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         for key in keys_to_clear:
             context.user_data.pop(key, None)
-        # --- THE FIX: Escape the period and explicitly set the parse mode. ---
         message_text = "❌ Operation cancelled\\."
         parse_mode = ParseMode.MARKDOWN_V2
 
