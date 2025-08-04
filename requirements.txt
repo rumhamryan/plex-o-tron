@@ -1,5 +1,4 @@
 beautifulsoup4
-httpx
 lxml
 flask
 python-telegram-bot
