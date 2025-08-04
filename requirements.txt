@@ -8,3 +8,4 @@ libtorrent
 plexapi
 thefuzz
 python-Levenshtein
+httpx[http2]
