@@ -696,9 +696,8 @@ async def _scrape_1337x(
 
 async def _scrape_yts(query: str, search_url_template: str) -> List[Dict[str, Any]]:
     """
-    (REBUILT) Scrapes YTS.mx. This version's sole purpose is to find movie
-    titles, years, and the URL to their dedicated page. It no longer
-    searches for magnet links directly.
+    (REVISED) Scrapes YTS.mx. This version has improved logging to prevent
+    misleading error messages and correctly reports the URL being used.
     """
     page_links = []
     formatted_query = urllib.parse.quote_plus(query)
@@ -715,8 +714,10 @@ async def _scrape_yts(query: str, search_url_template: str) -> List[Dict[str, An
             soup = BeautifulSoup(response.text, 'lxml')
 
         movie_wrappers = soup.find_all('div', class_='browse-movie-wrap')
+        
+        # --- THE FIX: Correct logging when no results are found ---
         if not movie_wrappers:
-            print(f"[{ts}] [SCRAPER] No 'browse-movie-wrap' elements found.")
+            print(f"[{ts}] [SCRAPER] No movie results found on the YTS page for query '{query}'. URL: {search_url}")
             return []
 
         for movie in movie_wrappers:
@@ -727,7 +728,6 @@ async def _scrape_yts(query: str, search_url_template: str) -> List[Dict[str, An
 
             if not isinstance(title_tag, Tag) or not isinstance(year_tag, Tag): continue
 
-            # The page URL is the href of the title link
             page_url = title_tag.get('href')
             if not isinstance(page_url, str): continue
 
@@ -738,14 +738,16 @@ async def _scrape_yts(query: str, search_url_template: str) -> List[Dict[str, An
             page_links.append({
                 'title': title,
                 'year': year,
-                'page_url': page_url, # The crucial piece of new data
+                'page_url': page_url,
                 'score': score
             })
 
     except httpx.RequestError as e:
-        print(f"[{ts}] [SCRAPER ERROR] HTTP request failed for YTS: {e}")
+        # --- THE FIX: Use the formatted URL in the error log ---
+        print(f"[{ts}] [SCRAPER ERROR] HTTP request failed for YTS URL ({search_url}): {e}")
     except Exception as e:
-        print(f"[{ts}] [SCRAPER ERROR] An unexpected error occurred during YTS scrape: {e}")
+        # --- THE FIX: Use the formatted URL in the error log ---
+        print(f"[{ts}] [SCRAPER ERROR] An unexpected error occurred during YTS scrape for URL ({search_url}): {e}")
     
     print(f"[{ts}] [SCRAPER] YTS scrape finished. Found {len(page_links)} potential movie links.")
     return page_links
@@ -1230,6 +1232,37 @@ def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]: # type: ignore
              return f"contains an unsupported file type ('{ext}'). I can only download .mkv and .mp4 files."
 
     return None
+
+def _score_torrent_result(name: str, uploader: Optional[str], preferences: dict) -> int:
+    """
+    (NEW) Calculates a score for any torrent result based on configured preferences.
+    """
+    score = 0
+    name_lower = name.lower()
+    
+    # Score based on resolution
+    res_prefs = preferences.get('resolutions', {})
+    for res, points in res_prefs.items():
+        if res.lower() in name_lower:
+            score += points
+            break # Assume only one resolution match is needed
+
+    # Score based on codec
+    codec_prefs = preferences.get('codecs', {})
+    for codec, points in codec_prefs.items():
+        if codec.lower() in name_lower:
+            score += points
+            break # Assume only one codec match is needed
+
+    # Score based on uploader (if provided)
+    if uploader:
+        uploader_prefs = preferences.get('uploaders', {})
+        for up, points in uploader_prefs.items():
+            if up.lower() == uploader.lower():
+                score += points
+                break
+
+    return score
 
 async def is_user_authorized(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """
@@ -1887,79 +1920,41 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
 #     await update.message.reply_text(text=message_text, reply_markup=reply_markup)
 
-async def search_yts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    (REVISED) Handles the /search_yts command by prompting the user for a movie title.
-    """
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(CORRECTED) Starts the consolidated search workflow."""
     if not await is_user_authorized(update, context):
         return
-    
-    chat = update.effective_chat
-    if not chat:
-        return
-
+    if not update.message: return
     if context.user_data is None: context.user_data = {}
 
-    context.user_data['next_action'] = 'search_yts_title'
-    context.user_data['active_workflow'] = 'search'
-    
-    # --- DEBUGGING ---
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{ts}] [WORKFLOW] /search_yts command received. Set next_action='search_yts_title'")
-    # --- END DEBUGGING ---
-
-    if update.message:
-        try:
-            await update.message.delete()
-        except BadRequest:
-            pass
-        
-    prompt_message = await context.bot.send_message(
-        chat_id=chat.id,
-        text="🎬 Please send me the title of the movie to search for on YTS\\.mx\\.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]),
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    context.user_data['prompt_message_id'] = prompt_message.message_id
-
-async def search_1337x_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    (CORRECTED) Handles the /search_1337x command by asking for the media type first.
-    """
-    if not await is_user_authorized(update, context):
-        return
-
-    # --- FIX: Guard against a null chat object ---
-    chat = update.effective_chat
-    if not chat:
-        return
-    # --- End of fix ---
-
-    if context.user_data is None: context.user_data = {}
-
-    context.user_data['active_workflow'] = 'search'
+    user = update.effective_user
     
-    # Delete the user's command message if it exists
-    if update.message:
-        try:
-            await update.message.delete()
-        except BadRequest:
-            pass
+    if user:
+        log_msg = f"[{ts}] [SEARCH] User {user.id} ({user.username}) initiated /search command."
+    else:
+        log_msg = f"[{ts}] [SEARCH] An anonymous user initiated /search command."
+    print(log_msg)
+    
+    context.user_data['active_workflow'] = 'search'
+
+    try:
+        await update.message.delete()
+    except BadRequest:
+        pass
 
     keyboard = [
         [
-            InlineKeyboardButton("🎬 Movie", callback_data="search_1337x_movie"),
-            InlineKeyboardButton("📺 TV Show", callback_data="search_1337x_tv"),
+            InlineKeyboardButton("🎬 Movie", callback_data="search_start_movie"),
+            InlineKeyboardButton("📺 TV Show", callback_data="search_start_tv"),
         ],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    # --- THE FIX: Escaped the '?' at the end of the string ---
+    message_text = "What type of media do you want to search for\?"
     
-    await context.bot.send_message(
-        chat_id=chat.id,
-        text="Please select the media type to search for on 1337x:", 
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text(text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
 async def find_magnet_link_on_page(url: str) -> List[str]:
     """
@@ -2409,21 +2404,61 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 #             # --- HANDOFF TO EXISTING WORKFLOW ---
 #             await process_user_input(page_url_to_process, context, status_message)
 
+async def _orchestrate_searches(
+    query: str,
+    media_type: str, # This is 'movie' or 'tv'
+    context: ContextTypes.DEFAULT_TYPE
+) -> List[Dict[str, Any]]:
+    """
+    (CORRECTED) A helper function to run searches across all configured sites in parallel,
+    aggregate the results, and sort them by score.
+    """
+    search_config = context.bot_data.get("SEARCH_CONFIG", {})
+    if not search_config: return []
+    
+    # --- THE FIX: Use the correct key ('movies') for the config file lookup ---
+    config_lookup_key = 'movies' if media_type == 'movie' else 'tv'
+    sites_to_search = search_config.get("websites", {}).get(config_lookup_key, [])
+    
+    if not sites_to_search:
+        # Improved logging for easier debugging
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SEARCH] No sites configured in config.ini for media type key: '{config_lookup_key}'")
+        return []
+
+    tasks = []
+    for site in sites_to_search:
+        # The _search_for_media function also expects the plural 'movies' or 'tv' key.
+        task = _search_for_media(query, config_lookup_key, site.get("name", ""), context)
+        tasks.append(task)
+        
+    all_results_with_site = await asyncio.gather(*tasks)
+
+    # Flatten the list of (results, site_name) tuples into a single list of results
+    flat_results = [result for result_list, site_name in all_results_with_site for result in result_list]
+    
+    # Sort all found results by score, descending
+    flat_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+    
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts}] [SEARCH] Aggregated and sorted {len(flat_results)} results from {len(sites_to_search)} sites.")
+    
+    return flat_results
+
 async def _handle_search_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    (REVISED) Formats the 1337x search result buttons to display the file size
-    instead of the uploader's name.
+    (FIXED) Manages the conversational workflow for the unified search command.
+    Correctly escapes the hyphen in "4-digit" for MarkdownV2 compatibility.
     """
     if not update.message or not update.message.text: return
     if context.user_data is None: context.user_data = {}
 
     chat = update.effective_chat
-    if not chat:
-        return
+    if not chat: return
 
-    query = update.message.text.strip()
+    text = update.message.text.strip()
     next_action = context.user_data.get('next_action')
 
+    # Clean up previous messages
     prompt_message_id = context.user_data.pop('prompt_message_id', None)
     try:
         if prompt_message_id:
@@ -2431,41 +2466,61 @@ async def _handle_search_text_reply(update: Update, context: ContextTypes.DEFAUL
         await update.message.delete()
     except BadRequest:
         pass
-    
-    site_name = ""
-    media_type = ""
-    if next_action == 'search_yts_title':
-        site_name = "YTS.mx"
-        media_type = "movies"
-    elif next_action in ['search_1337x_movie_title', 'search_1337x_tv_title', 'search_1337x_movie_year']:
-        site_name = "1337x"
-        media_type = "tv" if next_action == 'search_1337x_tv_title' else "movies"
 
-    if next_action == 'search_1337x_movie_title':
-        if re.search(r'\b(19\d{2}|20\d{2})\b', query):
-            context.user_data.pop('next_action', None)
-        else:
-            context.user_data['search_original_title'] = query
-            context.user_data['next_action'] = 'search_1337x_movie_year'
-            text_to_send = f"I need a year for `{escape_markdown(query)}`\\. Please send the 4\\-digit year\\."
-            new_prompt = await context.bot.send_message(
-                chat_id=chat.id, text=text_to_send, parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+    if next_action == 'search_movie_title':
+        # Check if the title includes a year
+        year_match = re.search(r'\b(19\d{2}|20\d{2})\b', text)
+        if year_match:
+            # Year found, store title and proceed to resolution prompt
+            context.user_data['search_movie_title'] = text
+            context.user_data['next_action'] = 'search_movie_resolution'
+            
+            keyboard = [[
+                InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
+                InlineKeyboardButton("4K", callback_data="search_resolution_4k"),
+            ], [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            prompt_message = await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"Got it: `{escape_markdown(text)}`\\. Now, please select your desired resolution:",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN_V2
             )
-            context.user_data['prompt_message_id'] = new_prompt.message_id
-            return
+            context.user_data['prompt_message_id'] = prompt_message.message_id
+        else:
+            # No year found, store title and ask for the year
+            context.user_data['search_movie_title_no_year'] = text
+            context.user_data['next_action'] = 'search_movie_year'
+            
+            # --- THE FIX: Escape the hyphen in "4-digit" ---
+            prompt_text = f"I need a year for `{escape_markdown(text)}`\\. Please send the 4\\-digit year\\."
+            # --- End of fix ---
 
-    elif next_action == 'search_1337x_movie_year':
-        year_text = query
-        original_title = context.user_data.pop('search_original_title', None)
+            prompt_message = await context.bot.send_message(
+                chat_id=chat.id,
+                text=prompt_text,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]),
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+            context.user_data['prompt_message_id'] = prompt_message.message_id
+
+    elif next_action == 'search_movie_year':
+        year_text = text
+        original_title = context.user_data.pop('search_movie_title_no_year', None)
+
         if not original_title:
-            await context.bot.send_message(chat_id=chat.id, text="❌ Search context was lost\\. Please start over\\.")
+            await context.bot.send_message(chat_id=chat.id, text="❌ Search context was lost. Please start over.")
+            context.user_data.pop('next_action', None)
             return
 
+        # --- THE FIX: Escape the hyphen in "4-digit" in the error message ---
         if not (year_text.isdigit() and len(year_text) == 4):
-            context.user_data['search_original_title'] = original_title
-            context.user_data['next_action'] = 'search_1337x_movie_year'
+            # Invalid year, ask again
+            context.user_data['search_movie_title_no_year'] = original_title
+            context.user_data['next_action'] = 'search_movie_year'
             error_text = f"That doesn't look like a valid 4\\-digit year\\. Please try again for `{escape_markdown(original_title)}` or cancel\\."
+            # --- End of fix ---
             error_prompt = await context.bot.send_message(
                 chat_id=chat.id, text=error_text, parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
@@ -2473,61 +2528,28 @@ async def _handle_search_text_reply(update: Update, context: ContextTypes.DEFAUL
             context.user_data['prompt_message_id'] = error_prompt.message_id
             return
             
-        query = f"{original_title} ({year_text})"
-        context.user_data.pop('next_action', None)
-    
-    status_message = await context.bot.send_message(chat_id=chat.id, text=f"🔎 Searching for *{escape_markdown(query)}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
-    context.user_data.pop('active_workflow', None)
-    
-    results, found_site_name = await _search_for_media(query, media_type, site_name, context)
+        # Valid year received, combine with title and proceed to resolution prompt
+        full_title = f"{original_title} ({year_text})"
+        context.user_data['search_movie_title'] = full_title
+        context.user_data['next_action'] = 'search_movie_resolution'
 
-    if not results:
-        await status_message.edit_text(f"❌ No results found for '`{escape_markdown(query)}`' on *{escape_markdown(found_site_name)}*\\.", parse_mode=ParseMode.MARKDOWN_V2)
-        return
+        keyboard = [[
+            InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
+            InlineKeyboardButton("4K", callback_data="search_resolution_4k"),
+        ], [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if site_name == "YTS.mx":
-        best_match = results[0]
-        page_url_to_process = best_match['page_url']
-        await process_user_input(page_url_to_process, context, status_message)
-    else:
-        context.user_data['search_ambiguous_choices'] = results
-        keyboard = []
-        
-        # --- THE CHANGE: New button formatting logic ---
-        for i, result in enumerate(results[:7]):
-            full_title = result.get('title', '')
-            size = result.get('size', 'N/A') # Get the size
-            title_lower = full_title.lower()
-
-            parsed_name_info = parse_torrent_name(full_title)
-            if parsed_name_info.get('type') == 'movie' and parsed_name_info.get('year'):
-                name_part = f"{parsed_name_info.get('title', 'Unknown')} ({parsed_name_info.get('year')})"
-            else:
-                name_part = parsed_name_info.get('title', full_title)
-            
-            resolution = "4K" if any(s in title_lower for s in ['2160p', '4k', 'uhd']) else "1080p" if '1080p' in title_lower else "720p" if '720p' in title_lower else "SD"
-            codec = "x265" if any(s in title_lower for s in ['x265', 'hevc']) else "x264" if 'x264' in title_lower else "N/A"
-            
-            # Construct the final button label with size instead of uploader
-            button_label = f"{name_part} | {resolution} | {codec} | {size}"
-
-            if len(button_label) > 64:
-                button_label = button_label[:61] + "..."
-
-            keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_clarify_{i}")])
-        # --- End of change ---
-
-        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
-        results_text = f"Found {len(results)} results for *{escape_markdown(query)}*\\. Please select the best match:"
-        await status_message.edit_text(
-            text=results_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
+        prompt_message = await context.bot.send_message(
+            chat_id=chat.id,
+            text=f"Got it: `{escape_markdown(full_title)}`\\. Now, please select your desired resolution:",
+            reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN_V2
         )
+        context.user_data['prompt_message_id'] = prompt_message.message_id
 
 async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles text messages specifically for an active search or delete workflow.
+    (CORRECTED) Handles text messages specifically for an active search or delete workflow.
     """
     if not await is_user_authorized(update, context): return
     if not update.message or not update.message.text: return
@@ -2535,22 +2557,71 @@ async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TY
 
     next_action = context.user_data.get('next_action', '')
     
-    if not next_action.startswith(('search_yts_title', 'search_1337x_', 'delete_')):
+    if not next_action.startswith(('handle_title_for_', 'delete_')):
         return
 
     chat = update.effective_chat
     if not chat:
         return
     
-    if next_action.startswith('search_'):
-        await _handle_search_text_reply(update, context)
+    if next_action.startswith('handle_title_for_'):
+        query = update.message.text.strip()
+        media_type = context.user_data.pop('search_media_type', None)
+        
+        prompt_message_id = context.user_data.pop('prompt_message_id', None)
+        try:
+            if prompt_message_id:
+                await context.bot.delete_message(chat_id=chat.id, message_id=prompt_message_id)
+            await update.message.delete()
+        except BadRequest:
+            pass
+        
+        if not media_type:
+            await context.bot.send_message(chat_id=chat.id, text="❌ Search context was lost. Please start over.")
+            return
+
+        # --- THE FIX: Escaped the '...' at the end of the string ---
+        status_message = await context.bot.send_message(chat_id=chat.id, text=f"🔎 Searching all sources for *{escape_markdown(query)}*\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
+        
+        results = await _orchestrate_searches(query, media_type, context)
+        
+        context.user_data.pop('active_workflow', None)
+        context.user_data.pop('next_action', None)
+
+        if not results:
+            # --- THE FIX: Escaped the '.' at the end of the string ---
+            await status_message.edit_text(f"❌ No results found for '`{escape_markdown(query)}`' across all configured sites\.", parse_mode=ParseMode.MARKDOWN_V2)
+            return
+        
+        context.user_data['search_results'] = results
+        keyboard = []
+        
+        for i, result in enumerate(results[:10]):
+            title = result.get('title', 'Unknown Title')
+            size = result.get('size', 'N/A')
+            source = result.get('source', 'N/A')
+            
+            button_label = f"{title} | {size} [{source}]"
+            if len(button_label) > 64:
+                button_label = button_label[:61] + "..."
+            
+            keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")])
+
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+        # --- THE FIX: Escaped the '.' at the end of the string ---
+        results_text = f"Found {len(results)} results for *{escape_markdown(query)}*\. Please select one to download:"
+        await status_message.edit_text(
+            text=results_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
     elif next_action.startswith('delete_'):
         await handle_delete_workflow(update, context)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles all button presses, including setting the correct initial state
-    for the 1337x search workflow.
+    (CORRECTED) Handles all button presses, including the new consolidated search flow.
     """
     if not await is_user_authorized(update, context):
         return
@@ -2559,24 +2630,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query or not query.data: return
     if context.user_data is None: context.user_data = {}
     
-    # 1337x Search Logic
-    if query.data.startswith("search_1337x_"):
+    if query.data.startswith("search_start_"):
         await query.answer()
         message = query.message
         if not isinstance(message, Message): return
 
-        if query.data == "search_1337x_movie":
-            context.user_data['next_action'] = 'search_1337x_movie_title'
-            prompt_text = "🎬 Please send me the title of the movie to search for on 1337x."
-        else: # For TV Shows
-            context.user_data['next_action'] = 'search_1337x_tv_title'
-            prompt_text = "📺 Please send me the title of the TV show to search for on 1337x."
-
+        media_type = 'movie' if query.data == 'search_start_movie' else 'tv'
+        context.user_data['search_media_type'] = media_type
+        context.user_data['next_action'] = f'handle_title_for_{media_type}'
+        
+        # --- THE FIX: Added parse_mode and escaped the '.' ---
+        prompt_text = f"🎬 Please send me the title of the {media_type} to search for\."
         await message.edit_text(
             text=prompt_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]),
+            parse_mode=ParseMode.MARKDOWN_V2
         )
         context.user_data['prompt_message_id'] = message.message_id
+        return
+
+    if query.data.startswith("search_select_"):
+        await query.answer()
+        message = query.message
+        if not isinstance(message, Message): return
+
+        search_results = context.user_data.pop('search_results', [])
+        if not search_results:
+            # --- THE FIX: Escaped the '.' ---
+            await query.edit_message_text(text="❌ This selection has expired\. Please start the search again\.", parse_mode=ParseMode.MARKDOWN_V2)
+            return
+        
+        try:
+            choice_index = int(query.data.split('_')[2])
+            selected_result = search_results[choice_index]
+            page_url_to_process = selected_result['page_url']
+
+            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{ts}] [SEARCH] User selected '{selected_result['title']}'. Passing URL to handler: {page_url_to_process}")
+
+            await process_user_input(page_url_to_process, context, message)
+        except (ValueError, IndexError):
+            # --- THE FIX: Escaped the '.' ---
+            await query.edit_message_text(text="❌ An error occurred with your selection\. Please try again\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     is_delete_action = query.data.startswith("delete_") or query.data == "confirm_delete"
@@ -2601,36 +2696,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text: str = ""
     reply_markup: Optional[InlineKeyboardMarkup] = None
     parse_mode: Optional[str] = None
-
-    if query.data == "search_start_movie":
-        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        user = query.from_user
-        if user:
-            print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) selected 'Movie' for search.")
-        else:
-            print(f"[{ts}] [SEARCH] An anonymous user selected 'Movie' for search.")
-        
-        context.user_data['next_action'] = 'search_movie_title'
-        context.user_data['active_workflow'] = 'search' # Set persistent workflow state
-        context.user_data['prompt_message_id'] = message.message_id
-        message_text = "🎬 Please send me the title of the movie to search for."
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
-
-    elif query.data == "search_start_tv":
-        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        user = query.from_user
-        if user:
-            print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) selected 'TV Show' for search.")
-        else:
-            print(f"[{ts}] [SEARCH] An anonymous user selected 'TV Show' for search.")
-
-        context.user_data['next_action'] = 'search_tv_title'
-        context.user_data['active_workflow'] = 'search' # Set persistent workflow state
-        context.user_data['prompt_message_id'] = message.message_id
-        message_text = "📺 Please send me the title of the TV show to search for."
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
-
-    elif query.data == "pause_download":
+    
+    if query.data == "pause_download":
         if chat_id_str in active_downloads:
             download_data = active_downloads[chat_id_str]
             lock = download_data.get('lock')
@@ -2698,7 +2765,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         user = query.from_user
         
-        # Check the persistent workflow state to log the correct cancellation type
         workflow = context.user_data.get('active_workflow')
         if workflow == 'search':
             log_msg = f"[{ts}] [SEARCH] User {user.id} ({user.username}) cancelled the search workflow." if user else f"[{ts}] [SEARCH] An anonymous user cancelled the search workflow."
@@ -2709,8 +2775,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keys_to_clear = [
             'temp_magnet_choices_details', 'pending_torrent', 'next_action', 
-            'prompt_message_id', 'active_workflow', 'search_1337x_query',
-            'search_ambiguous_choices'
+            'prompt_message_id', 'active_workflow', 'search_media_type',
+            'search_results'
         ]
         for key in keys_to_clear:
             context.user_data.pop(key, None)
@@ -2767,32 +2833,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             save_state(context.bot_data['persistence_file'], active_downloads, download_queues)
             await process_queue_for_user(chat_id, context.application)
-
-    elif query.data.startswith("search_clarify_"):
-        choices = context.user_data.pop('search_ambiguous_choices', [])
-        message = query.message
-        if not isinstance(message, Message): return
-
-        if not choices:
-            await query.edit_message_text(text="❌ This selection has expired. Please start the search again.")
-        else:
-            try:
-                choice_index = int(query.data.split('_')[2])
-                selected_movie = choices[choice_index]
-                page_url_to_process = selected_movie['page_url']
-
-                ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f"[{ts}] [SEARCH] User clarified selection: '{selected_movie['title']}'. Passing URL to handler: {page_url_to_process}")
-
-                # --- HANDOFF TO EXISTING WORKFLOW ---
-                # Pass the original message object to be edited by the subsequent functions
-                await process_user_input(page_url_to_process, context, message)
-
-            except (ValueError, IndexError):
-                await query.edit_message_text(text="❌ An error occurred with your selection. Please try again.")
-        return # Explicitly return to prevent any other logic from running
     
-    if query.data == "pause_download_noop":
+    elif query.data == "pause_download_noop":
          if chat_id_str in active_downloads:
             download_data = active_downloads[chat_id_str]
             download_data['cancellation_pending'] = False
@@ -2804,6 +2846,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        # Note: parse_mode is only set for specific paths that require it.
+        # The default is None (plain text), which is safe.
         await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode=parse_mode)
     except BadRequest as e:
         if "Message is not modified" not in str(e):
@@ -3201,8 +3245,8 @@ if __name__ == '__main__':
     })
     
     # 1. Command Handlers (Most specific)
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?search yts$', re.IGNORECASE)), search_yts_command))
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?search 1337x$', re.IGNORECASE)), search_1337x_command))
+    # --- REVISED: Replaced old search handlers with the new consolidated one ---
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?search$', re.IGNORECASE)), search_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?links$', re.IGNORECASE)), links_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?start$', re.IGNORECASE)), help_command))
@@ -3218,7 +3262,6 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(link_filter & ~filters.COMMAND, handle_link_message))
     
     # 4. General Text Handler for conversational workflows (search/delete replies)
-    # This will now correctly trigger for movie titles because the link handler didn't catch it.
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_search_message))
     
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Bot startup complete. Handlers registered.")
