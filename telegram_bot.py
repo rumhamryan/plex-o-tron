@@ -645,7 +645,7 @@ async def _scrape_1337x(
     context: ContextTypes.DEFAULT_TYPE
 ) -> List[Dict[str, Any]]:
     """
-    (REVISED) Scrapes 1337x.to, now extracting size, seeders, and codec.
+    (REVISED) Scrapes 1337x.to, now with a 7GB size limit per torrent.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     results = []
@@ -665,9 +665,6 @@ async def _scrape_1337x(
     try:
         headers = {
             'authority': '1337x.to', 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-            'accept-language': 'en-US,en;q=0.9', 'cache-control': 'max-age=0', 'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-            'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"', 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none', 'sec-fetch-user': '?1', 'upgrade-insecure-requests': '1',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         }
 
@@ -688,42 +685,40 @@ async def _scrape_1337x(
             name_cell = row.find('td', class_='name')
             uploader_cell = row.find('td', class_='user')
             size_cell = row.find('td', class_='size')
-            seeds_cell = row.find('td', class_='seeds') # --- ADDED ---
+            seeds_cell = row.find('td', class_='seeds')
 
             if not isinstance(name_cell, Tag) or not isinstance(uploader_cell, Tag) or not isinstance(size_cell, Tag) or not isinstance(seeds_cell, Tag):
                 continue
             
             link_tag = name_cell.find_all('a')[-1]
-            uploader_tag = uploader_cell.find('a')
-
             if not isinstance(link_tag, Tag): continue
                 
             title = link_tag.get_text(strip=True)
             page_url_relative = link_tag.get('href')
-            uploader = uploader_tag.get_text(strip=True) if isinstance(uploader_tag, Tag) else "Anonymous"
             size_str = size_cell.get_text(strip=True)
+            
+            # --- THE FIX: Apply 7 GB size limit ---
+            size_gb = _parse_size_to_gb(size_str)
+            if size_gb > 7.0:
+                continue
+
+            uploader_tag = uploader_cell.find('a')
+            uploader = uploader_tag.get_text(strip=True) if isinstance(uploader_tag, Tag) else "Anonymous"
             seeds_str = seeds_cell.get_text(strip=True)
 
-            if not title or not page_url_relative:
-                continue
+            if not title or not page_url_relative: continue
                 
             page_url = f"{base_url}{page_url_relative}"
             score = _score_1337x_result(title, uploader, preferences)
 
             if score > 0:
                 results.append({
-                    'title': title,
-                    'page_url': page_url,
-                    'score': score,
-                    'source': '1337x',
-                    'uploader': uploader,
-                    'size_gb': _parse_size_to_gb(size_str),
-                    'codec': _parse_codec(title),
+                    'title': title, 'page_url': page_url, 'score': score,
+                    'source': '1337x', 'uploader': uploader,
+                    'size_gb': size_gb, 'codec': _parse_codec(title),
                     'seeders': int(seeds_str) if seeds_str.isdigit() else 0
                 })
 
-    except httpx.RequestError as e:
-        print(f"[{ts}] [SCRAPER ERROR] HTTP request failed for 1337x: {e}")
     except Exception as e:
         print(f"[{ts}] [SCRAPER ERROR] An unexpected error occurred during 1337x scrape: {e}")
 
@@ -738,8 +733,7 @@ async def _scrape_yts(
     resolution: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
-    (API-REWRITE-FIXED) Uses the official YTS.mx API for robust torrent fetching.
-    It uses a single HTTP client session for all requests to avoid premature closure.
+    (API-REWRITE-FIXED) Uses the YTS.mx API and now applies a 7GB size limit.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{ts}] [SCRAPER] YTS: Initiating API-based scrape for '{query}'.")
@@ -774,9 +768,7 @@ async def _scrape_yts(
             soup = BeautifulSoup(response.text, 'lxml')
             
             movie_info_div = soup.select_one('#movie-info')
-            if isinstance(movie_info_div, Tag):
-                movie_id = movie_info_div.get('data-movie-id')
-            
+            if isinstance(movie_info_div, Tag): movie_id = movie_info_div.get('data-movie-id')
             if not movie_id:
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SCRAPER ERROR] YTS Stage 1: Could not find data-movie-id on page {best_page_url}")
                 return []
@@ -800,6 +792,12 @@ async def _scrape_yts(
             for torrent in api_torrents:
                 quality = torrent.get('quality', '').lower()
                 if resolution and resolution.lower() in quality:
+                    
+                    # --- THE FIX: Apply 7 GB size limit ---
+                    size_gb = torrent.get('size_bytes', 0) / (1024**3)
+                    if size_gb > 7.0:
+                        continue
+
                     full_title = f"{movie_title} [{torrent.get('quality')}.{torrent.get('type')}] [YTS.MX]"
                     info_hash = torrent.get('hash')
                     
@@ -809,13 +807,9 @@ async def _scrape_yts(
                         score = _score_torrent_result(full_title, "YTS", preferences)
                         
                         results.append({
-                            'title': full_title,
-                            'page_url': magnet_link,
-                            'score': score,
-                            'source': 'YTS.mx',
-                            'uploader': 'YTS',
-                            'size_gb': torrent.get('size_bytes', 0) / (1024**3),
-                            'codec': _parse_codec(full_title),
+                            'title': full_title, 'page_url': magnet_link,
+                            'score': score, 'source': 'YTS.mx', 'uploader': 'YTS',
+                            'size_gb': size_gb, 'codec': _parse_codec(full_title),
                             'seeders': torrent.get('seeds', 0)
                         })
             
@@ -2489,8 +2483,8 @@ async def _orchestrate_searches(
     resolution: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
-    (CORRECTED) Runs searches across all configured sites in parallel, passing
-    all search parameters down to the site-specific handlers.
+    (REVISED) Runs searches across all sites, applies source-specific limits
+    (3 for 1337x, 1 for YTS), and returns a final, sorted list.
     """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     if not search_config: return []
@@ -2503,31 +2497,34 @@ async def _orchestrate_searches(
         return []
 
     tasks = []
-    # --- THE FIX: Pass all parameters to _search_for_media for each site ---
     for site in sites_to_search:
         site_name = site.get("name", "")
-        task = _search_for_media(
-            query=query,
-            media_type=config_lookup_key,
-            site_name=site_name,
-            context=context,
-            year=year,
-            resolution=resolution
-        )
+        task = _search_for_media(query=query, media_type=config_lookup_key, site_name=site_name, context=context, year=year, resolution=resolution)
         tasks.append(task)
         
     all_results_with_site = await asyncio.gather(*tasks)
 
-    # Flatten the list of lists into a single list of results
-    flat_results = [result for result_list, site_name in all_results_with_site for result in result_list]
+    # --- THE FIX: Apply limits per source and then combine ---
+    final_results = []
+    site_limits = {
+        "1337x": 3,
+        "YTS.mx": 1
+    }
+
+    for result_list, site_name in all_results_with_site:
+        limit = site_limits.get(site_name)
+        if limit:
+            # The result_list is already sorted by score from _search_for_media
+            final_results.extend(result_list[:limit])
     
-    # Sort the final aggregated list by score
-    flat_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+    # Sort the final combined list by score
+    final_results.sort(key=lambda x: x.get('score', 0), reverse=True)
     
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{ts}] [SEARCH] Aggregated and sorted {len(flat_results)} results from {len(sites_to_search)} sites.")
+    print(f"[{ts}] [SEARCH] Aggregated and sorted {len(final_results)} results from {len(sites_to_search)} sites after applying source limits.")
     
-    return flat_results
+    return final_results
+
 
 async def _prompt_for_resolution(chat_id: int, context: ContextTypes.DEFAULT_TYPE, full_title: str):
     """Asks the user to select a resolution."""
