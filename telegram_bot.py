@@ -2406,37 +2406,35 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _orchestrate_searches(
     query: str,
-    media_type: str, # This is 'movie' or 'tv'
-    context: ContextTypes.DEFAULT_TYPE
+    media_type: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    year: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """
-    (CORRECTED) A helper function to run searches across all configured sites in parallel,
-    aggregate the results, and sort them by score.
-    """
+    """(REVISED) Runs searches across sites, using year to refine movie queries."""
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     if not search_config: return []
     
-    # --- THE FIX: Use the correct key ('movies') for the config file lookup ---
     config_lookup_key = 'movies' if media_type == 'movie' else 'tv'
     sites_to_search = search_config.get("websites", {}).get(config_lookup_key, [])
     
     if not sites_to_search:
-        # Improved logging for easier debugging
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SEARCH] No sites configured in config.ini for media type key: '{config_lookup_key}'")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SEARCH] No sites configured for key: '{config_lookup_key}'")
         return []
 
     tasks = []
     for site in sites_to_search:
-        # The _search_for_media function also expects the plural 'movies' or 'tv' key.
-        task = _search_for_media(query, config_lookup_key, site.get("name", ""), context)
+        site_name = site.get("name", "")
+        search_query_for_site = query
+        if media_type == 'movie' and year and site_name == '1337x':
+            search_query_for_site = f"{query} {year}"
+        
+        task = _search_for_media(search_query_for_site, config_lookup_key, site_name, context)
         tasks.append(task)
         
     all_results_with_site = await asyncio.gather(*tasks)
 
-    # Flatten the list of (results, site_name) tuples into a single list of results
     flat_results = [result for result_list, site_name in all_results_with_site for result in result_list]
     
-    # Sort all found results by score, descending
     flat_results.sort(key=lambda x: x.get('score', 0), reverse=True)
     
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -2548,80 +2546,118 @@ async def _handle_search_text_reply(update: Update, context: ContextTypes.DEFAUL
         context.user_data['prompt_message_id'] = prompt_message.message_id
 
 async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    (CORRECTED) Handles text messages specifically for an active search or delete workflow.
-    """
+    """(CORRECTED) Manages the multi-step conversation for searching."""
     if not await is_user_authorized(update, context): return
     if not update.message or not update.message.text: return
     if context.user_data is None: context.user_data = {}
 
     next_action = context.user_data.get('next_action', '')
     
-    if not next_action.startswith(('handle_title_for_', 'delete_')):
+    if not next_action.startswith(('search_movie_', 'handle_title_for_tv', 'delete_')):
         return
 
     chat = update.effective_chat
-    if not chat:
-        return
+    if not chat: return
     
-    if next_action.startswith('handle_title_for_'):
-        query = update.message.text.strip()
-        media_type = context.user_data.pop('search_media_type', None)
+    query = update.message.text.strip()
+    prompt_message_id = context.user_data.pop('prompt_message_id', None)
+    
+    try:
+        if prompt_message_id:
+            await context.bot.delete_message(chat_id=chat.id, message_id=prompt_message_id)
+        await update.message.delete()
+    except BadRequest:
+        pass
+
+    results: List[Dict[str, Any]] = []
+    final_query_text: str = ""
+
+    # --- MOVIE WORKFLOW ---
+    if next_action == 'search_movie_get_title':
+        context.user_data['search_query_title'] = query
+        context.user_data['next_action'] = 'search_movie_get_year'
+        # --- THE FIX: Escaped the hyphen in "4-digit" ---
+        prompt_text = f"Got it\. Now, please send the 4\-digit year for *{escape_markdown(query)}*\."
+        new_prompt = await context.bot.send_message(
+            chat_id=chat.id,
+            text=prompt_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        context.user_data['prompt_message_id'] = new_prompt.message_id
+        return
+
+    elif next_action == 'search_movie_get_year':
+        year_text = query
+        title = context.user_data.get('search_query_title')
         
-        prompt_message_id = context.user_data.pop('prompt_message_id', None)
-        try:
-            if prompt_message_id:
-                await context.bot.delete_message(chat_id=chat.id, message_id=prompt_message_id)
-            await update.message.delete()
-        except BadRequest:
-            pass
-        
-        if not media_type:
+        if not title:
             await context.bot.send_message(chat_id=chat.id, text="❌ Search context was lost. Please start over.")
             return
 
-        # --- THE FIX: Escaped the '...' at the end of the string ---
-        status_message = await context.bot.send_message(chat_id=chat.id, text=f"🔎 Searching all sources for *{escape_markdown(query)}*\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
-        
-        results = await _orchestrate_searches(query, media_type, context)
-        
-        context.user_data.pop('active_workflow', None)
-        context.user_data.pop('next_action', None)
-
-        if not results:
-            # --- THE FIX: Escaped the '.' at the end of the string ---
-            await status_message.edit_text(f"❌ No results found for '`{escape_markdown(query)}`' across all configured sites\.", parse_mode=ParseMode.MARKDOWN_V2)
+        if not (year_text.isdigit() and len(year_text) == 4):
+            context.user_data['next_action'] = 'search_movie_get_year' # Reset to retry
+            # --- THE FIX: Escaped the hyphen in "4-digit" ---
+            error_text = f"That doesn't look like a valid 4\-digit year\. Please try again for *{escape_markdown(title)}* or cancel\."
+            error_prompt = await context.bot.send_message(
+                chat_id=chat.id, text=error_text, parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+            )
+            context.user_data['prompt_message_id'] = error_prompt.message_id
             return
-        
-        context.user_data['search_results'] = results
-        keyboard = []
-        
-        for i, result in enumerate(results[:10]):
-            title = result.get('title', 'Unknown Title')
-            size = result.get('size', 'N/A')
-            source = result.get('source', 'N/A')
-            
-            button_label = f"{title} | {size} [{source}]"
-            if len(button_label) > 64:
-                button_label = button_label[:61] + "..."
-            
-            keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")])
 
-        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
-        # --- THE FIX: Escaped the '.' at the end of the string ---
-        results_text = f"Found {len(results)} results for *{escape_markdown(query)}*\. Please select one to download:"
-        await status_message.edit_text(
-            text=results_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN_V2
-        )
+        final_query_text = f"{title} ({year_text})"
+        status_message = await context.bot.send_message(chat_id=chat.id, text=f"🔎 Searching all sources for *{escape_markdown(final_query_text)}*\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
+        results = await _orchestrate_searches(title, 'movie', context, year=year_text)
 
+    # --- TV SHOW WORKFLOW ---
+    elif next_action == 'handle_title_for_tv':
+        final_query_text = query
+        status_message = await context.bot.send_message(chat_id=chat.id, text=f"🔎 Searching all sources for *{escape_markdown(final_query_text)}*\.\.\.", parse_mode=ParseMode.MARKDOWN_V2)
+        results = await _orchestrate_searches(query, 'tv', context)
+
+    # --- DELETE WORKFLOW ---
     elif next_action.startswith('delete_'):
         await handle_delete_workflow(update, context)
+        return
+
+    else:
+        return
+
+    # --- UNIFIED RESULT HANDLING ---
+    keys_to_clear = ['active_workflow', 'next_action', 'search_query_title', 'search_query_year']
+    for key in keys_to_clear:
+        context.user_data.pop(key, None)
+
+    if not results:
+        await status_message.edit_text(f"❌ No results found for '`{escape_markdown(final_query_text)}`' across all configured sites\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+    
+    context.user_data['search_results'] = results
+    keyboard = []
+    
+    for i, result in enumerate(results[:10]):
+        title_res = result.get('title', 'Unknown Title')
+        size = result.get('size', 'N/A')
+        source = result.get('source', 'N/A')
+        
+        button_label = f"{title_res} | {size} [{source}]"
+        if len(button_label) > 64:
+            button_label = button_label[:61] + "..."
+        
+        keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")])
+
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+    results_text = f"Found {len(results)} results for *{escape_markdown(final_query_text)}*\. Please select one to download:"
+    await status_message.edit_text(
+        text=results_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    (CORRECTED) Handles all button presses, including the new consolidated search flow.
+    (REVISED) Handles all button presses, including the new consolidated search flow.
     """
     if not await is_user_authorized(update, context):
         return
@@ -2635,12 +2671,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = query.message
         if not isinstance(message, Message): return
 
-        media_type = 'movie' if query.data == 'search_start_movie' else 'tv'
-        context.user_data['search_media_type'] = media_type
-        context.user_data['next_action'] = f'handle_title_for_{media_type}'
+        # Differentiate movie and TV workflow
+        if query.data == 'search_start_movie':
+            # Start the multi-step movie workflow
+            context.user_data['next_action'] = 'search_movie_get_title'
+            prompt_text = "🎬 Please send me the title of the movie to search for\."
+        else: # 'search_start_tv'
+            # TV shows have a simpler, direct workflow
+            context.user_data['next_action'] = 'handle_title_for_tv'
+            prompt_text = "📺 Please send me the title of the TV show to search for\."
         
-        # --- THE FIX: Added parse_mode and escaped the '.' ---
-        prompt_text = f"🎬 Please send me the title of the {media_type} to search for\."
         await message.edit_text(
             text=prompt_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]),
@@ -2656,7 +2696,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         search_results = context.user_data.pop('search_results', [])
         if not search_results:
-            # --- THE FIX: Escaped the '.' ---
             await query.edit_message_text(text="❌ This selection has expired\. Please start the search again\.", parse_mode=ParseMode.MARKDOWN_V2)
             return
         
@@ -2670,7 +2709,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await process_user_input(page_url_to_process, context, message)
         except (ValueError, IndexError):
-            # --- THE FIX: Escaped the '.' ---
             await query.edit_message_text(text="❌ An error occurred with your selection\. Please try again\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
@@ -2776,7 +2814,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keys_to_clear = [
             'temp_magnet_choices_details', 'pending_torrent', 'next_action', 
             'prompt_message_id', 'active_workflow', 'search_media_type',
-            'search_results'
+            'search_results', 'search_query_title', 'search_query_year'
         ]
         for key in keys_to_clear:
             context.user_data.pop(key, None)
@@ -2846,8 +2884,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # Note: parse_mode is only set for specific paths that require it.
-        # The default is None (plain text), which is safe.
         await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode=parse_mode)
     except BadRequest as e:
         if "Message is not modified" not in str(e):
