@@ -611,9 +611,11 @@ def _parse_size_to_gb(size_str: str) -> float:
 def _score_1337x_result(name: str, uploader: str, preferences: dict) -> int:
     """
     Calculates a score for a torrent result based on configured preferences.
+    Now with title normalization.
     """
     score = 0
-    name_lower = name.lower()
+    # --- THE FIX: Normalize the name by replacing dots with spaces. ---
+    name_lower = name.lower().replace('.', ' ')
     
     # Score based on resolution
     res_prefs = preferences.get('resolutions', {})
@@ -645,7 +647,8 @@ async def _scrape_1337x(
     context: ContextTypes.DEFAULT_TYPE
 ) -> List[Dict[str, Any]]:
     """
-    (REVISED) Scrapes 1337x.to, now with a 7GB size limit per torrent.
+    (FINAL-FIX) Scrapes 1337x.to using a positional-based method to ensure
+    correct data extraction from table columns.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     results = []
@@ -664,7 +667,7 @@ async def _scrape_1337x(
 
     try:
         headers = {
-            'authority': '1337x.to', 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'authority': '1337x.to', 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         }
 
@@ -682,34 +685,36 @@ async def _scrape_1337x(
         for row in table_body.find_all('tr'):
             if not isinstance(row, Tag): continue
 
-            name_cell = row.find('td', class_='name')
-            uploader_cell = row.find('td', class_='user')
-            size_cell = row.find('td', class_='size')
-            seeds_cell = row.find('td', class_='seeds')
-
-            if not isinstance(name_cell, Tag) or not isinstance(uploader_cell, Tag) or not isinstance(size_cell, Tag) or not isinstance(seeds_cell, Tag):
+            # --- THE FIX: Switch to positional cell scraping ---
+            cells = row.find_all('td')
+            if len(cells) < 6: # A valid torrent row has at least 6 columns
                 continue
             
-            link_tag = name_cell.find_all('a')[-1]
-            if not isinstance(link_tag, Tag): continue
+            name_cell = cells[0]
+            seeds_cell = cells[1]
+            size_cell = cells[4]
+            uploader_cell = cells[5]
+            # --- End of fix ---
+            
+            links = name_cell.find_all('a')
+            if len(links) < 2: continue # Valid rows have at least two links in the name cell
+            link_tag = links[1] # The second link is the correct one for the title
                 
             title = link_tag.get_text(strip=True)
             page_url_relative = link_tag.get('href')
             size_str = size_cell.get_text(strip=True)
             
-            # --- THE FIX: Apply 7 GB size limit ---
             size_gb = _parse_size_to_gb(size_str)
-            if size_gb > 7.0:
-                continue
+            if size_gb > 7.0: continue
 
             uploader_tag = uploader_cell.find('a')
             uploader = uploader_tag.get_text(strip=True) if isinstance(uploader_tag, Tag) else "Anonymous"
             seeds_str = seeds_cell.get_text(strip=True)
 
-            if not title or not page_url_relative: continue
+            if not title or not page_url_relative or not isinstance(page_url_relative, str): continue
                 
             page_url = f"{base_url}{page_url_relative}"
-            score = _score_1337x_result(title, uploader, preferences)
+            score = _score_torrent_result(title, uploader, preferences)
 
             if score > 0:
                 results.append({
@@ -730,13 +735,14 @@ async def _scrape_yts(
     media_type: str,
     search_url_template: str,
     context: ContextTypes.DEFAULT_TYPE,
-    resolution: Optional[str] = None
+    resolution: Optional[str] = None,
+    year: Optional[str] = None, # Added year parameter
 ) -> List[Dict[str, Any]]:
     """
-    (API-REWRITE-FIXED) Uses the YTS.mx API and now applies a 7GB size limit.
+    (API-REWRITE-FIXED) Uses the YTS.mx API and now filters by year in Stage 1.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{ts}] [SCRAPER] YTS: Initiating API-based scrape for '{query}'.")
+    print(f"[{ts}] [SCRAPER] YTS: Initiating API-based scrape for '{query}' ({year or 'any year'}).")
 
     preferences = context.bot_data.get("SEARCH_CONFIG", {}).get("preferences", {}).get(media_type, {})
     if not preferences: return []
@@ -745,6 +751,7 @@ async def _scrape_yts(
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
             
+            # --- STAGE 1: Find Movie ID, now with year filtering ---
             movie_id = None
             formatted_query = urllib.parse.quote_plus(query)
             search_url = search_url_template.replace("{query}", formatted_query)
@@ -753,7 +760,29 @@ async def _scrape_yts(
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'lxml')
 
-            choices = {tag.get('href'): tag.get_text(strip=True) for movie in soup.find_all('div', class_='browse-movie-wrap') if isinstance(movie, Tag) and (tag := movie.find('a', class_='browse-movie-title')) and isinstance(tag, Tag)}
+            # --- THE FIX: Filter choices by year before fuzzy matching ---
+            choices = {}
+            for movie_wrapper in soup.find_all('div', class_='browse-movie-wrap'):
+                if not isinstance(movie_wrapper, Tag): continue
+
+                year_tag = movie_wrapper.find('div', class_='browse-movie-year')
+                scraped_year = year_tag.get_text(strip=True) if isinstance(year_tag, Tag) else None
+
+                # If a year is specified by the user, only consider movies from that year
+                if year and scraped_year and year != scraped_year:
+                    continue # Skip this movie, it's the wrong year
+
+                title_tag = movie_wrapper.find('a', class_='browse-movie-title')
+                if isinstance(title_tag, Tag):
+                    href = title_tag.get('href')
+                    title_text = title_tag.get_text(strip=True)
+                    if href and title_text:
+                        choices[href] = title_text
+            
+            if not choices:
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [SCRAPER] YTS Stage 1: No movies found matching year '{year}'.")
+                return []
+
             best_match = process.extractOne(query, choices, scorer=fuzz.ratio)
             
             if not (best_match and len(best_match) > 2 and best_match[1] > 70 and isinstance(url_candidate := best_match[2], str)):
@@ -793,10 +822,8 @@ async def _scrape_yts(
                 quality = torrent.get('quality', '').lower()
                 if resolution and resolution.lower() in quality:
                     
-                    # --- THE FIX: Apply 7 GB size limit ---
                     size_gb = torrent.get('size_bytes', 0) / (1024**3)
-                    if size_gb > 7.0:
-                        continue
+                    if size_gb > 7.0: continue
 
                     full_title = f"{movie_title} [{torrent.get('quality')}.{torrent.get('type')}] [YTS.MX]"
                     info_hash = torrent.get('hash')
@@ -829,8 +856,8 @@ async def _search_for_media(
     resolution: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
-    (CORRECTED) Orchestrates scraping for a specific site. This function now
-    builds the appropriate query string for each site before calling the scraper.
+    (FINAL-FIX) Orchestrates scraping for a specific site. Now uses a broader
+    search query for 1337x to ensure a page with valid results is returned.
     """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     if not search_config: return [], "Search Not Configured"
@@ -847,19 +874,17 @@ async def _search_for_media(
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     results = []
-    # --- THE FIX: Build the site-specific query here ---
     if site_name == "YTS.mx":
-        print(f"[{ts}] [SEARCH] Routing search for '{query}' to site: {site_name}")
-        # YTS scraper handles the raw query and filters by resolution internally
-        results = await _scrape_yts(query, media_type, search_url, context, resolution)
+        print(f"[{ts}] [SEARCH] Routing search for '{query}' ({year or 'any year'}) to site: {site_name}")
+        results = await _scrape_yts(query, media_type, search_url, context, resolution=resolution, year=year)
     elif site_name == "1337x":
-        # For 1337x, build a detailed query string for better results
+        # --- THE FIX: Create a broader search query without resolution ---
+        # The scraper's scoring function will handle resolution filtering.
         query_parts = [query]
-        if media_type == 'movies' and year: # Note: 'movies' not 'movie' to match config key
+        if media_type == 'movies' and year:
             query_parts.append(year)
-        if resolution:
-            query_parts.append(resolution)
         search_query_for_site = " ".join(query_parts)
+        # --- End of fix ---
         
         print(f"[{ts}] [SEARCH] Routing search for '{search_query_for_site}' to site: {site_name}")
         results = await _scrape_1337x(search_query_for_site, media_type, search_url, context)
@@ -1306,10 +1331,12 @@ def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]: # type: ignore
 
 def _score_torrent_result(name: str, uploader: Optional[str], preferences: dict) -> int:
     """
-    (NEW) Calculates a score for any torrent result based on configured preferences.
+    (REVISED) Calculates a score for any torrent result based on configured preferences.
+    Now includes title normalization.
     """
     score = 0
-    name_lower = name.lower()
+    # --- THE FIX: Normalize the name by replacing dots with spaces. ---
+    name_lower = name.lower().replace('.', ' ')
     
     # Score based on resolution
     res_prefs = preferences.get('resolutions', {})
