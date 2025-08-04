@@ -745,7 +745,7 @@ async def _scrape_1337x(
                 
             page_url = f"{base_url}{page_url_relative}"
             score = _score_torrent_result(title, uploader, preferences)
-            print(f"  - Calculated Score: {score}")
+            # print(f"  - Calculated Score: {score}")
 
             if score > 0:
                 results.append({
@@ -864,10 +864,16 @@ async def _scrape_yts(
                         magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(movie_title)}{trackers}"
                         score = _score_torrent_result(full_title, "YTS", preferences)
                         
+                        # --- THE FIX: Default YTS codec to x264 if not found ---
+                        parsed_codec = _parse_codec(full_title)
+                        if parsed_codec == 'N/A':
+                            parsed_codec = 'x264'
+                        # --- End of fix ---
+
                         results.append({
                             'title': full_title, 'page_url': magnet_link,
                             'score': score, 'source': 'YTS.mx', 'uploader': 'YTS',
-                            'size_gb': size_gb, 'codec': _parse_codec(full_title),
+                            'size_gb': size_gb, 'codec': parsed_codec,
                             'seeders': torrent.get('seeds', 0)
                         })
             
@@ -2871,12 +2877,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         results_text = f"Found {len(results)} results for *{escape_markdown(final_title)}* in `{resolution}`\\. Please select one to download:"
         
         for i, result in enumerate(results[:10]):
-            score = result.get('score', 0)
             codec = result.get('codec', 'N/A')
             size_gb = result.get('size_gb', 0.0)
             seeders = result.get('seeders', 0)
             
-            button_label = f"[{score}] | {codec} | {size_gb:.2f} GB | S: {seeders}"
+            # --- THE FIX: Update button format as requested ---
+            button_label = f"{codec} | {size_gb:.2f} GB | S: {seeders}"
+            # --- End of fix ---
             
             keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")])
 
