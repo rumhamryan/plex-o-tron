@@ -575,36 +575,55 @@ async def find_episode_file(season_path: str, season_number: int, episode_number
     return await asyncio.to_thread(perform_search)
 
 def _parse_codec(title: str) -> str:
-    """(NEW) Extracts a video codec from a torrent title string."""
-    title_lower = title.lower()
-    if 'x265' in title_lower or 'hevc' in title_lower:
+    """
+    (REVISED) Extracts a video codec from a torrent title string using more
+    precise, order-dependent checking.
+    """
+    # Normalize the title for consistent checking
+    title_lower = title.lower().replace('.', ' ')
+    
+    # Use word boundaries to avoid partial matches (e.g., in group names)
+    if re.search(r'\b(x265|hevc)\b', title_lower):
         return "x265"
-    if 'x264' in title_lower:
+    if re.search(r'\b(x264|h264)\b', title_lower):
         return "x264"
+    
     return "N/A"
 
 def _parse_size_to_gb(size_str: str) -> float:
-    """(NEW) Parses a size string (e.g., '2.4 GiB', '800 MB') and returns size in GB."""
+    """
+    (REVISED) Parses a size string (e.g., '4.3 GiB', '800 MB') and returns size in GB,
+    correctly handling GiB/MiB conversions.
+    """
     if not isinstance(size_str, str):
         return 0.0
     
-    size_str = size_str.strip().upper().replace("GIB", "GB").replace("MIB", "MB")
+    # Normalize the string for easier parsing
+    size_str_upper = size_str.strip().upper()
     
     try:
-        match = re.search(r'([\d\.]+)', size_str)
+        # Extract the numeric value
+        match = re.search(r'([\d\.]+)', size_str_upper)
         if not match:
             return 0.0
         
         value = float(match.group(1))
         
-        if 'GB' in size_str:
-            return value
-        elif 'MB' in size_str:
+        # Apply the correct conversion factor based on the unit
+        # 1 Gibibyte (GiB) is ~7.37% larger than 1 Gigabyte (GB)
+        if 'GIB' in size_str_upper:
+            return value * 1.07374
+        # 1 Mebibyte (MiB) is ~4.85% larger than 1 Megabyte (MB)
+        elif 'MIB' in size_str_upper:
+            return (value * 1.048576) / 1024
+        elif 'MB' in size_str_upper:
             return value / 1024
-        elif 'KB' in size_str:
-            return value / (1024 * 1024)
+        # Default to GB if no specific binary prefix is found
+        elif 'GB' in size_str_upper:
+            return value
         else:
             return 0.0
+            
     except (ValueError, TypeError):
         return 0.0
 
@@ -647,8 +666,8 @@ async def _scrape_1337x(
     context: ContextTypes.DEFAULT_TYPE
 ) -> List[Dict[str, Any]]:
     """
-    (FINAL-FIX) Scrapes 1337x.to using a positional-based method to ensure
-    correct data extraction from table columns.
+    (DEBUG & TYPE-SAFE) Scrapes 1337x.to with heavy debugging and robust type
+    checks to prevent runtime errors and satisfy IDE linters.
     """
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     results = []
@@ -682,45 +701,57 @@ async def _scrape_1337x(
             return []
 
         base_url = "https://1337x.to"
-        for row in table_body.find_all('tr'):
+        for i, row in enumerate(table_body.find_all('tr')):
             if not isinstance(row, Tag): continue
 
-            # --- THE FIX: Switch to positional cell scraping ---
             cells = row.find_all('td')
-            if len(cells) < 6: # A valid torrent row has at least 6 columns
-                continue
+            if len(cells) < 6: continue
             
-            name_cell = cells[0]
-            seeds_cell = cells[1]
-            size_cell = cells[4]
-            uploader_cell = cells[5]
-            # --- End of fix ---
-            
+            # --- THE FIX: Perform individual type checks for clarity and type safety ---
+            name_cell, seeds_cell, size_cell, uploader_cell = cells[0], cells[1], cells[4], cells[5]
+
+            if not isinstance(name_cell, Tag): continue
             links = name_cell.find_all('a')
-            if len(links) < 2: continue # Valid rows have at least two links in the name cell
-            link_tag = links[1] # The second link is the correct one for the title
+            if len(links) < 2: continue
+            link_tag = links[1]
+            if not isinstance(link_tag, Tag): continue
                 
             title = link_tag.get_text(strip=True)
             page_url_relative = link_tag.get('href')
-            size_str = size_cell.get_text(strip=True)
-            
-            size_gb = _parse_size_to_gb(size_str)
-            if size_gb > 7.0: continue
 
+            if not isinstance(size_cell, Tag): continue
+            size_str = size_cell.get_text(strip=True)
+
+            if not isinstance(seeds_cell, Tag): continue
+            seeds_str = seeds_cell.get_text(strip=True)
+            
+            # # --- DEBUGGING BLOCK ---
+            # print(f"--- [SCRAPER DEBUG] 1337x: Processing Row {i} ---")
+            # print(f"  - Raw Title: {title}")
+            # print(f"  - Raw Size Str: '{size_str}'")
+            parsed_codec = _parse_codec(title)
+            # print(f"  - Parsed Codec: '{parsed_codec}'")
+            parsed_size_gb = _parse_size_to_gb(size_str)
+            # print(f"  - Parsed Size GB: {parsed_size_gb:.2f}")
+            # # --- END DEBUGGING BLOCK ---
+
+            if parsed_size_gb > 7.0: continue
+
+            if not isinstance(uploader_cell, Tag): continue
             uploader_tag = uploader_cell.find('a')
             uploader = uploader_tag.get_text(strip=True) if isinstance(uploader_tag, Tag) else "Anonymous"
-            seeds_str = seeds_cell.get_text(strip=True)
 
             if not title or not page_url_relative or not isinstance(page_url_relative, str): continue
                 
             page_url = f"{base_url}{page_url_relative}"
             score = _score_torrent_result(title, uploader, preferences)
+            print(f"  - Calculated Score: {score}")
 
             if score > 0:
                 results.append({
                     'title': title, 'page_url': page_url, 'score': score,
                     'source': '1337x', 'uploader': uploader,
-                    'size_gb': size_gb, 'codec': _parse_codec(title),
+                    'size_gb': parsed_size_gb, 'codec': parsed_codec,
                     'seeders': int(seeds_str) if seeds_str.isdigit() else 0
                 })
 
@@ -856,8 +887,8 @@ async def _search_for_media(
     resolution: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
-    (FINAL-FIX) Orchestrates scraping for a specific site. Now uses a broader
-    search query for 1337x to ensure a page with valid results is returned.
+    (CORRECTED) Orchestrates scraping. Now includes the resolution in the 1337x
+    search query to ensure a more relevant set of results is returned from the site.
     """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     if not search_config: return [], "Search Not Configured"
@@ -878,11 +909,12 @@ async def _search_for_media(
         print(f"[{ts}] [SEARCH] Routing search for '{query}' ({year or 'any year'}) to site: {site_name}")
         results = await _scrape_yts(query, media_type, search_url, context, resolution=resolution, year=year)
     elif site_name == "1337x":
-        # --- THE FIX: Create a broader search query without resolution ---
-        # The scraper's scoring function will handle resolution filtering.
+        # --- THE FIX: Re-add resolution to the 1337x search query ---
         query_parts = [query]
         if media_type == 'movies' and year:
             query_parts.append(year)
+        if resolution:
+            query_parts.append(resolution)
         search_query_for_site = " ".join(query_parts)
         # --- End of fix ---
         
