@@ -1525,8 +1525,9 @@ async def process_user_input(
             return None
 
     elif text.startswith(('http://', 'https://')):
-        safe_message_part = escape_markdown("Attempting to find magnet link(s) on:")
-        message_text = f"🌐 *Web Page Detected:*\n{safe_message_part}\n`{escape_markdown(text)}`"
+        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{ts}] [PROCESS] URL detected. Starting web scrape for: {text}")
+        message_text = f"🌐 Found a web page\\. Scraping for magnet link\\.\\.\\."
         try:
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
@@ -2881,9 +2882,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             size_gb = result.get('size_gb', 0.0)
             seeders = result.get('seeders', 0)
             
-            # --- THE FIX: Update button format as requested ---
             button_label = f"{codec} | {size_gb:.2f} GB | S: {seeders}"
-            # --- End of fix ---
             
             keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")])
 
@@ -2907,19 +2906,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             choice_index = int(query.data.split('_')[2])
             selected_result = search_results[choice_index]
             
-            # --- THE FIX: Add the full title to the message before processing the link ---
-            # This provides better context for the user.
-            full_title = selected_result.get('title', 'Unknown Title')
-            await message.edit_text(
-                text=f"✅ Selection: `{escape_markdown(full_title)}`\n\nInitiating download process\\.\\.\\.",
-                parse_mode=ParseMode.MARKDOWN_V2
-            )
-            
             page_url_to_process = selected_result['page_url']
             ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f"[{ts}] [SEARCH] User selected '{selected_result['title']}'. Passing URL/Magnet to handler: {page_url_to_process}")
 
-            await process_user_input(page_url_to_process, context, message)
+            # --- THE FIX: Capture the returned torrent_info and proceed to the next steps ---
+            ti = await process_user_input(page_url_to_process, context, message)
+            if not ti:
+                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [BUTTON_HANDLER] process_user_input failed to return a torrent_info object. Aborting.")
+                return
+
+            error_message, parsed_info = await validate_and_enrich_torrent(ti, message)
+            if error_message or not parsed_info:
+                if 'torrent_file_path' in context.user_data and os.path.exists(context.user_data['torrent_file_path']):
+                    os.remove(context.user_data['torrent_file_path'])
+                return
+
+            await send_confirmation_prompt(message, context, ti, parsed_info)
+            # --- End of fix ---
+
         except (ValueError, IndexError):
             await query.edit_message_text(text="❌ An error occurred with your selection\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
