@@ -167,6 +167,35 @@ def get_configuration() -> tuple[str, dict, list[int], dict, dict]:
 
     return token, paths, allowed_ids, plex_config, search_config
 
+async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    (CORRECTED) A dedicated handler for messages that are clearly links (magnet or http).
+    """
+    if not await is_user_authorized(update, context):
+        return
+        
+    if not update.message or not update.message.text: return
+    if context.user_data is None: context.user_data = {}
+
+    text = update.message.text.strip()
+    
+    progress_message = await update.message.reply_text("✅ Link received. Analyzing...")
+    try:
+        await update.message.delete()
+    except BadRequest:
+        pass
+
+    ti = await process_user_input(text, context, progress_message)
+    if not ti: return
+
+    error_message, parsed_info = await validate_and_enrich_torrent(ti, progress_message)
+    if error_message or not parsed_info:
+        if 'torrent_file_path' in context.user_data and os.path.exists(context.user_data['torrent_file_path']):
+            os.remove(context.user_data['torrent_file_path'])
+        return
+
+    await send_confirmation_prompt(progress_message, context, ti, parsed_info)
+
 async def _perform_chat_clear(chat_id: int, up_to_message_id: int, application: Application):
     """
     (REVISED) Core logic to delete messages, now with summarized logging
@@ -545,6 +574,126 @@ async def find_episode_file(season_path: str, season_number: int, episode_number
         
     return await asyncio.to_thread(perform_search)
 
+def _score_1337x_result(name: str, uploader: str, preferences: dict) -> int:
+    """
+    Calculates a score for a torrent result based on configured preferences.
+    """
+    score = 0
+    name_lower = name.lower()
+    
+    # Score based on resolution
+    res_prefs = preferences.get('resolutions', {})
+    for res, points in res_prefs.items():
+        if res.lower() in name_lower:
+            score += points
+            break # Assume only one resolution match is needed
+
+    # Score based on codec
+    codec_prefs = preferences.get('codecs', {})
+    for codec, points in codec_prefs.items():
+        if codec.lower() in name_lower:
+            score += points
+            break # Assume only one codec match is needed
+
+    # Score based on uploader
+    uploader_prefs = preferences.get('uploaders', {})
+    for up, points in uploader_prefs.items():
+        if up.lower() == uploader.lower():
+            score += points
+            break
+
+    return score
+
+async def _scrape_1337x(
+    query: str,
+    media_type: str,
+    search_url_template: str,
+    context: ContextTypes.DEFAULT_TYPE
+) -> List[Dict[str, Any]]:
+    """
+    (REVISED) Scrapes 1337x.to, now also extracting the torrent size for each result.
+    """
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    results = []
+    
+    search_config = context.bot_data.get("SEARCH_CONFIG", {})
+    prefs_key = 'movies' if 'movie' in media_type else 'tv'
+    preferences = search_config.get("preferences", {}).get(prefs_key, {})
+    
+    if not preferences:
+        print(f"[{ts}] [SCRAPER] No preferences found for media type '{prefs_key}'. Cannot score 1337x results.")
+        return []
+
+    formatted_query = urllib.parse.quote_plus(query)
+    search_url = search_url_template.replace("{query}", formatted_query)
+    print(f"[{ts}] [SCRAPER] Scraping 1337x for torrents: {search_url}")
+
+    try:
+        headers = {
+            'authority': '1337x.to', 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-language': 'en-US,en;q=0.9', 'cache-control': 'max-age=0', 'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+            'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"', 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'none', 'sec-fetch-user': '?1', 'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        }
+
+        async with httpx.AsyncClient(http2=True, headers=headers, timeout=30, follow_redirects=True) as client:
+            response = await client.get(search_url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'lxml')
+
+        table_body = soup.find('tbody')
+        if not isinstance(table_body, Tag):
+            print(f"[{ts}] [SCRAPER] Could not find table body on 1337x page.")
+            return []
+
+        base_url = "https://1337x.to"
+        for row in table_body.find_all('tr'):
+            if not isinstance(row, Tag): continue
+
+            name_cell = row.find('td', class_='name')
+            uploader_cell = row.find('td', class_='user')
+            # --- THE CHANGE: Find the size cell ---
+            size_cell = row.find('td', class_='size')
+
+            if not isinstance(name_cell, Tag) or not isinstance(uploader_cell, Tag) or not isinstance(size_cell, Tag):
+                continue
+            
+            link_tag = name_cell.find_all('a')[-1]
+            uploader_tag = uploader_cell.find('a')
+
+            if not isinstance(link_tag, Tag): continue
+                
+            title = link_tag.get_text(strip=True)
+            page_url_relative = link_tag.get('href')
+            uploader = uploader_tag.get_text(strip=True) if isinstance(uploader_tag, Tag) else "Anonymous"
+            # --- THE CHANGE: Extract the size text ---
+            size_text = size_cell.get_text(strip=True)
+
+            if not title or not page_url_relative:
+                continue
+                
+            page_url = f"{base_url}{page_url_relative}"
+            score = _score_1337x_result(title, uploader, preferences)
+
+            if score > 0:
+                results.append({
+                    'title': title,
+                    'page_url': page_url,
+                    'score': score,
+                    'source': '1337x',
+                    'uploader': uploader,
+                    'size': size_text # <-- THE ADDITION
+                })
+
+    except httpx.RequestError as e:
+        print(f"[{ts}] [SCRAPER ERROR] HTTP request failed for 1337x: {e}")
+    except Exception as e:
+        print(f"[{ts}] [SCRAPER ERROR] An unexpected error occurred during 1337x scrape: {e}")
+
+    print(f"[{ts}] [SCRAPER] 1337x scrape finished. Found {len(results)} scored results.")
+    return results
+
 async def _scrape_yts(query: str, search_url_template: str) -> List[Dict[str, Any]]:
     """
     (REBUILT) Scrapes YTS.mx. This version's sole purpose is to find movie
@@ -604,22 +753,25 @@ async def _scrape_yts(query: str, search_url_template: str) -> List[Dict[str, An
 async def _search_for_media(
     query: str, 
     media_type: str, 
-    context: ContextTypes.DEFAULT_TYPE, 
-    site_index: int = 0
+    site_name: str,
+    context: ContextTypes.DEFAULT_TYPE
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
-    (MODIFIED) Orchestrates scraping, applies a score filter, and sorts results.
+    (MODIFIED) Orchestrates scraping for a specific site, applies a score filter, 
+    and sorts results.
     """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     if not search_config: return [], "Search Not Configured"
 
-    websites = search_config.get("websites", {}).get(media_type, [])
-    if not websites or site_index >= len(websites): return [], "No sites available"
+    # Find the specific site configuration from the config
+    websites_for_type = search_config.get("websites", {}).get(media_type, [])
+    site_to_search = next((site for site in websites_for_type if site.get("name") == site_name), None)
 
-    site_to_search = websites[site_index]
-    site_name, search_url = site_to_search.get("name"), site_to_search.get("search_url")
+    if not site_to_search:
+        return [], f"Site '{site_name}' not configured for media type '{media_type}'"
 
-    if not site_name or not search_url: return [], "Invalid site config"
+    search_url = site_to_search.get("search_url")
+    if not search_url: return [], "Invalid site config"
     
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{ts}] [SEARCH] Routing search for '{query}' to site: {site_name}")
@@ -627,16 +779,23 @@ async def _search_for_media(
     results = []
     if site_name == "YTS.mx":
         results = await _scrape_yts(query, search_url)
+    elif site_name == "1337x":
+        # Pass the media_type ('movies' or 'tv') to the 1337x scraper
+        config_media_type = 'movies' if media_type == 'movie' else 'tv'
+        results = await _scrape_1337x(query, config_media_type, search_url, context)
     else:
         print(f"[{ts}] [SEARCH] No scraper implemented for '{site_name}' yet.")
 
-    # Filter results by score and then sort
+    # Filter and sort results
     if results:
-        # Keep only results with a reasonable similarity
-        filtered_results = [res for res in results if res.get('score', 0) >= 85]
-        # Sort the filtered results by score in descending order
+        filtered_results = []
+        if site_name == "YTS.mx":
+            filtered_results = [res for res in results if res.get('score', 0) >= 85]
+        else: # 1337x results are already scored and pre-filtered
+            filtered_results = results
+        
         filtered_results.sort(key=lambda x: x.get('score', 0), reverse=True)
-        print(f"[{ts}] [SEARCH] Filtered {len(filtered_results)} candidates with score >= 85.")
+        print(f"[{ts}] [SEARCH] Filtered and sorted {len(filtered_results)} candidates.")
         return filtered_results, site_name
 
     return [], site_name
@@ -1633,7 +1792,6 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if platform.system() != "Linux":
         try:
-            # Use the guarded 'chat' variable
             await context.bot.send_message(chat_id=chat.id, text="This command is configured to run on Linux only.")
         except BadRequest as e:
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send plex restart message: {e}")
@@ -1641,7 +1799,6 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     status_message = None
     try:
-        # Use the guarded 'chat' variable
         status_message = await context.bot.send_message(chat_id=chat.id, text="Plex Restart: 🟡 Sending restart command to the server...")
     except BadRequest as e:
         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not send initial plex restart message: {e}")
@@ -1652,7 +1809,9 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if not os.path.exists(script_path):
         print(f"[{ts}] [PLEX RESTART] ERROR: Wrapper script not found at {script_path}")
-        message_text = "❌ *Error:* The `restart_plex.sh` script was not found in the bot's directory."
+        # --- THE FIX ---
+        message_text = "❌ *Error:* The `restart_plex\\.sh` script was not found in the bot's directory\\."
+        # --- End of fix ---
         try:
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
@@ -1692,41 +1851,115 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
             if "Message is not modified" not in str(e_inner):
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
 
-async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """(NEW) Starts the conversation to search for media."""
+# async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     """(NEW) Starts the conversation to search for media."""
+#     if not await is_user_authorized(update, context):
+#         return
+#     if not update.message: return
+#     # This guard prevents user_data from ever being None.
+#     if context.user_data is None: context.user_data = {}
+
+#     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+#     user = update.effective_user
+#     if user:
+#         print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) initiated /search command.")
+#     else:
+#         print(f"[{ts}] [SEARCH] An anonymous user initiated /search command.")
+        
+#     # --- THE FIX: Set the workflow state immediately ---
+#     context.user_data['active_workflow'] = 'search'
+#     # --- End of fix ---
+
+#     try:
+#         await update.message.delete()
+#     except BadRequest:
+#         pass
+
+#     keyboard = [
+#         [
+#             InlineKeyboardButton("🎬 Movie", callback_data="search_start_movie"),
+#             InlineKeyboardButton("📺 TV Show", callback_data="search_start_tv"),
+#         ],
+#         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+#     ]
+#     reply_markup = InlineKeyboardMarkup(keyboard)
+#     message_text = "What type of media do you want to search for?"
+    
+#     await update.message.reply_text(text=message_text, reply_markup=reply_markup)
+
+async def search_yts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    (REVISED) Handles the /search_yts command by prompting the user for a movie title.
+    """
     if not await is_user_authorized(update, context):
         return
-    if not update.message: return
-    # This guard prevents user_data from ever being None.
+    
+    chat = update.effective_chat
+    if not chat:
+        return
+
     if context.user_data is None: context.user_data = {}
 
-    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    user = update.effective_user
-    if user:
-        print(f"[{ts}] [SEARCH] User {user.id} ({user.username}) initiated /search command.")
-    else:
-        print(f"[{ts}] [SEARCH] An anonymous user initiated /search command.")
-        
-    # --- THE FIX: Set the workflow state immediately ---
+    context.user_data['next_action'] = 'search_yts_title'
     context.user_data['active_workflow'] = 'search'
+    
+    # --- DEBUGGING ---
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts}] [WORKFLOW] /search_yts command received. Set next_action='search_yts_title'")
+    # --- END DEBUGGING ---
+
+    if update.message:
+        try:
+            await update.message.delete()
+        except BadRequest:
+            pass
+        
+    prompt_message = await context.bot.send_message(
+        chat_id=chat.id,
+        text="🎬 Please send me the title of the movie to search for on YTS\\.mx\\.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    context.user_data['prompt_message_id'] = prompt_message.message_id
+
+async def search_1337x_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    (CORRECTED) Handles the /search_1337x command by asking for the media type first.
+    """
+    if not await is_user_authorized(update, context):
+        return
+
+    # --- FIX: Guard against a null chat object ---
+    chat = update.effective_chat
+    if not chat:
+        return
     # --- End of fix ---
 
-    try:
-        await update.message.delete()
-    except BadRequest:
-        pass
+    if context.user_data is None: context.user_data = {}
+
+    context.user_data['active_workflow'] = 'search'
+    
+    # Delete the user's command message if it exists
+    if update.message:
+        try:
+            await update.message.delete()
+        except BadRequest:
+            pass
 
     keyboard = [
         [
-            InlineKeyboardButton("🎬 Movie", callback_data="search_start_movie"),
-            InlineKeyboardButton("📺 TV Show", callback_data="search_start_tv"),
+            InlineKeyboardButton("🎬 Movie", callback_data="search_1337x_movie"),
+            InlineKeyboardButton("📺 TV Show", callback_data="search_1337x_tv"),
         ],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    message_text = "What type of media do you want to search for?"
     
-    await update.message.reply_text(text=message_text, reply_markup=reply_markup)
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text="Please select the media type to search for on 1337x:", 
+        reply_markup=reply_markup
+    )
 
 async def find_magnet_link_on_page(url: str) -> List[str]:
     """
@@ -2121,112 +2354,230 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         if "Message is not modified" not in str(e):
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit message in delete_button_handler: {e}")
 
-async def handle_search_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# async def handle_search_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+#     """
+#     (REBUILT) Manages the search workflow. After finding the best match,
+#     it now passes the movie's dedicated page URL to the main
+#     process_user_input function, leveraging the existing download flow.
+#     """
+#     if not update.message or not update.message.text: return
+#     if context.user_data is None: context.user_data = {}
+
+#     chat_id = update.message.chat_id
+#     text = update.message.text.strip()
+#     next_action = context.user_data.get('next_action', '')
+#     prompt_message_id = context.user_data.pop('prompt_message_id', None)
+
+#     try:
+#         if prompt_message_id:
+#             await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+#         await update.message.delete()
+#     except (BadRequest, TimedOut):
+#         pass
+
+#     if next_action in ['search_movie_title', 'search_tv_title']:
+#         config_media_type = "movies"
+#         context.user_data.pop('next_action', None)
+        
+#         status_message = await context.bot.send_message(chat_id=chat_id, text=f"🔎 Searching for *{escape_markdown(text)}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        
+#         results, site_name = await _search_for_media(query=text, media_type=config_media_type, context=context)
+
+#         if not results:
+#             await status_message.edit_text(f"❌ No results found for '`{escape_markdown(text)}`' on *{escape_markdown(site_name)}*\\.", parse_mode=ParseMode.MARKDOWN_V2)
+#             return
+
+#         highest_score = results[0]['score']
+#         top_results = [res for res in results if res['score'] == highest_score]
+#         unique_top_movies = list({f"{res['title']} ({res['year']})": res for res in top_results}.values())
+
+#         if len(unique_top_movies) > 1:
+#             context.user_data['search_ambiguous_choices'] = unique_top_movies
+#             keyboard = []
+#             for i, movie in enumerate(unique_top_movies):
+#                 keyboard.append([InlineKeyboardButton(f"{movie['title']} ({movie['year']})", callback_data=f"search_clarify_{i}")])
+#             keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+#             await status_message.edit_text("Multiple possible matches found\\. Please select the correct one:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+#         else:
+#             # Single best match found, proceed directly
+#             best_match = unique_top_movies[0]
+#             page_url_to_process = best_match['page_url']
+            
+#             ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+#             print(f"[{ts}] [SEARCH] Single best match found: '{best_match['title']}'. Passing URL to handler: {page_url_to_process}")
+            
+#             # --- HANDOFF TO EXISTING WORKFLOW ---
+#             await process_user_input(page_url_to_process, context, status_message)
+
+async def _handle_search_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    (REBUILT) Manages the search workflow. After finding the best match,
-    it now passes the movie's dedicated page URL to the main
-    process_user_input function, leveraging the existing download flow.
+    (REVISED) Formats the 1337x search result buttons to display the file size
+    instead of the uploader's name.
     """
     if not update.message or not update.message.text: return
     if context.user_data is None: context.user_data = {}
 
-    chat_id = update.message.chat_id
-    text = update.message.text.strip()
-    next_action = context.user_data.get('next_action', '')
-    prompt_message_id = context.user_data.pop('prompt_message_id', None)
+    chat = update.effective_chat
+    if not chat:
+        return
 
+    query = update.message.text.strip()
+    next_action = context.user_data.get('next_action')
+
+    prompt_message_id = context.user_data.pop('prompt_message_id', None)
     try:
         if prompt_message_id:
-            await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+            await context.bot.delete_message(chat_id=chat.id, message_id=prompt_message_id)
         await update.message.delete()
-    except (BadRequest, TimedOut):
+    except BadRequest:
         pass
+    
+    site_name = ""
+    media_type = ""
+    if next_action == 'search_yts_title':
+        site_name = "YTS.mx"
+        media_type = "movies"
+    elif next_action in ['search_1337x_movie_title', 'search_1337x_tv_title', 'search_1337x_movie_year']:
+        site_name = "1337x"
+        media_type = "tv" if next_action == 'search_1337x_tv_title' else "movies"
 
-    if next_action in ['search_movie_title', 'search_tv_title']:
-        config_media_type = "movies"
-        context.user_data.pop('next_action', None)
-        
-        status_message = await context.bot.send_message(chat_id=chat_id, text=f"🔎 Searching for *{escape_markdown(text)}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
-        
-        results, site_name = await _search_for_media(query=text, media_type=config_media_type, context=context)
-
-        if not results:
-            await status_message.edit_text(f"❌ No results found for '`{escape_markdown(text)}`' on *{escape_markdown(site_name)}*\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    if next_action == 'search_1337x_movie_title':
+        if re.search(r'\b(19\d{2}|20\d{2})\b', query):
+            context.user_data.pop('next_action', None)
+        else:
+            context.user_data['search_original_title'] = query
+            context.user_data['next_action'] = 'search_1337x_movie_year'
+            text_to_send = f"I need a year for `{escape_markdown(query)}`\\. Please send the 4\\-digit year\\."
+            new_prompt = await context.bot.send_message(
+                chat_id=chat.id, text=text_to_send, parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+            )
+            context.user_data['prompt_message_id'] = new_prompt.message_id
             return
 
-        highest_score = results[0]['score']
-        top_results = [res for res in results if res['score'] == highest_score]
-        unique_top_movies = list({f"{res['title']} ({res['year']})": res for res in top_results}.values())
+    elif next_action == 'search_1337x_movie_year':
+        year_text = query
+        original_title = context.user_data.pop('search_original_title', None)
+        if not original_title:
+            await context.bot.send_message(chat_id=chat.id, text="❌ Search context was lost\\. Please start over\\.")
+            return
 
-        if len(unique_top_movies) > 1:
-            context.user_data['search_ambiguous_choices'] = unique_top_movies
-            keyboard = []
-            for i, movie in enumerate(unique_top_movies):
-                keyboard.append([InlineKeyboardButton(f"{movie['title']} ({movie['year']})", callback_data=f"search_clarify_{i}")])
-            keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
-            await status_message.edit_text("Multiple possible matches found\\. Please select the correct one:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
-        else:
-            # Single best match found, proceed directly
-            best_match = unique_top_movies[0]
-            page_url_to_process = best_match['page_url']
+        if not (year_text.isdigit() and len(year_text) == 4):
+            context.user_data['search_original_title'] = original_title
+            context.user_data['next_action'] = 'search_1337x_movie_year'
+            error_text = f"That doesn't look like a valid 4\\-digit year\\. Please try again for `{escape_markdown(original_title)}` or cancel\\."
+            error_prompt = await context.bot.send_message(
+                chat_id=chat.id, text=error_text, parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+            )
+            context.user_data['prompt_message_id'] = error_prompt.message_id
+            return
             
-            ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{ts}] [SEARCH] Single best match found: '{best_match['title']}'. Passing URL to handler: {page_url_to_process}")
-            
-            # --- HANDOFF TO EXISTING WORKFLOW ---
-            await process_user_input(page_url_to_process, context, status_message)
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handles incoming messages, delegating to the appropriate workflow.
-    """
-    if not await is_user_authorized(update, context):
-        return
-        
-    if not update.message or not update.message.text: return
+        query = f"{original_title} ({year_text})"
+        context.user_data.pop('next_action', None)
     
-    if context.user_data is None:
-        context.user_data = {}
+    status_message = await context.bot.send_message(chat_id=chat.id, text=f"🔎 Searching for *{escape_markdown(query)}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    context.user_data.pop('active_workflow', None)
+    
+    results, found_site_name = await _search_for_media(query, media_type, site_name, context)
 
-    # --- THE REFACTOR: Delegate to the dedicated delete handler ---
+    if not results:
+        await status_message.edit_text(f"❌ No results found for '`{escape_markdown(query)}`' on *{escape_markdown(found_site_name)}*\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    if site_name == "YTS.mx":
+        best_match = results[0]
+        page_url_to_process = best_match['page_url']
+        await process_user_input(page_url_to_process, context, status_message)
+    else:
+        context.user_data['search_ambiguous_choices'] = results
+        keyboard = []
+        
+        # --- THE CHANGE: New button formatting logic ---
+        for i, result in enumerate(results[:7]):
+            full_title = result.get('title', '')
+            size = result.get('size', 'N/A') # Get the size
+            title_lower = full_title.lower()
+
+            parsed_name_info = parse_torrent_name(full_title)
+            if parsed_name_info.get('type') == 'movie' and parsed_name_info.get('year'):
+                name_part = f"{parsed_name_info.get('title', 'Unknown')} ({parsed_name_info.get('year')})"
+            else:
+                name_part = parsed_name_info.get('title', full_title)
+            
+            resolution = "4K" if any(s in title_lower for s in ['2160p', '4k', 'uhd']) else "1080p" if '1080p' in title_lower else "720p" if '720p' in title_lower else "SD"
+            codec = "x265" if any(s in title_lower for s in ['x265', 'hevc']) else "x264" if 'x264' in title_lower else "N/A"
+            
+            # Construct the final button label with size instead of uploader
+            button_label = f"{name_part} | {resolution} | {codec} | {size}"
+
+            if len(button_label) > 64:
+                button_label = button_label[:61] + "..."
+
+            keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_clarify_{i}")])
+        # --- End of change ---
+
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+        results_text = f"Found {len(results)} results for *{escape_markdown(query)}*\\. Please select the best match:"
+        await status_message.edit_text(
+            text=results_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles text messages specifically for an active search or delete workflow.
+    """
+    if not await is_user_authorized(update, context): return
+    if not update.message or not update.message.text: return
+    if context.user_data is None: context.user_data = {}
+
     next_action = context.user_data.get('next_action', '')
-    if next_action.startswith('delete_'):
+    
+    if not next_action.startswith(('search_yts_title', 'search_1337x_', 'delete_')):
+        return
+
+    chat = update.effective_chat
+    if not chat:
+        return
+    
+    if next_action.startswith('search_'):
+        await _handle_search_text_reply(update, context)
+    elif next_action.startswith('delete_'):
         await handle_delete_workflow(update, context)
-        return
-    elif next_action.startswith('search_'):
-        await handle_search_workflow(update, context)
-        return
-    # --- End of refactor ---
-
-    # If not in a delete workflow, proceed with the original torrent logic
-    text = update.message.text.strip()
-    progress_message = await update.message.reply_text("✅ Input received. Analyzing...")
-    await update.message.delete()
-
-    ti = await process_user_input(text, context, progress_message)
-    if not ti: return
-
-    error_message, parsed_info = await validate_and_enrich_torrent(ti, progress_message)
-    if error_message or not parsed_info:
-        if 'torrent_file_path' in context.user_data and os.path.exists(context.user_data['torrent_file_path']):
-            os.remove(context.user_data['torrent_file_path'])
-        return
-
-    await send_confirmation_prompt(progress_message, context, ti, parsed_info)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    (CORRECTED) Handles all button presses, ensuring the pause button only
-    updates the keyboard, not the message text.
+    Handles all button presses, including setting the correct initial state
+    for the 1337x search workflow.
     """
     if not await is_user_authorized(update, context):
         return
 
     query = update.callback_query
     if not query or not query.data: return
+    if context.user_data is None: context.user_data = {}
+    
+    # 1337x Search Logic
+    if query.data.startswith("search_1337x_"):
+        await query.answer()
+        message = query.message
+        if not isinstance(message, Message): return
 
-    if context.user_data is None:
-        context.user_data = {}
+        if query.data == "search_1337x_movie":
+            context.user_data['next_action'] = 'search_1337x_movie_title'
+            prompt_text = "🎬 Please send me the title of the movie to search for on 1337x."
+        else: # For TV Shows
+            context.user_data['next_action'] = 'search_1337x_tv_title'
+            prompt_text = "📺 Please send me the title of the TV show to search for on 1337x."
+
+        await message.edit_text(
+            text=prompt_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+        )
+        context.user_data['prompt_message_id'] = message.message_id
+        return
 
     is_delete_action = query.data.startswith("delete_") or query.data == "confirm_delete"
     is_cancel_for_delete = (
@@ -2358,7 +2709,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keys_to_clear = [
             'temp_magnet_choices_details', 'pending_torrent', 'next_action', 
-            'prompt_message_id', 'active_workflow'
+            'prompt_message_id', 'active_workflow', 'search_1337x_query',
+            'search_ambiguous_choices'
         ]
         for key in keys_to_clear:
             context.user_data.pop(key, None)
@@ -2848,15 +3200,26 @@ if __name__ == '__main__':
         'dht_bootstrap_nodes': 'router.utorrent.com:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881'
     })
     
-    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?search$', re.IGNORECASE)), search_command))
+    # 1. Command Handlers (Most specific)
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?search yts$', re.IGNORECASE)), search_yts_command))
+    application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?search 1337x$', re.IGNORECASE)), search_1337x_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?links$', re.IGNORECASE)), links_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?help$', re.IGNORECASE)), help_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?start$', re.IGNORECASE)), help_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?status$', re.IGNORECASE)), plex_status_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?restart$', re.IGNORECASE)), plex_restart_command))
     application.add_handler(MessageHandler(filters.Regex(re.compile(r'^/?delete$', re.IGNORECASE)), delete_command))
-        
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(button_handler))
     
+    # 2. Callback Query Handler for all button presses
+    application.add_handler(CallbackQueryHandler(button_handler))
+
+    # 3. Message Handler specifically for magnet/http links (uses a specific Regex filter)
+    link_filter = filters.Regex(r'^(magnet:?|https?://)')
+    application.add_handler(MessageHandler(link_filter & ~filters.COMMAND, handle_link_message))
+    
+    # 4. General Text Handler for conversational workflows (search/delete replies)
+    # This will now correctly trigger for movie titles because the link handler didn't catch it.
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_search_message))
+    
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Bot startup complete. Handlers registered.")
     application.run_polling()
