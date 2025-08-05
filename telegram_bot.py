@@ -52,6 +52,7 @@ def get_help_message_text() -> str:
         "`help`       \- Displays this message\. \n"
         "`links`     \- Lists popular torrent sites\.\n"
         "`restart` \- Restarts the Plex Server\.\n"
+        "`search`   \- Interactively find a movie or TV show\.\n"
         "`status`   \- Checks Plex server status\."
     )
 

@@ -5,7 +5,8 @@ This Telegram bot that automates the process of downloading torrents and organiz
 ## Core Features
 
 *   **User Authorization**: Restricts bot access to a whitelist of Telegram User IDs.
-*   **Smart Content Parsing**: Automatically detects whether a download is a movie or a TV show.
+*   **Interactive Search**: Find movies by title and year, or TV shows by title, season, and episode number, with guided prompts.
+*   **Smart Content Parsing**: Automatically detects whether a download is a movie or a TV show when a link is provided.
 *   **TV Show Metadata**: For TV shows, it scrapes Wikipedia to find the exact episode title.
 *   **Plex-Friendly Naming**: Renames files to a clean, Plex-compatible format (e.g., `Show Name/Season 01/s01e01 - Episode Title.mkv`).
 *   **Automated File Organization**: Moves completed movie and TV show downloads to their respective library folders.
@@ -85,9 +86,9 @@ plex_token = YOUR_PLEX_TOKEN_HERE
 
 [host]
 # Define absolute paths for your media. Use forward slashes for both OSes.
-default_save_path = C:/Telegram Downloads/Unsorted
-movies_save_path = D:/Media/Movies
-tv_shows_save_path = D:/Media/TV Shows
+default_save_path = ~/Downloads
+movies_save_path = /mnt/movies
+tv_shows_save_path = /mnt/tv
 ```
 
 ### Step 5: Run the Bot
@@ -103,6 +104,11 @@ To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment 
 
     start - Displays a welcome message and links to torrent sites.
     help - Shows a brief help message with available commands.
+    search - Initiates an interactive workflow to find media.
+        Prompts for "Movie" or "TV Show".
+        For movies, it asks for a title and year.
+        For TV shows, it asks for a title, season number, and episode number.
+        Presents the best matching torrents for you to download.
     plexstatus - Checks the connection to your Plex server.
     plexrestart - (Linux-only by default) Restarts the Plex Media Server service.
     delete - Initiates an interactive workflow to delete media from your library.
