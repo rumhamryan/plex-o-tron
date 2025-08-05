@@ -48,12 +48,12 @@ def get_help_message_text() -> str:
     """(NEW) Returns the formatted help message string to be reused."""
     return (
         "Here are the available commands:\n\n"
-        "`delete`   \- Delete Movies or TV Shows\.\n"
-        "`help`       \- Displays this message\. \n"
-        "`links`     \- Lists popular torrent sites\.\n"
-        "`restart` \- Restarts the Plex Server\.\n"
-        "`search`   \- Interactively find a movie or TV show\.\n"
-        "`status`   \- Checks Plex server status\."
+        "`delete`   \- Delete Movies or TV Show\.\n"
+        "`help`       \- Display this message\. \n"
+        "`links`     \- List popular torrent sites\.\n"
+        "`restart` \- Restart the Plex Server\.\n"
+        "`search`   \- Search for Movie or TV\.\n"
+        "`status`   \- Check Plex server status\."
     )
 
 def get_configuration() -> tuple[str, dict, list[int], dict, dict]:
