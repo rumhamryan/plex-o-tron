@@ -2735,14 +2735,13 @@ async def _handle_search_text_reply(update: Update, context: ContextTypes.DEFAUL
         context.user_data['prompt_message_id'] = prompt_message.message_id
 
 async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """(REVISED) Manages multi-step conversations for both search and delete workflows."""
+    """(REVISED) Manages multi-step conversations for both search and delete workflows, with title sanitization."""
     if not await is_user_authorized(update, context): return
     if not update.message or not update.message.text: return
     if context.user_data is None: context.user_data = {}
 
     next_action = context.user_data.get('next_action', '')
     
-    # Only handle active conversational workflows here
     if not next_action.startswith(('search_', 'delete_')):
         return
 
@@ -2759,7 +2758,6 @@ async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TY
     except BadRequest:
         pass
 
-    # --- DELETE WORKFLOW ---
     if next_action.startswith('delete_'):
         await handle_delete_workflow(update, context)
         return
@@ -2770,16 +2768,21 @@ async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TY
         
         if year_match:
             year = year_match.group(0)
-            title = query[:year_match.start()].strip()
-            title = re.sub(r'[\s(]+$', '', title).strip()
-            full_title = f"{title} ({year})"
+            title_part = query[:year_match.start()].strip()
+            
+            # --- THE FIX: Sanitize the title portion ---
+            sanitized_title = re.sub(r'[^\w\s]', '', title_part).strip()
+            full_title = f"{sanitized_title} ({year})"
             
             context.user_data['search_media_type'] = 'movie'
             await _prompt_for_resolution(chat.id, context, full_title)
         else:
-            context.user_data['search_query_title'] = query
+            # --- THE FIX: Sanitize the entire query as it's the title ---
+            sanitized_title = re.sub(r'[^\w\s]', '', query).strip()
+
+            context.user_data['search_query_title'] = sanitized_title
             context.user_data['next_action'] = 'search_movie_get_year'
-            prompt_text = f"Got it\\. Now, please send the 4\\-digit year for *{escape_markdown(query)}*\\."
+            prompt_text = f"Got it\\. Now, please send the 4\\-digit year for *{escape_markdown(sanitized_title)}*\\."
             new_prompt = await context.bot.send_message(
                 chat_id=chat.id,
                 text=prompt_text,
@@ -2814,9 +2817,12 @@ async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TY
 
     # --- TV SHOW SEARCH WORKFLOW ---
     elif next_action == 'search_tv_get_title':
-        context.user_data['search_query_title'] = query
+        # --- THE FIX: Sanitize the TV show title upon receipt ---
+        sanitized_title = re.sub(r'[^\w\s]', '', query).strip()
+        
+        context.user_data['search_query_title'] = sanitized_title
         context.user_data['next_action'] = 'search_tv_get_season'
-        prompt_text = f"Got it: *{escape_markdown(query)}*\\. Now, please send the season number\\."
+        prompt_text = f"Got it: *{escape_markdown(sanitized_title)}*\\. Now, please send the season number\\."
         new_prompt = await context.bot.send_message(
             chat_id=chat.id,
             text=prompt_text,
@@ -2874,8 +2880,9 @@ async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TY
             return
             
         episode = int(query)
+        # Combine the sanitized title with season/episode for the search term
         full_search_term = f"{title} S{season:02d}E{episode:02d}"
-        resolution = "1080p" # Hardcoded as requested
+        resolution = "1080p"
         
         status_message = await context.bot.send_message(
             chat_id=chat.id,
@@ -2883,6 +2890,7 @@ async def handle_search_message(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode=ParseMode.MARKDOWN_V2
         )
         
+        # Use the full search term for the actual search orchestration
         results = await _orchestrate_searches(full_search_term, 'tv', context, resolution=resolution)
 
         keys_to_clear = ['active_workflow', 'next_action', 'search_query_title', 'search_season_number']
