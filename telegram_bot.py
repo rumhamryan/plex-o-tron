@@ -355,8 +355,11 @@ def parse_torrent_name(name: str) -> dict:
         title = cleaned_name[:year_match.start()].strip()
         
         # --- FIX STARTS HERE ---
-        # Remove any trailing spaces, parentheses, or hyphens from the title
-        title = re.sub(r'[\s(\)-]+$', '', title).strip()
+        # The original regex `[\s(\)-]+$` was too aggressive and could remove
+        # a closing parenthesis from a title like "Movie (With Stuff) ",
+        # leaving an unbalanced "Movie (With Stuff".
+        # This corrected regex only removes trailing whitespace and hyphens.
+        title = re.sub(r'[\s-]+$', '', title).strip()
         # --- FIX ENDS HERE ---
 
         return {'type': 'movie', 'title': title, 'year': year}
@@ -377,7 +380,7 @@ def generate_plex_filename(parsed_info: dict, original_extension: str) -> str:
     title = parsed_info.get('title', 'Unknown Title')
     
     # Sanitize title to remove characters invalid for filenames
-    invalid_chars = r'<>:"/\|?*'
+    invalid_chars = f'<>:"/\|?*'
     safe_title = "".join(c for c in title if c not in invalid_chars)
 
     if parsed_info.get('type') == 'movie':
@@ -1250,6 +1253,7 @@ async def _update_fetch_timer(progress_message: Message, timeout: int, cancel_ev
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #1 ")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
             
         try:
@@ -1285,6 +1289,7 @@ async def fetch_metadata_from_magnet(magnet_link: str, progress_message: Message
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #2 ")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return None
     
@@ -1334,6 +1339,7 @@ async def fetch_and_parse_magnet_details(
         await progress_message.edit_text(message_text)
     except BadRequest as e:
         if "Message is not modified" not in str(e):
+            print("debug_statement #3 ")
             print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
     tasks = [fetch_one(link, i) for i, link in enumerate(magnet_links)]
@@ -1356,30 +1362,49 @@ async def fetch_and_parse_magnet_details(
     return parsed_choices
 
 def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]: # type: ignore
-    """Checks if the torrent's files are of an allowed type."""
+    """
+    Checks if the torrent's files are of an allowed type. It now only fails
+    if no valid large media file is found.
+    """
     files = ti.files()
     if files.num_files() == 0:
         return "the torrent contains no files."
-        
-    large_files_exist = False
-    for i in range(files.num_files()):
-        file_path = files.file_path(i)
-        file_size = files.file_size(i)
-        
-        if file_size > 10 * 1024 * 1024:
-            large_files_exist = True
-            _, ext = os.path.splitext(file_path)
-            if ext.lower() not in ALLOWED_EXTENSIONS:
-                return f"contains an unsupported file type ('{ext}'). I can only download .mkv and .mp4 files."
+
+    # --- REVISED LOGIC STARTS HERE ---
     
-    if not large_files_exist:
+    # 1. Find all files larger than a 10MB threshold.
+    large_files = []
+    for i in range(files.num_files()):
+        if files.file_size(i) > 10 * 1024 * 1024:
+            large_files.append(files.file_path(i))
+
+    # 2. If there are large files, check if AT LEAST ONE of them is a valid media file.
+    if large_files:
+        has_valid_large_file = False
+        for file_path in large_files:
+            _, ext = os.path.splitext(file_path)
+            if ext.lower() in ALLOWED_EXTENSIONS:
+                has_valid_large_file = True
+                break  # Found a valid file, no need to check further.
+        
+        # If we looped through all large files and none were valid, then reject the torrent.
+        if not has_valid_large_file:
+            largest_file_idx = max(range(files.num_files()), key=files.file_size)
+            largest_file_path = files.file_path(largest_file_idx)
+            _, largest_ext = os.path.splitext(largest_file_path)
+            return f"contains an unsupported file type ('{largest_ext}'). I can only download .mkv and .mp4 files."
+            
+    # 3. If there are NO large files at all, check the single largest file in the torrent.
+    else:
         largest_file_idx = max(range(files.num_files()), key=files.file_size)
-        file_path = files.file_path(largest_file_idx)
-        _, ext = os.path.splitext(file_path)
+        largest_file_path = files.file_path(largest_file_idx)
+        _, ext = os.path.splitext(largest_file_path)
         if ext.lower() not in ALLOWED_EXTENSIONS:
              return f"contains an unsupported file type ('{ext}'). I can only download .mkv and .mp4 files."
 
+    # 4. If we passed all checks, the torrent is valid.
     return None
+    # --- REVISED LOGIC ENDS HERE ---
 
 def _score_torrent_result(name: str, uploader: Optional[str], preferences: dict) -> int:
     """
@@ -1449,17 +1474,19 @@ async def validate_and_enrich_torrent(
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #4 ")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return "Size limit exceeded", None
 
     validation_error = validate_torrent_files(ti)
     if validation_error:
-        error_msg = f"This torrent {validation_error}"
+        error_msg = f"This torrent {escape_markdown(validation_error)}"
         message_text = f"❌ *Unsupported File Type*\n\n{error_msg}"
         try:
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #5 ")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return f"Unsupported file type", None
 
@@ -1472,6 +1499,7 @@ async def validate_and_enrich_torrent(
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #6 ")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
         episode_title, corrected_show_title = await fetch_episode_title_from_wikipedia(
@@ -1527,14 +1555,16 @@ async def process_user_input(
                 await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
             except BadRequest as e_inner:
                 if "Message is not modified" not in str(e_inner):
+                    print("debug_statement #7 ")
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
             return None
         except RuntimeError:
-            message_text = r"❌ *Error:* The provided file is not a valid torrent\."
+            message_text = f"❌ *Error:* The provided file is not a valid torrent\."
             try:
                 await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
             except BadRequest as e_inner:
                 if "Message is not modified" not in str(e_inner):
+                    print("debug_statement #8 ")
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
             return None
 
@@ -1546,6 +1576,7 @@ async def process_user_input(
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #9 ")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
         extracted_magnet_links = await find_magnet_link_on_page(text)
@@ -1557,6 +1588,7 @@ async def process_user_input(
                 await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
             except BadRequest as e_inner:
                 if "Message is not modified" not in str(e_inner):
+                    print("debug_statement #10")
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
             return None
 
@@ -1575,6 +1607,7 @@ async def process_user_input(
                     await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
                 except BadRequest as e_inner:
                     if "Message is not modified" not in str(e_inner):
+                        print("debug_statement #11")
                         print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
                 return None
 
@@ -1590,7 +1623,7 @@ async def process_user_input(
                 common_title = parsed_title_info.get('title', first_choice_name)
 
             header_text = f"*{escape_markdown(common_title)}*\n\n"
-            subtitle_text = rf"Found {len(parsed_choices)} valid torrents\. Please select one:"
+            subtitle_text = f"Found {len(parsed_choices)} valid torrents\. Please select one:"
             final_text = header_text + subtitle_text
 
             keyboard = []
@@ -1604,6 +1637,7 @@ async def process_user_input(
                 await progress_message.edit_text(final_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
+                    print("debug_statement #12")
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
             return None
     else:
@@ -1613,6 +1647,7 @@ async def process_user_input(
             await progress_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #13")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return None
 
@@ -1628,28 +1663,37 @@ async def send_confirmation_prompt(
     if context.user_data is None:
         context.user_data = {}
 
-    display_name = ""
-    if parsed_info['type'] == 'movie':
-        display_name = f"{parsed_info['title']} ({parsed_info['year']})"
-    elif parsed_info['type'] == 'tv':
-        base_name = f"{parsed_info['title']} - S{parsed_info['season']:02d}E{parsed_info['episode']:02d}"
-        display_name = f"{base_name} - {parsed_info.get('episode_title')}" if parsed_info.get('episode_title') else base_name
-    else:
-        display_name = parsed_info['title']
+    # --- REVISED LOGIC FOR CORRECT FORMATTING ---
 
+    # 1. Build the raw, unescaped display name for internal use (logs, filenames).
+    raw_display_name = ""
+    if parsed_info['type'] == 'movie':
+        raw_display_name = f"{parsed_info.get('title', 'Unknown')} ({parsed_info.get('year', 'N/A')})"
+    elif parsed_info['type'] == 'tv':
+        base_name = f"{parsed_info.get('title', 'Unknown')} - S{parsed_info.get('season', 0):02d}E{parsed_info.get('episode', 0):02d}"
+        episode_title = parsed_info.get('episode_title')
+        raw_display_name = f"{base_name} - {episode_title}" if episode_title else base_name
+    else:
+        raw_display_name = parsed_info.get('title', 'Unknown')
+
+    # 2. Create escaped versions of the dynamic content specifically for the message.
+    escaped_display_name = escape_markdown(raw_display_name)
+    
     resolution = parse_resolution_from_name(ti.name())
     file_type_str = get_dominant_file_type(ti.files())
     total_size_str = format_bytes(ti.total_size())
     details_line = f"{resolution} | {file_type_str} | {total_size_str}"
+    escaped_details_line = escape_markdown(details_line)
 
-    # --- THE FIX: Using a standard multi-line f-string for proper newlines ---
+    # 3. Construct the final message using the escaped content inside the static formatting.
+    #    Do NOT escape the entire message_text string.
     message_text = (
         f"✅ *Validation Passed*\n\n"
-        f"*Name:* {escape_markdown(display_name)}\n"
-        f"*Details:* `{escape_markdown(details_line)}`\n\n"
+        f"*Name:* {escaped_display_name}\n"
+        f"*Details:* `{escaped_details_line}`\n\n"
         f"Do you want to start this download?"
     )
-    # --- End of fix ---
+    # --- END OF FIX ---
 
     keyboard = [[
         InlineKeyboardButton("✅ Confirm Download", callback_data="confirm_download"),
@@ -1672,7 +1716,7 @@ async def send_confirmation_prompt(
     context.user_data['pending_torrent'] = {
         'type': source_type,
         'value': source_value,
-        'clean_name': display_name,
+        'clean_name': raw_display_name, # Use the raw name for internal logic
         'parsed_info': parsed_info,
         'original_message_id': progress_message.message_id
     }
@@ -1913,6 +1957,7 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_message.edit_text(message_text)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #15")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return
 
@@ -1931,6 +1976,7 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #16")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
     except Unauthorized:
@@ -1943,6 +1989,7 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #17")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
     except Exception as e:
@@ -1956,6 +2003,7 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e_inner:
             if "Message is not modified" not in str(e_inner):
+                print("debug_statement #18")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
 
 async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2000,6 +2048,7 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #19")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         return
     
@@ -2013,6 +2062,7 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e:
             if "Message is not modified" not in str(e):
+                print("debug_statement #20")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
         print(f"[{ts}] [PLEX RESTART] Success!")
 
@@ -2024,6 +2074,7 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e_inner:
             if "Message is not modified" not in str(e_inner):
+                print("debug_statement #21")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
 
     except Exception as e:
@@ -2033,6 +2084,7 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await status_message.edit_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
         except BadRequest as e_inner:
             if "Message is not modified" not in str(e_inner):
+                print("debug_statement #22")
                 print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e_inner}")
 
 # async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3286,6 +3338,7 @@ class ProgressReporter:
                 )
             except BadRequest as e:
                 if "Message is not modified" not in str(e):
+                    print("debug_statement #23")
                     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Could not edit Telegram message: {e}")
 
 def cleanup_download_resources(
