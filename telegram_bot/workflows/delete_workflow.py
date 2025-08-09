@@ -1,0 +1,274 @@
+# telegram_bot/workflows/delete_workflow.py
+
+import asyncio
+import os
+import shutil
+from typing import List, Optional, Union
+
+from telegram import (
+    Update,
+    Message,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+from telegram.ext import ContextTypes
+from telegram.constants import ParseMode
+from telegram.error import BadRequest, TimedOut
+from telegram.helpers import escape_markdown
+
+from ..config import DELETION_ENABLED, logger
+# --- Refactored Import: Point to the correct service ('search_logic') for file finding functions ---
+from ..services.search_logic import find_media_by_name, find_season_directory, find_episode_file
+from ..utils import safe_edit_message
+
+
+async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Manages the text-based replies in the multi-step conversation for deleting media.
+    """
+    if not isinstance(update.message, Message) or not update.message.text: return
+    if context.user_data is None: context.user_data = {}
+
+    chat_id = update.message.chat_id
+    text = update.message.text.strip()
+    next_action = context.user_data.get('next_action', '')
+    status_message: Optional[Message] = None
+
+    # Clean up the user's message and the bot's last prompt
+    prompt_message_id = context.user_data.pop('prompt_message_id', None)
+    try:
+        await update.message.delete()
+        if prompt_message_id:
+            await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+    except (BadRequest, TimedOut):
+        pass
+
+    save_paths = context.bot_data.get("SAVE_PATHS", {})
+
+    # Route based on the expected next action
+    if next_action == 'delete_movie_collection_search':
+        status_message = await context.bot.send_message(chat_id, f"🔎 Searching for movie collection: `{escape_markdown(text)}`...", parse_mode=ParseMode.MARKDOWN_V2)
+        found = await find_media_by_name('movie', text, save_paths, 'directory')
+        await _present_delete_results(found, status_message, "movie collection", text, context)
+
+    elif next_action == 'delete_movie_single_search':
+        status_message = await context.bot.send_message(chat_id, f"🔎 Searching for single movie: `{escape_markdown(text)}`...", parse_mode=ParseMode.MARKDOWN_V2)
+        found = await find_media_by_name('movie', text, save_paths, 'file')
+        await _present_delete_results(found, status_message, "single movie", text, context)
+
+    elif next_action == 'delete_tv_show_search':
+        status_message = await context.bot.send_message(chat_id, f"🔎 Searching for TV show: `{escape_markdown(text)}`...", parse_mode=ParseMode.MARKDOWN_V2)
+        found_path = await find_media_by_name('tv_shows', text, save_paths) # Note: Corrected media_type to 'tv_shows'
+        if isinstance(found_path, str):
+            context.user_data['show_path_to_delete'] = found_path
+            base_name = os.path.basename(found_path)
+            keyboard = [
+                [InlineKeyboardButton("🗑️ All", callback_data="delete_tv_all")],
+                [InlineKeyboardButton("💿 Season", callback_data="delete_tv_season")],
+                [InlineKeyboardButton("▶️ Episode", callback_data="delete_tv_episode")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+            ]
+            await safe_edit_message(status_message, text=f"Found show: `{escape_markdown(base_name)}`.\n\nWhat would you like to delete?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        else:
+            await safe_edit_message(status_message, text=f"❌ No single TV show directory found matching: `{escape_markdown(text)}`", parse_mode=ParseMode.MARKDOWN_V2)
+
+    elif next_action == 'delete_tv_season_search':
+        status_message = await context.bot.send_message(chat_id, f"🔎 Searching for season `{escape_markdown(text)}`...", parse_mode=ParseMode.MARKDOWN_V2)
+        show_path = context.user_data.get('show_path_to_delete')
+        if show_path and text.isdigit():
+            found_path = await find_season_directory(show_path, int(text))
+            await _present_delete_results(found_path, status_message, f"Season {text}", text, context)
+        else:
+            await safe_edit_message(status_message, text="❌ Invalid input or show context lost. Please start over.", parse_mode=ParseMode.MARKDOWN_V2)
+
+    elif next_action == 'delete_tv_episode_season_prompt':
+        if text.isdigit():
+            context.user_data['season_to_delete_num'] = int(text)
+            context.user_data['next_action'] = 'delete_tv_episode_episode_prompt'
+            new_prompt = await context.bot.send_message(chat_id, f"📺 Season {escape_markdown(text)} selected. Now, please send the episode number to delete.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]), parse_mode=ParseMode.MARKDOWN_V2)
+            context.user_data['prompt_message_id'] = new_prompt.message_id
+        else:
+            await context.bot.send_message(chat_id, "❌ Invalid season number. Please start over.")
+
+    elif next_action == 'delete_tv_episode_episode_prompt':
+        status_message = await context.bot.send_message(chat_id, f"🔎 Searching for episode `{escape_markdown(text)}`...", parse_mode=ParseMode.MARKDOWN_V2)
+        show_path = context.user_data.get('show_path_to_delete')
+        season_num = context.user_data.get('season_to_delete_num')
+        if show_path and season_num and text.isdigit():
+            season_path = await find_season_directory(show_path, season_num)
+            if season_path:
+                found_path = await find_episode_file(season_path, season_num, int(text))
+                await _present_delete_results(found_path, status_message, f"S{season_num}E{text}", text, context)
+            else:
+                await safe_edit_message(status_message, text=f"❌ Could not find Season {season_num} to look for the episode in.", parse_mode=ParseMode.MARKDOWN_V2)
+        else:
+            await safe_edit_message(status_message, text="❌ Invalid input or context lost. Please start over.", parse_mode=ParseMode.MARKDOWN_V2)
+
+    context.user_data.pop('next_action', None)
+
+
+async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles all button presses related to the delete workflow."""
+    query = update.callback_query
+    if not query or not query.data or not isinstance(query.message, Message) or context.user_data is None:
+        return
+
+    action = query.data
+
+    if action.startswith("delete_start_"):
+        await _handle_start_buttons(query, context)
+    elif action.startswith("delete_movie_"):
+        await _handle_movie_type_buttons(query, context)
+    elif action.startswith("delete_tv_"):
+        await _handle_tv_scope_buttons(query, context)
+    elif action.startswith("delete_select_"):
+        await _handle_selection_button(query, context)
+    elif action == "confirm_delete":
+        await _handle_confirm_delete_button(query, context)
+    else:
+        logger.warning(f"Received unhandled delete callback: {action}")
+
+
+async def _present_delete_results(results: Union[str, List[str], None], status_message: Message, media_name: str, query_text: str, context: ContextTypes.DEFAULT_TYPE):
+    """Presents single, multiple, or no search results to the user for deletion."""
+    if context.user_data is None: context.user_data = {}
+
+    if isinstance(results, str):
+        context.user_data['path_to_delete'] = results
+        base_name = os.path.basename(results)
+        message_text = (
+            f"Found:\n`{escape_markdown(base_name)}`\n\n"
+            f"*Path:*\n`{escape_markdown(results)}`\n\n"
+            f"Are you sure you want to permanently delete this item?"
+        )
+        keyboard = [[InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]]
+        await safe_edit_message(status_message, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+
+    elif isinstance(results, list):
+        context.user_data['selection_choices'] = results
+        keyboard = []
+        for i, path in enumerate(results):
+            keyboard.append([InlineKeyboardButton(os.path.basename(path), callback_data=f"delete_select_{i}")])
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+        await safe_edit_message(status_message, text="Multiple matches found. Which one do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    else:
+        await safe_edit_message(status_message, text=f"❌ No {media_name} found matching: `{escape_markdown(query_text)}`", parse_mode=ParseMode.MARKDOWN_V2)
+
+
+async def _handle_start_buttons(query, context):
+    """Handles 'Movie' or 'TV Show' selection."""
+    if query.data == "delete_start_movie":
+        message_text = "Delete a full movie collection (folder) or a single movie file?"
+        keyboard = [[
+            InlineKeyboardButton("🗂️ Collection", callback_data="delete_movie_collection"),
+            InlineKeyboardButton("📄 Single File", callback_data="delete_movie_single"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
+        ]]
+    else: # delete_start_tv
+        context.user_data['next_action'] = 'delete_tv_show_search'
+        message_text = "📺 Please send me the title of the TV show to delete."
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+    
+    await safe_edit_message(query.message, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+    context.user_data['prompt_message_id'] = query.message.message_id
+
+
+async def _handle_movie_type_buttons(query, context):
+    """Handles 'Collection' or 'Single' movie selection."""
+    if query.data == "delete_movie_collection":
+        context.user_data['next_action'] = 'delete_movie_collection_search'
+        message_text = "🎬 Please send the title of the movie collection (folder) to delete."
+    else: # delete_movie_single
+        context.user_data['next_action'] = 'delete_movie_single_search'
+        message_text = "🎬 Please send the title of the single movie (file) to delete."
+
+    await safe_edit_message(query.message, text=message_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]))
+    context.user_data['prompt_message_id'] = query.message.message_id
+
+
+async def _handle_tv_scope_buttons(query, context):
+    """Handles 'All', 'Season', or 'Episode' selection for a TV show."""
+    show_path = context.user_data.get('show_path_to_delete')
+    if not show_path:
+        await safe_edit_message(query.message, "❌ Error: Show context lost. Please start over.")
+        return
+
+    if query.data == "delete_tv_all":
+        context.user_data['path_to_delete'] = show_path
+        base_name = os.path.basename(show_path)
+        message_text = (
+            f"Are you sure you want to delete the ENTIRE show `{escape_markdown(base_name)}` and all its contents\\?\n\n"
+            f"*Path:*\n`{escape_markdown(show_path)}`"
+        )
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Yes, Delete All", callback_data="confirm_delete"), InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")]])
+        await safe_edit_message(query.message, text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    
+    elif query.data == "delete_tv_season":
+        context.user_data['next_action'] = 'delete_tv_season_search'
+        message_text = "💿 Please send me the season number to delete."
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+        await safe_edit_message(query.message, text=message_text, reply_markup=reply_markup)
+        context.user_data['prompt_message_id'] = query.message.message_id
+
+    elif query.data == "delete_tv_episode":
+        context.user_data['next_action'] = 'delete_tv_episode_season_prompt'
+        message_text = "📺 First, please send the season number."
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]])
+        await safe_edit_message(query.message, text=message_text, reply_markup=reply_markup)
+        context.user_data['prompt_message_id'] = query.message.message_id
+
+
+async def _handle_selection_button(query, context):
+    """Handles the user choosing one item from a list of multiple matches."""
+    choices = context.user_data.pop('selection_choices', [])
+    try:
+        index = int(query.data.split('_')[2])
+        path_to_delete = choices[index]
+        context.user_data['path_to_delete'] = path_to_delete
+        base_name = os.path.basename(path_to_delete)
+        message_text = (
+            f"You selected:\n`{escape_markdown(base_name)}`\n\n"
+            f"Are you sure you want to permanently delete this item?"
+        )
+        reply_markup = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"),
+            InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation")
+        ]])
+        await safe_edit_message(query.message, text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    except (ValueError, IndexError):
+        await safe_edit_message(query.message, text="❌ Error: Could not process selection. Please start over.")
+
+
+async def _handle_confirm_delete_button(query, context):
+    """Handles the final 'Yes, Delete' confirmation."""
+    path_to_delete = context.user_data.pop('path_to_delete', None)
+    message_text = ""
+
+    if not path_to_delete:
+        message_text = "❌ Error: Path to delete not found. The action may have expired."
+    elif not DELETION_ENABLED:
+        logger.warning(f"Deletion attempted for '{path_to_delete}' but DELETION_ENABLED is False.")
+        message_text = "ℹ️ *Deletion Confirmed*\n\n(Note: Actual file deletion is disabled by the administrator)"
+    else:
+        try:
+            if os.path.exists(path_to_delete):
+                display_name = os.path.basename(path_to_delete)
+                logger.info(f"PERFORMING DELETE on: {path_to_delete}")
+                if os.path.isfile(path_to_delete):
+                    await asyncio.to_thread(os.remove, path_to_delete)
+                    message_text = f"🗑️ *Successfully Deleted File*\n`{escape_markdown(display_name)}`"
+                elif os.path.isdir(path_to_delete):
+                    await asyncio.to_thread(shutil.rmtree, path_to_delete)
+                    message_text = f"🗑️ *Successfully Deleted Directory*\n`{escape_markdown(display_name)}`"
+            else:
+                message_text = "❌ *Deletion Failed*\nThe path no longer exists on the server."
+        except Exception as e:
+            logger.error(f"An OS error occurred during deletion of '{path_to_delete}': {e}")
+            message_text = f"❌ *Deletion Failed*\nAn error occurred on the server:\n`{escape_markdown(str(e))}`"
+
+    keys_to_clear = ['show_path_to_delete', 'next_action', 'prompt_message_id', 'season_to_delete_num', 'selection_choices', 'active_workflow', 'path_to_delete']
+    for key in keys_to_clear:
+        context.user_data.pop(key, None)
+    
+    await safe_edit_message(query.message, text=message_text, reply_markup=None, parse_mode=ParseMode.MARKDOWN_V2)

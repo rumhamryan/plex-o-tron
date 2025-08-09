@@ -5,7 +5,7 @@
 #
 # IT ASSUMES:
 # 1. You are running this script from the root of the project directory.
-# 2. Python 3.11 and the 'venv' module are already installed.
+# 2. Python 3.12 and the 'venv' module are already installed.
 # 3. 'restart_plex.sh' is present in the project directory.
 
 # --- Configuration ---
@@ -77,7 +77,8 @@ fi
 
 # --- Step 5: Setup Python Virtual Environment and Install Dependencies ---
 echo -e "\n${YELLOW}Step 5: Setting up Python virtual environment...${NC}"
-python3.11 -m venv venv
+# --- UPDATED TO PYTHON 3.12 ---
+python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 deactivate
@@ -92,6 +93,7 @@ if [[ "$wants_service" =~ ^[Yy]$ ]]; then
     echo -e "\n${CYAN}Creating systemd service file...${NC}"
     SERVICE_FILE_PATH="/etc/systemd/system/telegram-bot.service"
     
+    # --- UPDATED TO PYTHON 3.12 ---
     # Note: Using "EOF" without quotes allows shell variables like $PROJECT_DIR to be expanded.
     sudo tee "$SERVICE_FILE_PATH" > /dev/null <<EOF
 [Unit]
@@ -102,7 +104,7 @@ After=network.target
 User=$CURRENT_USER
 Group=$CURRENT_USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=$PROJECT_DIR/venv/bin/python3.11 $PROJECT_DIR/telegram_bot.py
+ExecStart=$PROJECT_DIR/venv/bin/python3.12 $PROJECT_DIR/__main__.py
 Restart=on-failure
 RestartSec=5s
 
@@ -127,5 +129,5 @@ else
     echo "You chose not to set up the systemd service."
     echo -e "\n${YELLOW}To run the bot manually, use these commands:${NC}"
     echo -e "1. Activate the environment: ${CYAN}source ${PROJECT_DIR}/venv/bin/activate${NC}"
-    echo -e "2. Run the bot: ${CYAN}python3.11 ${PROJECT_DIR}/telegram_bot.py${NC}"
+    echo -e "2. Run the bot: ${CYAN}python3.12 ${PROJECT_DIR}/__main__.py${NC}"
 fi
