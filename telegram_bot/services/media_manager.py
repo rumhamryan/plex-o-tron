@@ -14,51 +14,8 @@ from telegram import Message
 from telegram.helpers import escape_markdown
 
 from ..config import ALLOWED_EXTENSIONS, MAX_TORRENT_SIZE_BYTES, MAX_TORRENT_SIZE_GB, logger
-from ..utils import format_bytes, safe_edit_message
+from ..utils import format_bytes, safe_edit_message, parse_torrent_name
 from .scraping_service import fetch_episode_title_from_wikipedia
-
-
-def parse_torrent_name(name: str) -> Dict[str, Any]:
-    """
-    Parses a torrent name to identify if it's a movie or a TV show
-    and extracts relevant metadata.
-    """
-    cleaned_name = re.sub(r'[\._]', ' ', name)
-
-    # TV Show Detection: S01E01 or 1x01 formats
-    tv_match = re.search(r'(?i)\b(S(\d{1,2})E(\d{1,2})|(\d{1,2})x(\d{1,2}))\b', cleaned_name)
-    if tv_match:
-        title = cleaned_name[:tv_match.start()].strip()
-        tags_to_remove = [
-            r'\[.*?\]', r'\(.*?\)',
-            r'\b(1080p|720p|480p|x264|x265|hevc|BluRay|WEB-DL|AAC|DTS|HDTV|RM4k)\b'
-        ]
-        regex_pattern = '|'.join(tags_to_remove)
-        title = re.sub(regex_pattern, '', title, flags=re.I).strip()        
-        season = int(tv_match.group(2) or tv_match.group(4))
-        episode = int(tv_match.group(3) or tv_match.group(5))
-        title = title.rstrip(' _.-([').strip()
-        return {'type': 'tv', 'title': title, 'season': season, 'episode': episode}
-
-    # Movie Detection: Look for a year (19xx or 20xx)
-    year_match = re.search(r'\b(19\d{2}|20\d{2})\b', cleaned_name)
-    if year_match:
-        year = year_match.group(1)
-        title = cleaned_name[:year_match.start()].strip()
-        # Remove trailing hyphens or whitespace
-        title = re.sub(r'[\s-]+$', '', title).strip()
-        return {'type': 'movie', 'title': title, 'year': year}
-
-    # Fallback for names that don't match standard patterns
-    tags_to_remove = [
-        r'\[.*?\]', r'\(.*?\)',
-        r'\b(1080p|720p|480p|x264|x265|hevc|BluRay|WEB-DL|AAC|DTS|HDTV|RM4k)\b'
-    ]
-    regex_pattern = '|'.join(tags_to_remove)
-    no_ext = os.path.splitext(cleaned_name)[0]
-    title = re.sub(regex_pattern, '', no_ext, flags=re.I).strip()
-    title = re.sub(r'\s+', ' ', title).strip()
-    return {'type': 'unknown', 'title': title}
 
 
 def generate_plex_filename(parsed_info: Dict[str, Any], original_extension: str) -> str:
@@ -154,8 +111,21 @@ async def validate_and_enrich_torrent(
     """
     # 1. Validate size
     if ti.total_size() > MAX_TORRENT_SIZE_BYTES:
-        error_msg = f"This torrent is *{format_bytes(ti.total_size())}*, which is larger than the *{MAX_TORRENT_SIZE_GB} GB* limit."
-        await safe_edit_message(progress_message, text=f"❌ *Size Limit Exceeded*\n\n{error_msg}", parse_mode="MarkdownV2")
+        # Escape the dynamic parts of the string that might contain special characters.
+        torrent_size_str = escape_markdown(format_bytes(ti.total_size()), version=2)
+        size_limit_str = escape_markdown(str(MAX_TORRENT_SIZE_GB), version=2)
+
+        # Construct the final message using the escaped parts, also escaping the final period.
+        error_msg = (
+            f"This torrent is *{torrent_size_str}*, which is larger than the "
+            f"*{size_limit_str} GB* limit\\."
+        )
+        
+        await safe_edit_message(
+            progress_message, 
+            text=f"❌ *Size Limit Exceeded*\n\n{error_msg}", 
+            parse_mode="MarkdownV2"
+        )
         return "Size limit exceeded", None
 
     # 2. Validate file types

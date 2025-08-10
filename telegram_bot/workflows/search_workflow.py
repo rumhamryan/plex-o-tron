@@ -9,7 +9,7 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 
-from ..config import logger
+from ..config import logger, MAX_TORRENT_SIZE_GB
 from ..services import search_logic, torrent_service
 from ..services.media_manager import validate_and_enrich_torrent
 from ..utils import safe_edit_message
@@ -248,7 +248,7 @@ async def _prompt_for_resolution(chat_id: int, context: ContextTypes.DEFAULT_TYP
     context.user_data['prompt_message_id'] = prompt_message.message_id
 
 async def _present_search_results(message, context, results, query_str):
-    """Formats and displays the final list of search results."""
+    """Formats and displays the final list of search results, pre-filtered by size."""
     _clear_search_context(context)
     
     escaped_query = escape_markdown(query_str, version=2)
@@ -256,13 +256,33 @@ async def _present_search_results(message, context, results, query_str):
     if not results:
         await safe_edit_message(message, text=f"❌ No results found for '`{escaped_query}`' across all configured sites\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
+
+    # Filter the results list to exclude torrents larger than the configured limit
+    original_count = len(results)
+    filtered_results = [
+        r for r in results 
+        if r.get('size_gb', float('inf')) <= MAX_TORRENT_SIZE_GB
+    ]
     
-    context.user_data['search_results'] = results
+    # Handle the case where all found results were too large
+    if not filtered_results:
+        await safe_edit_message(
+            message, 
+            text=(
+                f"ℹ️ Found {original_count} result\\(s\\) for '`{escaped_query}`', "
+                f"but none were under the *{escape_markdown(str(MAX_TORRENT_SIZE_GB), version=2)} GB* size limit\\."
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+    
+    # Use the filtered list from this point on
+    context.user_data['search_results'] = filtered_results
     keyboard = []
     
-    results_text = f"Found {len(results)} result\\(s\\) for *{escaped_query}*\\. Please select one to download:"
+    results_text = f"Found {len(filtered_results)} valid result\\(s\\) for *{escaped_query}*\\. Please select one to download:"
     
-    for i, result in enumerate(results[:10]): # Limit to 10 choices
+    for i, result in enumerate(filtered_results[:10]): # Limit to 10 choices
         button_label = f"{result.get('codec', 'N/A')} | {result.get('size_gb', 0.0):.2f} GB | S: {result.get('seeders', 0)}"
         keyboard.append([InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")])
 

@@ -15,7 +15,7 @@ from telegram.constants import ParseMode
 from telegram.helpers import escape_markdown
 
 # --- Refactored Imports: Changed to absolute for consistency and IDE compatibility ---
-from telegram_bot.config import logger
+from telegram_bot.config import logger, MAX_TORRENT_SIZE_BYTES
 from telegram_bot.utils import format_bytes, safe_edit_message
 from telegram_bot.services.media_manager import parse_resolution_from_name, get_dominant_file_type, parse_torrent_name
 from telegram_bot.services.scraping_service import find_magnet_link_on_page
@@ -161,6 +161,12 @@ async def _fetch_and_parse_magnet_details(
     parsed_choices = []
     for result in filter(None, results):
         ti = result['ti']
+        
+        # Filter out the torrent if it's too large before adding it to the choices
+        if ti.total_size() > MAX_TORRENT_SIZE_BYTES:
+            logger.info(f"Filtering out torrent '{ti.name()}' from webpage scrape due to size: {format_bytes(ti.total_size())}")
+            continue
+
         parsed_choices.append({
             "index": result['index'],
             "resolution": parse_resolution_from_name(ti.name()),

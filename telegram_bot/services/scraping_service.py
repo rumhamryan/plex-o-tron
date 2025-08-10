@@ -1,6 +1,7 @@
 # telegram_bot/services/scraping_service.py
 
 import asyncio
+from collections import Counter
 import re
 import urllib.parse
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -12,8 +13,8 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ..config import logger
-from ..utils import extract_first_int
 from .search_logic import _parse_codec, _parse_size_to_gb, score_torrent_result
+from ..utils import extract_first_int, parse_torrent_name
 
 
 # --- Wikipedia Scraping ---
@@ -195,9 +196,15 @@ async def _parse_embedded_episode_page(soup: BeautifulSoup, season: int, episode
 async def scrape_1337x(
     query: str, media_type: str, search_url_template: str, context: ContextTypes.DEFAULT_TYPE, **kwargs
 ) -> List[Dict[str, Any]]:
-    """Scrapes 1337x.to for torrents and scores the results."""
-    results = []
+    """
+    Scrapes 1337x.to for torrents using a more robust two-stage filtering process.
+    
+    1.  It scrapes all results and parses their "base media name".
+    2.  It identifies the most common base name to determine the correct media.
+    3.  It then gathers and scores all torrents belonging to that media.
+    """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
+    # FIX: Ensure consistent key lookup for preferences
     prefs_key = 'movies' if 'movie' in media_type else 'tv'
     preferences = search_config.get("preferences", {}).get(prefs_key, {})
 
@@ -207,7 +214,7 @@ async def scrape_1337x(
 
     formatted_query = urllib.parse.quote_plus(query)
     search_url = search_url_template.replace("{query}", formatted_query)
-    logger.info(f"[SCRAPER] Scraping 1337x: {search_url}")
+    logger.info(f"[SCRAPER] 1337x Stage 1: Scraping candidates from {search_url}")
 
     headers = {
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
@@ -219,59 +226,82 @@ async def scrape_1337x(
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'lxml')
 
+        # --- Stage 1: Scrape candidates and their parsed base names ---
+        candidates = []
         table_body = soup.find('tbody')
         if not isinstance(table_body, Tag):
-            logger.warning("[SCRAPER] Could not find table body on 1337x page.")
             return []
 
-        base_url = "https://1337x.to"
         for row in table_body.find_all('tr'):
-            if not isinstance(row, Tag) or len(cells := row.find_all('td')) < 6:
+            if not isinstance(row, Tag) or len(row.find_all('td')) < 2:
                 continue
             
-            name_cell, seeds_cell, size_cell, uploader_cell = cells[0], cells[1], cells[4], cells[5]
-
-            if not isinstance(name_cell, Tag) or len(links := name_cell.find_all('a')) < 2: continue
-            if not isinstance(link_tag := links[1], Tag): continue
+            name_cell = row.find_all('td')[0]
+            if not isinstance(name_cell, Tag) or len(links := name_cell.find_all('a')) < 2:
+                continue
             
-            title = link_tag.get_text(strip=True)
-            page_url_relative = link_tag.get('href')
-
-            if not isinstance(size_cell, Tag): continue
-            size_str = size_cell.get_text(strip=True)
-
-            if not isinstance(seeds_cell, Tag): continue
-            seeds_str = seeds_cell.get_text(strip=True)
-
-            parsed_size_gb = _parse_size_to_gb(size_str)
-            if parsed_size_gb > 7.0: continue  # Skip very large files early
-
-            if not isinstance(uploader_cell, Tag): continue
+            title = links[1].get_text(strip=True)
+            # Parse the torrent name to get a clean base name
+            parsed_info = parse_torrent_name(title)
+            base_name = parsed_info.get('title')
             
-            # --- Refactored Uploader Parsing: Safely handle missing uploader tags ---
-            uploader = "Anonymous"
-            if uploader_tag := uploader_cell.find('a'):
-                uploader = uploader_tag.get_text(strip=True)
+            if title and base_name:
+                candidates.append({'title': title, 'base_name': base_name, 'row_element': row})
 
-            if not title or not isinstance(page_url_relative, str): continue
+        if not candidates:
+            logger.warning("[SCRAPER] 1337x: Found no candidates on page.")
+            return []
+
+        # --- Stage 2: Find the most common base name to identify the correct media ---
+        base_name_counts = Counter(c['base_name'] for c in candidates)
+        if not base_name_counts:
+            return []
             
-            score = score_torrent_result(title, uploader, preferences)
-            if score > 0:
-                results.append({
-                    'title': title,
-                    'page_url': f"{base_url}{page_url_relative}",
-                    'score': score,
-                    'source': '1337x',
-                    'uploader': uploader,
-                    'size_gb': parsed_size_gb,
-                    'codec': _parse_codec(title),
-                    'seeders': int(seeds_str) if seeds_str.isdigit() else 0,
-                })
+        # The most common name is our best match for the media itself
+        best_match_base_name, _ = base_name_counts.most_common(1)[0]
+        logger.info(f"[SCRAPER] 1337x Stage 2: Identified most common media name: '{best_match_base_name}'")
+
+        # --- Stage 3: Filter and process torrents belonging to the identified media ---
+        results = []
+        base_url = "https://1337x.to"
+        for candidate in candidates:
+            # Process only torrents that match our identified media name
+            if candidate['base_name'] == best_match_base_name:
+                
+                row = candidate['row_element']
+                cells = row.find_all('td')
+                if len(cells) < 6: continue
+                
+                name_cell, seeds_cell, size_cell, uploader_cell = cells[0], cells[1], cells[4], cells[5]
+                page_url_relative = name_cell.find_all('a')[1].get('href')
+                if not isinstance(page_url_relative, str): continue
+                
+                size_str = size_cell.get_text(strip=True)
+                seeds_str = seeds_cell.get_text(strip=True)
+                parsed_size_gb = _parse_size_to_gb(size_str)
+
+                uploader = "Anonymous"
+                if uploader_tag := uploader_cell.find('a'):
+                    uploader = uploader_tag.get_text(strip=True)
+
+                score = score_torrent_result(candidate['title'], uploader, preferences)
+                if score > 0:
+                    results.append({
+                        'title': candidate['title'],
+                        'page_url': f"{base_url}{page_url_relative}",
+                        'score': score,
+                        'source': '1337x',
+                        'uploader': uploader,
+                        'size_gb': parsed_size_gb,
+                        'codec': _parse_codec(candidate['title']),
+                        'seeders': int(seeds_str) if seeds_str.isdigit() else 0,
+                    })
 
     except Exception as e:
         logger.error(f"[SCRAPER ERROR] 1337x scrape failed: {e}", exc_info=True)
+        return []
 
-    logger.info(f"[SCRAPER] 1337x scrape finished. Found {len(results)} scored results.")
+    logger.info(f"[SCRAPER] 1337x Stage 3: Found {len(results)} relevant torrents for '{best_match_base_name}'.")
     return results
 
 
@@ -283,7 +313,7 @@ async def scrape_yts(
     resolution = kwargs.get('resolution')
     logger.info(f"[SCRAPER] YTS: Initiating API-based scrape for '{query}' (Year: {year}, Res: {resolution}).")
     
-    preferences = context.bot_data.get("SEARCH_CONFIG", {}).get("preferences", {}).get(media_type, {})
+    preferences = context.bot_data.get("SEARCH_CONFIG", {}).get("preferences", {}).get('movies', {})
     if not preferences: return []
 
     try:

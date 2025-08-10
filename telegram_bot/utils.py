@@ -1,8 +1,9 @@
 # telegram_bot/utils.py
 
 import math
+import os
 import re
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 
 from telegram import Message, Bot
 from telegram.constants import ParseMode
@@ -49,3 +50,45 @@ async def safe_edit_message(
     except BadRequest as e:
         if "message is not modified" not in str(e).lower():
             raise e
+        
+def parse_torrent_name(name: str) -> Dict[str, Any]:
+    """
+    Parses a torrent name to identify if it's a movie or a TV show
+    and extracts relevant metadata.
+    """
+    cleaned_name = re.sub(r'[\._]', ' ', name)
+
+    # TV Show Detection: S01E01 or 1x01 formats
+    tv_match = re.search(r'(?i)\b(S(\d{1,2})E(\d{1,2})|(\d{1,2})x(\d{1,2}))\b', cleaned_name)
+    if tv_match:
+        title = cleaned_name[:tv_match.start()].strip()
+        tags_to_remove = [
+            r'\[.*?\]', r'\(.*?\)',
+            r'\b(1080p|720p|480p|x264|x265|hevc|BluRay|WEB-DL|AAC|DTS|HDTV|RM4k)\b'
+        ]
+        regex_pattern = '|'.join(tags_to_remove)
+        title = re.sub(regex_pattern, '', title, flags=re.I).strip()        
+        season = int(tv_match.group(2) or tv_match.group(4))
+        episode = int(tv_match.group(3) or tv_match.group(5))
+        title = title.rstrip(' _.-([').strip()
+        return {'type': 'tv', 'title': title, 'season': season, 'episode': episode}
+
+    # Movie Detection: Look for a year (19xx or 20xx)
+    year_match = re.search(r'\b(19\d{2}|20\d{2})\b', cleaned_name)
+    if year_match:
+        year = year_match.group(1)
+        title = cleaned_name[:year_match.start()].strip()
+        # Remove trailing hyphens or whitespace
+        title = re.sub(r'[\s-]+$', '', title).strip()
+        return {'type': 'movie', 'title': title, 'year': year}
+
+    # Fallback for names that don't match standard patterns
+    tags_to_remove = [
+        r'\[.*?\]', r'\(.*?\)',
+        r'\b(1080p|720p|480p|x264|x265|hevc|BluRay|WEB-DL|AAC|DTS|HDTV|RM4k)\b'
+    ]
+    regex_pattern = '|'.join(tags_to_remove)
+    no_ext = os.path.splitext(cleaned_name)[0]
+    title = re.sub(regex_pattern, '', no_ext, flags=re.I).strip()
+    title = re.sub(r'\s+', ' ', title).strip()
+    return {'type': 'unknown', 'title': title}
