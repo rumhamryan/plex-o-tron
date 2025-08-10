@@ -42,7 +42,7 @@ async def send_confirmation_prompt(
         raw_display_name = parsed_info.get('title', 'Unknown')
 
     # Create escaped versions for the message
-    escaped_display_name = escape_markdown(raw_display_name)
+    escaped_display_name = escape_markdown(raw_display_name, version=2)
     resolution = parse_resolution_from_name(ti.name())
     file_type_str = get_dominant_file_type(ti.files())
     total_size_str = format_bytes(ti.total_size())

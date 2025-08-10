@@ -37,7 +37,7 @@ def parse_torrent_name(name: str) -> Dict[str, Any]:
         title = re.sub(regex_pattern, '', title, flags=re.I).strip()        
         season = int(tv_match.group(2) or tv_match.group(4))
         episode = int(tv_match.group(3) or tv_match.group(5))
-        title = re.sub(r'[\s-]+$', '', title).strip() # This can now stay for final cleanup
+        title = title.rstrip(' _.-([').strip()
         return {'type': 'tv', 'title': title, 'season': season, 'episode': episode}
 
     # Movie Detection: Look for a year (19xx or 20xx)

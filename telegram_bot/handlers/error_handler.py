@@ -48,8 +48,8 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
     if isinstance(update, Update) and update.effective_message:
         error_text = (
             "❌ An unexpected error occurred.\n\n"
-            "I'm sorry, but I encountered a problem while processing your request. "
-            "The issue has been automatically logged for review. Please try again later."
+            "I'm sorry, but I encountered a problem while processing your request\\. "
+            "The issue has been automatically logged for review\\. Please try again later\\."
         )
         try:
             await update.effective_message.reply_text(

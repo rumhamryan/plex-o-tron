@@ -215,7 +215,20 @@ async def download_task_wrapper(download_data: Dict, application: Application):
         elif application.bot_data.get('is_shutting_down'):
             logger.info(f"Task for '{clean_name}' paused for shutdown.")
             raise  # Re-raise to be handled by post_shutdown
+        
         else:
+            # 1. Log what you are about to do.
+            logger.info(f"Cancellation cleanup: Removing torrent and deleting files for '{clean_name}'.")
+
+            # 2. Get the session and the handle.
+            ses = application.bot_data["TORRENT_SESSION"]
+            handle = download_data.get('handle')
+            
+            # 3. Check if the handle is valid before using it.
+            if handle and handle.is_valid():
+                # 4. Use the key libtorrent feature to remove the torrent and its data.
+                ses.remove_torrent(handle, lt.session.delete_files) # type: ignore
+                
             message_text = f"⏹️ *Cancelled*\nDownload has been stopped for:\n`{escape_markdown(clean_name)}`"
 
     except Exception as e:
@@ -438,12 +451,12 @@ async def handle_cancel_request(update, context):
         if query.data == "cancel_download":
             message_text = "Are you sure you want to cancel this download?"
             reply_markup = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Yes, Cancel", callback_data="confirm_cancel"),
+                InlineKeyboardButton("✅ Yes, Cancel", callback_data="cancel_confirm"),
                 InlineKeyboardButton("❌ No, Continue", callback_data="resume_download"), # Simplification
             ]])
             await safe_edit_message(query.message, text=message_text, reply_markup=reply_markup)
         
-        elif query.data == "confirm_cancel":
+        elif query.data == "cancel_confirm":
             logger.info(f"Cancellation confirmed for user {chat_id_str}.")
             if 'task' in download_data and not download_data['task'].done():
                 download_data['task'].cancel()

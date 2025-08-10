@@ -193,7 +193,7 @@ async def _parse_embedded_episode_page(soup: BeautifulSoup, season: int, episode
 # --- Torrent Site Scraping ---
 
 async def scrape_1337x(
-    query: str, media_type: str, search_url_template: str, context: ContextTypes.DEFAULT_TYPE
+    query: str, media_type: str, search_url_template: str, context: ContextTypes.DEFAULT_TYPE, **kwargs
 ) -> List[Dict[str, Any]]:
     """Scrapes 1337x.to for torrents and scores the results."""
     results = []

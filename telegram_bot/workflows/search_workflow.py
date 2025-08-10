@@ -163,7 +163,7 @@ async def _handle_start_button(query, context):
     context.user_data['active_workflow'] = 'search'
     if query.data == 'search_start_movie':
         context.user_data['next_action'] = 'search_movie_get_title'
-        prompt_text = "🎬 Please send me the title of the movie to search for (you can include the year)\\."
+        prompt_text = "🎬 Please send me the title of the movie to search for \\(you can include the year\\)\\."
     else:  # search_start_tv
         context.user_data['next_action'] = 'search_tv_get_title'
         prompt_text = "📺 Please send me the title of the TV show to search for\\."
