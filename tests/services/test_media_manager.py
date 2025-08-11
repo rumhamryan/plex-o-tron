@@ -7,6 +7,7 @@ import pytest
 from telegram_bot.services.media_manager import (
     generate_plex_filename,
     parse_resolution_from_name,
+    handle_successful_download,
 )
 
 
@@ -43,3 +44,48 @@ def test_generate_plex_filename_illegal_chars():
 )
 def test_parse_resolution_from_name(name, expected):
     assert parse_resolution_from_name(name) == expected
+
+
+class DummyFiles:
+    def num_files(self):
+        return 1
+
+    def file_path(self, index):
+        return "Movie.mkv"
+
+
+class DummyTorrent:
+    def files(self):
+        return DummyFiles()
+
+
+@pytest.mark.asyncio
+async def test_handle_successful_download(mocker):
+    ti = DummyTorrent()
+    parsed = {"type": "movie", "title": "Sample", "year": "2023"}
+    save_paths = {"movies": "/movies", "default": "/default"}
+
+    mocker.patch(
+        "telegram_bot.services.media_manager._get_final_destination_path",
+        return_value="/final",
+    )
+    makedirs_mock = mocker.patch("telegram_bot.services.media_manager.os.makedirs")
+    move_mock = mocker.patch("telegram_bot.services.media_manager.shutil.move")
+    scan_mock = mocker.patch(
+        "telegram_bot.services.media_manager._trigger_plex_scan",
+        return_value="scan",
+    )
+    mocker.patch("telegram_bot.services.media_manager._cleanup_source_directory")
+
+    result = await handle_successful_download(
+        ti,
+        parsed,
+        "/downloads",
+        save_paths,
+        {"url": "u", "token": "t"},
+    )
+
+    makedirs_mock.assert_called_once_with("/final", exist_ok=True)
+    move_mock.assert_called_once_with("/downloads/Movie.mkv", "/final/Sample (2023).mkv")
+    scan_mock.assert_called_once()
+    assert "Success" in result
