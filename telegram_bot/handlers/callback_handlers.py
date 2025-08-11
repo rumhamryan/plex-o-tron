@@ -37,7 +37,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if action.startswith("search_"):
         await handle_search_buttons(update, context)
         
-    elif action.startswith("delete_"):
+    elif action.startswith("delete_") or action == "confirm_delete":
         await handle_delete_buttons(update, context)
 
     elif action == "confirm_download":

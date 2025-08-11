@@ -44,7 +44,7 @@ async def process_user_input(
         return await _handle_webpage_url(text, context, progress_message)
 
     else:
-        error_msg = "This does not look like a valid .torrent URL, magnet link, or web page."
+        error_msg = "This does not look like a valid \\.torrent URL, magnet link, or web page\\."
         await safe_edit_message(progress_message, text=f"❌ *Error:* {escape_markdown(error_msg)}", parse_mode=ParseMode.MARKDOWN_V2)
         return None
 
@@ -76,10 +76,10 @@ async def _handle_torrent_url(
         return ti
 
     except httpx.RequestError as e:
-        error_msg = f"Failed to download .torrent file from URL: {e}"
+        error_msg = f"Failed to download \\.torrent file from URL: {e}"
         await safe_edit_message(progress_message, text=f"❌ *Error:* {escape_markdown(error_msg)}", parse_mode=ParseMode.MARKDOWN_V2)
     except RuntimeError:
-        await safe_edit_message(progress_message, text=f"❌ *Error:* The provided file is not a valid torrent.", parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(progress_message, text=f"❌ *Error:* The provided file is not a valid torrent\\.", parse_mode=ParseMode.MARKDOWN_V2)
     
     return None
 
@@ -93,12 +93,12 @@ async def _handle_webpage_url(
         return None
 
     logger.info(f"URL detected. Starting web scrape for: {url}")
-    await safe_edit_message(progress_message, text="🌐 Found a web page. Scraping for magnet links...")
+    await safe_edit_message(progress_message, text="🌐 Found a web page\\. Scraping for magnet links\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
 
     magnet_links = await find_magnet_link_on_page(url)
 
     if not magnet_links:
-        error_msg = "The provided URL does not contain any magnet links, or the page could not be accessed."
+        error_msg = "The provided URL does not contain any magnet links, or the page could not be accessed\\."
         await safe_edit_message(progress_message, text=f"❌ *Error:* {escape_markdown(error_msg)}", parse_mode=ParseMode.MARKDOWN_V2)
         return None
 
@@ -109,7 +109,7 @@ async def _handle_webpage_url(
     parsed_choices = await _fetch_and_parse_magnet_details(magnet_links, context, progress_message)
 
     if not parsed_choices:
-        error_msg = "Could not fetch details for any of the found magnet links. They may be inactive."
+        error_msg = "Could not fetch details for any of the found magnet links\\. They may be inactive\\."
         await safe_edit_message(progress_message, text=f"❌ *Error:* {escape_markdown(error_msg)}", parse_mode=ParseMode.MARKDOWN_V2)
         return None
     
@@ -120,7 +120,7 @@ async def _handle_webpage_url(
     common_title = parsed_title_info.get('title', first_choice_name)
 
     header_text = f"*{escape_markdown(common_title)}*\n\n"
-    subtitle_text = f"Found {len(parsed_choices)} valid torrents. Please select one:"
+    subtitle_text = f"Found {len(parsed_choices)} valid torrents\\. Please select one:"
     
     keyboard = []
     for choice in parsed_choices:
@@ -142,7 +142,7 @@ async def _fetch_and_parse_magnet_details(
 ) -> List[Dict[str, Any]]:
     """Fetches metadata for multiple magnet links in parallel and parses their details."""
     ses = context.bot_data["TORRENT_SESSION"]
-    await safe_edit_message(progress_message, text=f"Found {len(magnet_links)} links. Fetching details...")
+    await safe_edit_message(progress_message, text=f"Found {len(magnet_links)} links. Fetching details\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
 
     async def fetch_one(magnet_link: str, index: int):
         """Worker to fetch metadata for a single magnet link."""
@@ -205,7 +205,7 @@ async def fetch_metadata_from_magnet(
         return lt.torrent_info(bencoded_metadata) #type: ignore
     else:
         logger.warning("Metadata fetch failed or timed out.")
-        error_msg = "Timed out fetching metadata from the magnet link. It might be inactive or poorly seeded."
+        error_msg = "Timed out fetching metadata from the magnet link\\. It might be inactive or poorly seeded\\."
         await safe_edit_message(progress_message, text=f"❌ *Error:* {escape_markdown(error_msg)}", parse_mode=ParseMode.MARKDOWN_V2)
         return None
 

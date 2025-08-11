@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Tuple
 MAX_TORRENT_SIZE_GB = 10
 MAX_TORRENT_SIZE_BYTES = MAX_TORRENT_SIZE_GB * (1024**3)
 ALLOWED_EXTENSIONS = ['.mkv', '.mp4']
-DELETION_ENABLED = False  # Safety switch for the delete functionality
+DELETION_ENABLED = True
 PERSISTENCE_FILE = 'persistence.json'
 
 # Setup basic logging

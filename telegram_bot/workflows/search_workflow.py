@@ -178,7 +178,7 @@ async def _handle_resolution_button(query, context):
     media_type = context.user_data.get('search_media_type')
 
     if not final_title or media_type != 'movie':
-        await safe_edit_message(query.message, "❌ Search context has expired\\. Please start over\\.")
+        await safe_edit_message(query.message, "❌ Search context has expired\\. Please start over\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     await safe_edit_message(query.message, text=f"🔎 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
@@ -194,7 +194,7 @@ async def _handle_result_selection_button(query, context):
     """Handles the user selecting a specific torrent from the results list."""
     search_results = context.user_data.pop('search_results', [])
     if not search_results:
-        await safe_edit_message(query.message, "❌ This selection has expired\\. Please start the search again\\.")
+        await safe_edit_message(query.message, "❌ This selection has expired\\. Please start the search again\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
         
     try:
@@ -214,7 +214,7 @@ async def _handle_result_selection_button(query, context):
         await send_confirmation_prompt(query.message, context, ti, parsed_info)
 
     except (ValueError, IndexError):
-        await safe_edit_message(query.message, "❌ An error occurred with your selection\\. Please try again\\.")
+        await safe_edit_message(query.message, "❌ An error occurred with your selection\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
 
 
 # --- Helper/UI Functions ---

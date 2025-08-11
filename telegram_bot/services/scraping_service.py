@@ -284,7 +284,8 @@ async def scrape_1337x(
                 if uploader_tag := uploader_cell.find('a'):
                     uploader = uploader_tag.get_text(strip=True)
 
-                score = score_torrent_result(candidate['title'], uploader, preferences)
+                seeders_int = int(seeds_str) if seeds_str.isdigit() else 0 # <--- ADD THIS
+                score = score_torrent_result(candidate['title'], uploader, preferences, seeders=seeders_int) # <--- CHANGE THIS
                 if score > 0:
                     results.append({
                         'title': candidate['title'],
@@ -294,7 +295,7 @@ async def scrape_1337x(
                         'uploader': uploader,
                         'size_gb': parsed_size_gb,
                         'codec': _parse_codec(candidate['title']),
-                        'seeders': int(seeds_str) if seeds_str.isdigit() else 0,
+                        'seeders': seeders_int, # <--- CHANGE THIS
                     })
 
     except Exception as e:
@@ -398,14 +399,15 @@ async def scrape_yts(
                         trackers = "&tr=" + "&tr=".join(["udp://open.demonii.com:1337/announce", "udp://tracker.openbittorrent.com:80"])
                         magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(movie_title)}{trackers}"
                         
+                        seeders_count = torrent.get('seeds', 0) # <--- ADD THIS
                         parsed_codec = _parse_codec(full_title) or 'x264' # Default YTS to x264
-                        score = score_torrent_result(full_title, "YTS", preferences)
+                        score = score_torrent_result(full_title, "YTS", preferences, seeders=seeders_count) # <--- CHANGE THIS
                         
                         results.append({
                             'title': full_title, 'page_url': magnet_link,
                             'score': score, 'source': 'YTS.mx', 'uploader': 'YTS',
                             'size_gb': size_gb, 'codec': parsed_codec,
-                            'seeders': torrent.get('seeds', 0)
+                            'seeders': seeders_count # <--- CHANGE THIS
                         })
             
             logger.info(f"[SCRAPER] YTS API scrape finished. Found {len(results)} matching torrents.")

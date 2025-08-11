@@ -88,7 +88,7 @@ async def orchestrate_searches(
 
 # --- Result Scoring and Parsing ---
 
-def score_torrent_result(title: str, uploader: str, preferences: Dict[str, Any]) -> int:
+def score_torrent_result(title: str, uploader: str, preferences: Dict[str, Any], seeders: int = 0) -> int: # <--- CHANGE THIS
     """
     Scores a torrent result based on user preferences (codecs, uploaders, etc.).
     This version correctly handles a dictionary of preferences with weighted scores.
@@ -96,8 +96,6 @@ def score_torrent_result(title: str, uploader: str, preferences: Dict[str, Any])
     score = 0
     title_lower = title.lower()
     
-    # --- FIX: Iterate through preference dictionaries correctly ---
-
     # Score based on codecs (e.g., "x265": 2)
     for codec, value in preferences.get('codecs', {}).items():
         if codec.lower() in title_lower:
@@ -112,7 +110,10 @@ def score_torrent_result(title: str, uploader: str, preferences: Dict[str, Any])
     for trusted_uploader, value in preferences.get('uploaders', {}).items():
         if trusted_uploader.lower() == uploader.lower():
             score += value
-            
+
+    # Add the raw seeder count directly to the score
+    score += seeders
+
     return score
 
 
