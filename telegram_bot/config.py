@@ -157,7 +157,7 @@ def _load_plex_config(config: configparser.ConfigParser) -> Dict[str, str]:
     if config.has_section('plex'):
         plex_url = config.get('plex', 'plex_url', fallback=None)
         plex_token = config.get('plex', 'plex_token', fallback=None)
-        if plex_url and plex_token and plex_token != "YOUR_PEX_TOKEN_HERE":
+        if plex_url and plex_token and plex_token != "YOUR_PLEX_TOKEN_HERE":
             plex_config = {'url': plex_url, 'token': plex_token}
             logger.info("[INFO] Plex configuration loaded successfully.")
     return plex_config
