@@ -4,7 +4,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from telegram_bot.utils import format_bytes, extract_first_int
+from telegram_bot.utils import format_bytes, extract_first_int, parse_torrent_name
 
 # Use pytest's "parametrize" to test many cases with one function
 @pytest.mark.parametrize("size_bytes, expected_str", [
@@ -29,3 +29,30 @@ def test_format_bytes(size_bytes, expected_str):
 def test_extract_first_int(text, expected_int):
     """Verify that extract_first_int correctly pulls the first integer."""
     assert extract_first_int(text) == expected_int
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("Movie.Title.2023", {"type": "movie", "title": "Movie Title", "year": "2023"}),
+        (
+            "Show.Name.S01E02.1080p",
+            {"type": "tv", "title": "Show Name", "season": 1, "episode": 2},
+        ),
+        (
+            "Show Name 1x02 [1080p]",
+            {"type": "tv", "title": "Show Name", "season": 1, "episode": 2},
+        ),
+        (
+            "Another_Show-S01E02_[x265]",
+            {"type": "tv", "title": "Another Show", "season": 1, "episode": 2},
+        ),
+        (
+            "Unknown.File[x265]",
+            {"type": "unknown", "title": "Unknown File"},
+        ),
+    ],
+)
+def test_parse_torrent_name(name, expected):
+    """Verify that torrent names are parsed into the correct metadata."""
+    assert parse_torrent_name(name) == expected
