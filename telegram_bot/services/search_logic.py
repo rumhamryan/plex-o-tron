@@ -38,7 +38,6 @@ async def orchestrate_searches(
         logger.warning(f"[SEARCH] No websites configured for media type '{config_key}' in config.ini.")
         return []
 
-    # --- FIX: Correct the scraper map. The YTS scraper is only for YTS. ---
     # A dedicated scraper for EZTV would need to be created in the future.
     scraper_map: Dict[str, ScraperFunction] = {
         "1337x": scraping_service.scrape_1337x,
@@ -63,13 +62,25 @@ async def orchestrate_searches(
                 logger.warning(f"[SEARCH] Skipping site '{site_name}' due to missing 'search_url' key.")
                 continue
 
+            search_query = query
+            year = kwargs.get('year')
+
+            # Only append the year for the 1337x scraper.
+            if site_name == "1337x" and year:
+                search_query += f" {year}"
+
             scraper_func = scraper_map.get(site_name)
             
             if scraper_func:
                 logger.info(f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'")
-                task = asyncio.create_task(
-                    scraper_func(query, media_type, site_url, context, **kwargs)
-                )
+                if site_name == "1337x":
+                    task = asyncio.create_task(
+                        scraper_func(search_query, media_type, site_url, context, base_query_for_filter=query, **kwargs)
+                    )
+                else:
+                    task = asyncio.create_task(
+                        scraper_func(search_query, media_type, site_url, context, **kwargs)
+                    )
                 tasks.append(task)
             else:
                 logger.warning(f"[SEARCH] Configured site '{site_name}' has no corresponding scraper function. It will be ignored.")

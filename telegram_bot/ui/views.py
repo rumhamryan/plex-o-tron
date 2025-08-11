@@ -35,9 +35,9 @@ async def send_confirmation_prompt(
     if parsed_info['type'] == 'movie':
         raw_display_name = f"{parsed_info.get('title', 'Unknown')} ({parsed_info.get('year', 'N/A')})"
     elif parsed_info['type'] == 'tv':
-        base_name = f"{parsed_info.get('title', 'Unknown')} \\- S{parsed_info.get('season', 0):02d}E{parsed_info.get('episode', 0):02d}"
+        base_name = f"{parsed_info.get('title', 'Unknown')} - S{parsed_info.get('season', 0):02d}E{parsed_info.get('episode', 0):02d}"
         episode_title = parsed_info.get('episode_title')
-        raw_display_name = f"{base_name} \\- {episode_title}" if episode_title else base_name
+        raw_display_name = f"{base_name} - {episode_title}" if episode_title else base_name
     else:
         raw_display_name = parsed_info.get('title', 'Unknown')
 

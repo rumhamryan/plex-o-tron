@@ -193,9 +193,10 @@ async def _parse_embedded_episode_page(soup: BeautifulSoup, season: int, episode
 
 # --- Torrent Site Scraping ---
 
-async def scrape_1337x(
-    query: str, media_type: str, search_url_template: str, context: ContextTypes.DEFAULT_TYPE, **kwargs
-) -> List[Dict[str, Any]]:
+async def scrape_1337x(query: str, media_type: str, 
+                       search_url_template: str, 
+                       context: ContextTypes.DEFAULT_TYPE, *, 
+                       base_query_for_filter: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
     """
     Scrapes 1337x.to for torrents using a more robust two-stage filtering process.
     
@@ -246,10 +247,22 @@ async def scrape_1337x(
             base_name = parsed_info.get('title')
             
             if title and base_name:
-                candidates.append({'title': title, 'base_name': base_name, 'row_element': row})
+                candidates.append({'title': title, 'base_name': base_name, 'row_element': row, 'parsed_info': parsed_info})
 
         if not candidates:
             logger.warning("[SCRAPER] 1337x: Found no candidates on page.")
+            return []
+        
+        filter_query = base_query_for_filter or query
+        candidates = [
+            c for c in candidates 
+            # Use the new, safe 'filter_query' variable here
+            if fuzz.ratio(filter_query.lower(), c['base_name'].lower()) > 90
+        ]
+        
+        # Add a check in case the stricter filter removed all candidates.
+        if not candidates:
+            logger.warning(f"[SCRAPER] 1337x: No candidates survived the fuzzy filter for query '{query}'.")
             return []
 
         # --- Stage 2: Find the most common base name to identify the correct media ---
@@ -295,7 +308,8 @@ async def scrape_1337x(
                         'uploader': uploader,
                         'size_gb': parsed_size_gb,
                         'codec': _parse_codec(candidate['title']),
-                        'seeders': seeders_int, # <--- CHANGE THIS
+                        'seeders': seeders_int,
+                        'year': candidate['parsed_info'].get('year') # <-- NEWLY ADDED
                     })
 
     except Exception as e:
@@ -353,7 +367,7 @@ async def scrape_yts(
             # --- Refactored Match Validation: Safely handle potentially incorrect type stubs from `thefuzz` ---
             # `thefuzz` can return a 3-element tuple (choice, score, key) when choices is a dict.
             # This check is safer than the original complex single-line check.
-            if not (best_match and len(best_match) == 3 and best_match[1] > 70):
+            if not (best_match and len(best_match) == 3 and best_match[1] > 85):
                 logger.warning(f"[SCRAPER] YTS Stage 1: No confident match found for '{query}'. Best was: {best_match}")
                 return []
             
@@ -390,7 +404,7 @@ async def scrape_yts(
             
             for torrent in movie_data.get('torrents', []):
                 quality = torrent.get('quality', '').lower()
-                if resolution and resolution in quality:
+                if not resolution or (resolution and resolution in quality):
                     size_gb = torrent.get('size_bytes', 0) / (1024**3)
                     if size_gb > 7.0: continue
 
@@ -407,7 +421,8 @@ async def scrape_yts(
                             'title': full_title, 'page_url': magnet_link,
                             'score': score, 'source': 'YTS.mx', 'uploader': 'YTS',
                             'size_gb': size_gb, 'codec': parsed_codec,
-                            'seeders': seeders_count # <--- CHANGE THIS
+                            'seeders': seeders_count,
+                            'year': movie_data.get('year') # <-- NEWLY ADDED
                         })
             
             logger.info(f"[SCRAPER] YTS API scrape finished. Found {len(results)} matching torrents.")

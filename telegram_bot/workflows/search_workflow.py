@@ -1,9 +1,9 @@
 # telegram_bot/workflows/search_workflow.py
 
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional, Union 
 
-from telegram import Update, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery 
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
@@ -63,6 +63,8 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         await _handle_start_button(query, context)
     elif action.startswith("search_resolution_"):
         await _handle_resolution_button(query, context)
+    elif action.startswith("search_select_year_"): # <-- NEWLY ADDED BLOCK
+        await _handle_year_selection_button(query, context)
     elif action.startswith("search_select_"):
         await _handle_result_selection_button(query, context)
     else:
@@ -83,11 +85,16 @@ async def _handle_movie_title_reply(chat_id, query, context):
         context.user_data['search_media_type'] = 'movie'
         await _prompt_for_resolution(chat_id, context, full_title)
     else:
-        sanitized_title = re.sub(r'[^\w\s]', '', query).strip()
-        context.user_data['search_query_title'] = sanitized_title
-        context.user_data['next_action'] = 'search_movie_get_year'
-        prompt_text = f"Got it\\. Now, please send the 4\\-digit year for *{escape_markdown(sanitized_title, version=2)}*\\."
-        await _send_prompt(chat_id, context, prompt_text)
+        title = re.sub(r'[^\w\s]', '', query).strip()
+        context.user_data['search_query_title'] = title
+
+        status_message = await context.bot.send_message(
+            chat_id, f"🔎 Searching for available years for *{escape_markdown(title, version=2)}*\\.\\.\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+        results = await search_logic.orchestrate_searches(title, 'movie', context)
+        await _process_preliminary_results(status_message, context, results)
 
 async def _handle_movie_year_reply(chat_id, query, context):
     """Handles the user's reply when asked for a movie year."""
@@ -216,6 +223,47 @@ async def _handle_result_selection_button(query, context):
     except (ValueError, IndexError):
         await safe_edit_message(query.message, "❌ An error occurred with your selection\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
 
+async def _handle_year_selection_button(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the user selecting a specific year from the presented options."""
+    # 1. Ensure the callback query itself and its data exist.
+    if not query or not query.data:
+        logger.warning("Callback query received without data. Ignoring.")
+        # Silently answer the query to remove the "loading" state on the user's client.
+        await query.answer()
+        return
+
+    # 2. Ensure the associated message is accessible to edit.
+    if not isinstance(query.message, Message):
+        logger.warning("Could not process year selection: The associated message is inaccessible.")
+        await query.answer(text="❌ Error: The original message could not be modified.", show_alert=True)
+        return
+
+    # 3. Ensure the user_data context has not been lost.
+    if context.user_data is None:
+        logger.error("Callback received but user_data was None. Aborting year selection.")
+        await safe_edit_message(query.message, text="❌ An error occurred and your session was lost\\. Please start over\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    title = context.user_data.get('search_query_title')
+    if not title:
+        await safe_edit_message(query.message, "❌ Search context has expired\\. Please start over\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    try:
+        # At this point, the type checker knows query.data is a string.
+        selected_year = query.data.split('_')[3]
+        full_title = f"{title} ({selected_year})"
+        logger.info(f"User selected year {selected_year} for title '{title}'.")
+
+        context.user_data['search_final_title'] = full_title
+        context.user_data['search_media_type'] = 'movie'
+
+        await _prompt_for_resolution(query.message, context, full_title)
+
+    except IndexError:
+        logger.error(f"Could not parse year from callback data: {query.data}")
+        await safe_edit_message(query.message, "❌ An error occurred with your selection\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
+
 
 # --- Helper/UI Functions ---
 
@@ -228,24 +276,82 @@ async def _send_prompt(chat_id, context, text):
     )
     context.user_data['prompt_message_id'] = prompt_message.message_id
 
-async def _prompt_for_resolution(chat_id: int, context: ContextTypes.DEFAULT_TYPE, full_title: str):
-    """Asks the user to select a resolution for a movie."""
+async def _prompt_for_year_selection(message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: List[str]) -> None:
+    """
+    Edits a message to ask the user to select a year from a list of options.
+    """
     if context.user_data is None: context.user_data = {}
-        
-    context.user_data['search_final_title'] = full_title
-    
-    keyboard = [[
-        InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
-        InlineKeyboardButton("4K (2160p)", callback_data="search_resolution_4k"),
-    ], [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-    
-    prompt_message = await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"Got it: `{escape_markdown(full_title, version=2)}`\\. Now, please select your desired resolution:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+
+    escaped_title = escape_markdown(title, version=2)
+    message_text = (
+        f"Found multiple possible release years for `'{escaped_title}'`\\. "
+        f"Please select the correct one to continue:"
+    )
+
+    # Create a button for each year found
+    keyboard = [
+        [InlineKeyboardButton(year, callback_data=f"search_select_year_{year}")]
+        for year in years
+    ]
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await safe_edit_message(
+        message,
+        text=message_text,
+        reply_markup=reply_markup,
         parse_mode=ParseMode.MARKDOWN_V2
     )
-    context.user_data['prompt_message_id'] = prompt_message.message_id
+
+async def _prompt_for_resolution(
+    target: Union[Message, int],
+    context: ContextTypes.DEFAULT_TYPE,
+    full_title: str
+) -> None:
+    """
+    Asks the user to select a resolution, either by sending a new message
+    or editing an existing one.
+    """
+    # --- Guard Clause: Ensure user_data exists before use ---
+    if context.user_data is None:
+        logger.error("Cannot prompt for resolution because user_data is None.")
+        # Determine how to send an error message based on the target type
+        if isinstance(target, Message):
+            await safe_edit_message(target, text="❌ An error occurred and your session was lost\\. Please start over\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        elif isinstance(target, int):
+            await context.bot.send_message(target, text="❌ An error occurred and your session was lost\\. Please start over\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    context.user_data['search_final_title'] = full_title
+    context.user_data['search_media_type'] = 'movie'
+
+    keyboard = [
+        [
+            InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
+            InlineKeyboardButton("4K (2160p)", callback_data="search_resolution_4k"),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    text = f"Got it: `{escape_markdown(full_title, version=2)}`\\. Now, please select your desired resolution:"
+
+    if isinstance(target, Message):
+        await safe_edit_message(
+            target,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+    elif isinstance(target, int):
+        prompt_message = await context.bot.send_message(
+            chat_id=target,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        context.user_data['prompt_message_id'] = prompt_message.message_id
+
 
 async def _present_search_results(message, context, results, query_str):
     """Formats and displays the final list of search results, pre-filtered by size."""
@@ -297,3 +403,47 @@ def _clear_search_context(context):
     ]
     for key in keys_to_clear:
         context.user_data.pop(key, None)
+
+async def _process_preliminary_results(status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: List[Dict]) -> None:
+    """
+    Analyzes preliminary search results to decide the next step in the movie workflow.
+    """
+    # --- Guard Clause: Ensure user_data exists before use ---
+    if context.user_data is None:
+        logger.error("Cannot process preliminary results because user_data is None.")
+        await safe_edit_message(status_message, text="❌ An error occurred and your session was lost\\. Please start over\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    title = context.user_data.get('search_query_title', 'this movie')
+    escaped_title = escape_markdown(title, version=2)
+
+    if not results:
+        logger.warning(f"Preliminary search for '{title}' yielded no results.")
+        await safe_edit_message(
+            status_message,
+            text=f"❌ No results found for `'{escaped_title}'`\\. Please check the title and try again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    unique_years = sorted({
+        str(result['year']) for result in results if result.get('year')
+    })
+
+    if len(unique_years) > 1:
+        logger.info(f"Found multiple years for '{title}': {unique_years}. Prompting for selection.")
+        await _prompt_for_year_selection(status_message, context, title, unique_years)
+
+    elif len(unique_years) == 1:
+        year = unique_years[0]
+        logger.info(f"Found one unique year for '{title}': {year}. Proceeding to resolution selection.")
+        full_title = f"{title} ({year})"
+        await _prompt_for_resolution(status_message, context, full_title)
+
+    else:
+        logger.warning(f"Found results for '{title}', but could not determine any release years.")
+        message_text = (
+            f"ℹ️ Found results for `'{escaped_title}'`, but could not determine a release year\\.\n\n"
+            f"Please try the search again and include the year manually \\(e\\.g\\., `{escaped_title} 2023`\\)\\."
+        )
+        await safe_edit_message(status_message, text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
