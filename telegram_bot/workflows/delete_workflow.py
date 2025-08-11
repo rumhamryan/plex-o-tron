@@ -3,7 +3,10 @@
 import asyncio
 import os
 import shutil
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
+
+from plexapi.server import PlexServer
+from plexapi.exceptions import NotFound, Unauthorized
 
 from telegram import (
     Update,
@@ -17,9 +20,80 @@ from telegram.error import BadRequest, TimedOut
 from telegram.helpers import escape_markdown
 
 from ..config import DELETION_ENABLED, logger
-# --- Refactored Import: Point to the correct service ('search_logic') for file finding functions ---
 from ..services.search_logic import find_media_by_name, find_season_directory, find_episode_file
 from ..utils import safe_edit_message
+
+def _find_media_in_plex_by_path(plex: PlexServer, path_to_delete: str) -> Optional[Union['Movie', 'Episode', 'Show', 'Season']]: # type: ignore
+    """
+    Scans all Plex libraries to find the media item that corresponds to a given file or directory path.
+    
+    This is a blocking function and must be run in a separate thread.
+    """
+    # Normalize paths to be safe
+    path_to_delete = os.path.abspath(path_to_delete)
+    
+    # Iterate through all video libraries
+    for section in plex.library.sections():
+        if section.type in ['movie', 'show']:
+            logger.info(f"Searching for path '{path_to_delete}' in Plex library '{section.title}'...")
+            
+            # Use the .search() method for efficiency where possible, but we need to check file paths,
+            # which often requires iterating.
+            for item in section.all():
+                # For Shows, Seasons, or Movies (items with locations)
+                if hasattr(item, 'locations'):
+                    for location in item.locations:
+                        if os.path.abspath(location) == path_to_delete:
+                            logger.info(f"Found match for directory: {item.title}")
+                            return item # Found a match for a whole Show or Movie directory
+
+                # For individual episodes
+                if hasattr(item, 'media'):
+                    for media in item.media:
+                        for part in media.parts:
+                            if os.path.abspath(part.file) == path_to_delete:
+                                logger.info(f"Found match for file: {item.title}")
+                                return item # Found a match for an Episode file
+    
+    logger.warning(f"Could not find any item in Plex matching path: {path_to_delete}")
+    return None
+
+
+async def _delete_item_from_plex(
+    path_to_delete: str, 
+    plex_config: dict,
+    context: ContextTypes.DEFAULT_TYPE
+) -> Tuple[bool, str]:
+    """
+    Connects to Plex, finds a media item by its path, and deletes it via the API.
+    Returns (success_boolean, status_message).
+    """
+    try:
+        # Connect to Plex in a non-blocking way
+        plex = await asyncio.to_thread(PlexServer, plex_config['url'], plex_config['token'])
+        
+        # Find the corresponding item in Plex
+        plex_item = await asyncio.to_thread(_find_media_in_plex_by_path, plex, path_to_delete)
+
+        if not plex_item:
+            return False, "Could not find the item in your Plex library. It may have been already deleted or never scanned."
+
+        display_name = plex_item.title
+        logger.info(f"Found Plex item '{display_name}'. Attempting API deletion...")
+
+        # Perform the deletion
+        await asyncio.to_thread(plex_item.delete)
+        
+        # Success!
+        message = f"🗑️ *Successfully Deleted from Plex*\n`{escape_markdown(display_name, version=2)}`"
+        logger.info(f"Successfully deleted '{display_name}' via Plex API.")
+        return True, message
+
+    except Unauthorized:
+        return False, "Plex authentication failed. Please check your token."
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during Plex deletion: {e}", exc_info=True)
+        return False, f"An error occurred while communicating with Plex:\n`{escape_markdown(str(e), version=2)}`"
 
 
 async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -258,32 +332,40 @@ async def _handle_selection_button(query, context):
 
 
 async def _handle_confirm_delete_button(query, context):
-    """Handles the final 'Yes, Delete' confirmation."""
+    """Handles the final 'Yes, Delete' confirmation using the Plex API first."""
     path_to_delete = context.user_data.pop('path_to_delete', None)
+    plex_config = context.bot_data.get("PLEX_CONFIG")
     message_text = ""
 
     if not path_to_delete:
-        message_text = "❌ Error: Path to delete not found. The action may have expired\\."
+        message_text = "❌ Error: Path to delete not found. The action may have expired."
     elif not DELETION_ENABLED:
-        logger.warning(f"Deletion attempted for '{path_to_delete}' but DELETION_ENABLED is False\\.")
-        message_text = "ℹ️ *Deletion Confirmed*\n\n\\(Note: Actual file deletion is disabled by the administrator\\)"
+        logger.warning(f"Deletion attempted for '{path_to_delete}' but DELETION_ENABLED is False.")
+        message_text = "ℹ️ *Deletion Confirmed*\n\n(Note: Actual file deletion is disabled by the administrator)"
+    elif plex_config:
+        await safe_edit_message(query.message, text="Connecting to Plex and attempting to delete the item...", reply_markup=None)
+        
+        success, message_text = await _delete_item_from_plex(path_to_delete, plex_config, context)
+        
+        if not success and "Could not find" in message_text:
+             # Fallback to manual deletion if not found in Plex
+            logger.warning("Item not found in Plex, falling back to manual filesystem deletion.")
+            try:
+                if os.path.exists(path_to_delete):
+                    display_name = os.path.basename(path_to_delete)
+                    if os.path.isfile(path_to_delete):
+                        await asyncio.to_thread(os.remove, path_to_delete)
+                    elif os.path.isdir(path_to_delete):
+                        await asyncio.to_thread(shutil.rmtree, path_to_delete)
+                    message_text = f"🗑️ *Item Not in Plex, Deleted Manually*\n`{escape_markdown(display_name, version=2)}`"
+                else:
+                    message_text = "❌ *Deletion Failed*\nThe path no longer exists on the server."
+            except Exception as e:
+                 message_text = f"❌ *Manual Deletion Failed*\n`{escape_markdown(str(e), version=2)}`"
     else:
-        try:
-            if os.path.exists(path_to_delete):
-                display_name = os.path.basename(path_to_delete)
-                logger.info(f"PERFORMING DELETE on: {path_to_delete}")
-                if os.path.isfile(path_to_delete):
-                    await asyncio.to_thread(os.remove, path_to_delete)
-                    message_text = f"🗑️ *Successfully Deleted File*\n`{escape_markdown(display_name, version=2)}`"
-                elif os.path.isdir(path_to_delete):
-                    await asyncio.to_thread(shutil.rmtree, path_to_delete)
-                    message_text = f"🗑️ *Successfully Deleted Directory*\n`{escape_markdown(display_name, version=2)}`"
-            else:
-                message_text = "❌ *Deletion Failed*\nThe path no longer exists on the server\\."
-        except Exception as e:
-            logger.error(f"An OS error occurred during deletion of '{path_to_delete}': {e}")
-            message_text = f"❌ *Deletion Failed*\nAn error occurred on the server:\n`{escape_markdown(str(e), version=2)}`"
+        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file."
 
+    # Clear the user's conversational context
     keys_to_clear = ['show_path_to_delete', 'next_action', 'prompt_message_id', 'season_to_delete_num', 'selection_choices', 'active_workflow', 'path_to_delete']
     for key in keys_to_clear:
         context.user_data.pop(key, None)
