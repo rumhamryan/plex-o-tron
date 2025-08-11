@@ -18,12 +18,12 @@ def get_help_message_text() -> str:
     # This ensures the backslashes are passed to Telegram for MarkdownV2 parsing.
     return r"""Here are the available commands:
 
-`/delete`   \- Delete Movies or TV Show\.
-`/help`       \- Display this message\.
-`/links`      \- List popular torrent sites\.
-`/restart`  \- Restart the Plex Server\.
-`/search`   \- Search for a Movie or TV Show\.
-`/status`   \- Check Plex server status\.
+`delete`   \- Delete Movie or TV Show\.
+`help`       \- Display this message\.
+`links`      \- List popular torrent sites\.
+`restart`  \- Restart the Plex Server\.
+`search`   \- Search for a Movie or TV Show\.
+`status`   \- Check Plex server status\.
 """
 
 

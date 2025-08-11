@@ -26,7 +26,7 @@ For Linux, there is a setup script.
 Before setting up the Python environment, ensure the necessary system-level dependencies are installed.
 
 #### Python
-*   **Python 3.11.8 or later** is required. It is assumed that you have Python installed and available in your system's PATH. You can verify this by running `python --version` or `python3 --version`.
+*   **Python 3.12 or later** is required. It is assumed that you have Python installed and available in your system's PATH. You can verify this by running `python --version` or `python3 --version`.
 
 #### C++ Dependencies (Crucial for `libtorrent`)
 The `libtorrent` package is a Python wrapper around a powerful C++ library. For it to work, the underlying C++ components must be available on your system.
@@ -95,7 +95,7 @@ tv_shows_save_path = /mnt/tv
 
 With your virtual environment active and configuration complete, start the bot:
 ```bash  
-python telegram_bot.py
+python __main__.py
 ```
 
 To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment `(source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.

@@ -8,3 +8,7 @@ plexapi
 thefuzz
 python-Levenshtein
 httpx[http2]
+pytest
+pytest-asyncio
+pytest-mock
+pre-commit
