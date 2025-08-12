@@ -1,11 +1,9 @@
 import sys
 from pathlib import Path
+import pytest
+from telegram_bot.config import get_configuration
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-
-import pytest
-
-from telegram_bot.config import get_configuration
 
 
 def test_get_configuration_happy_path(mocker):

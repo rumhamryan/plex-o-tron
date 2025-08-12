@@ -128,8 +128,8 @@ def main() -> None:
 
     # Initialize a single, long-lived libtorrent session for the application.
     logger.info("Creating global libtorrent session for the application.")
-    application.bot_data["TORRENT_SESSION"] = lt.session(
-        {  # type: ignore
+    application.bot_data["TORRENT_SESSION"] = lt.session(  # type: ignore
+        {
             "listen_interfaces": "0.0.0.0:6881",
             "dht_bootstrap_nodes": "router.utorrent.com:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881",
         }

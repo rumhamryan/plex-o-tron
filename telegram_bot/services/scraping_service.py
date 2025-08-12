@@ -350,7 +350,6 @@ async def scrape_1337x(
         for candidate in candidates:
             # Process only torrents that match our identified media name
             if candidate["base_name"] == best_match_base_name:
-
                 row = candidate["row_element"]
                 cells = row.find_all("td")
                 if len(cells) < 6:

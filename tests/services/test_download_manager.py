@@ -1,14 +1,9 @@
 import sys
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, ANY
-
 import pytest
-
 from telegram_bot.services.download_manager import (
     ProgressReporter,
     download_task_wrapper,
@@ -17,6 +12,8 @@ from telegram_bot.services.download_manager import (
     handle_pause_request,
     handle_resume_request,
 )
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 
 @pytest.mark.asyncio
@@ -27,7 +24,7 @@ async def test_progress_reporter_movie(mocker):
         state=SimpleNamespace(name="downloading"),
         num_peers=5,
     )
-    application = SimpleNamespace(bot=SimpleNamespace())
+    application = Mock()
     download_data = {"lock": asyncio.Lock(), "is_paused": False}
     reporter = ProgressReporter(
         application,
@@ -58,7 +55,7 @@ async def test_progress_reporter_tv_paused(mocker):
         state=SimpleNamespace(name="downloading"),
         num_peers=3,
     )
-    application = SimpleNamespace(bot=SimpleNamespace())
+    application = Mock()
     download_data = {"lock": asyncio.Lock(), "is_paused": True}
     reporter = ProgressReporter(
         application,
@@ -96,7 +93,7 @@ async def test_download_task_wrapper_success(mocker):
         "save_path": "/tmp",
         "lock": asyncio.Lock(),
     }
-    application = SimpleNamespace(bot=SimpleNamespace(), bot_data={})
+    application = Mock()
     mocker.patch(
         "telegram_bot.services.download_manager.download_with_progress",
         AsyncMock(return_value=(True, "ti")),
@@ -132,9 +129,7 @@ async def test_download_task_wrapper_cancellation_cleanup(mocker):
         "lock": asyncio.Lock(),
         "handle": handle,
     }
-    application = SimpleNamespace(
-        bot=SimpleNamespace(), bot_data={"TORRENT_SESSION": ses}
-    )
+    application = Mock()
     mocker.patch(
         "telegram_bot.services.download_manager.download_with_progress",
         AsyncMock(side_effect=asyncio.CancelledError()),
@@ -162,7 +157,7 @@ async def test_download_task_wrapper_failure_message(mocker):
         "save_path": "/tmp",
         "lock": asyncio.Lock(),
     }
-    application = SimpleNamespace(bot=SimpleNamespace(), bot_data={})
+    application = Mock()
     mocker.patch(
         "telegram_bot.services.download_manager.download_with_progress",
         AsyncMock(return_value=(False, None)),
@@ -220,12 +215,7 @@ async def test_add_download_to_queue(
 @pytest.mark.asyncio
 async def test_process_queue_for_user_active(mocker):
     chat_id = 111
-    application = SimpleNamespace(
-        bot_data={
-            "active_downloads": {str(chat_id): {}},
-            "download_queues": {str(chat_id): [{}]},
-        }
-    )
+    application = Mock()
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",
         AsyncMock(),
@@ -240,12 +230,7 @@ async def test_process_queue_for_user_active(mocker):
 async def test_process_queue_for_user_start(mocker):
     chat_id = 222
     download_item = {"chat_id": chat_id}
-    application = SimpleNamespace(
-        bot_data={
-            "active_downloads": {},
-            "download_queues": {str(chat_id): [download_item]},
-        }
-    )
+    application = Mock()
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",
         AsyncMock(),

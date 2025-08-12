@@ -1,14 +1,11 @@
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-
 import pytest
 from telegram import Update, CallbackQuery
-
-
 from telegram_bot.handlers.callback_handlers import button_handler
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 
 @pytest.mark.asyncio

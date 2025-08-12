@@ -1,11 +1,9 @@
 import sys
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 import pytest
 from telegram_bot.utils import format_bytes, extract_first_int, parse_torrent_name
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 # Use pytest's "parametrize" to test many cases with one function
 @pytest.mark.parametrize(

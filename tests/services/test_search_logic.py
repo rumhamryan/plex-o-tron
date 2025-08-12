@@ -1,8 +1,5 @@
 import sys
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-
 import pytest
 from telegram_bot.services.search_logic import (
     _parse_codec,
@@ -10,6 +7,7 @@ from telegram_bot.services.search_logic import (
     score_torrent_result,
 )
 
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 @pytest.mark.parametrize(
     "title, expected",

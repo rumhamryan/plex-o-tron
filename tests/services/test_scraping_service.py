@@ -1,9 +1,7 @@
 import sys
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-
 import pytest
+from unittest.mock import Mock
 import wikipedia
 from telegram_bot.services.scraping_service import (
     fetch_episode_title_from_wikipedia,
@@ -11,6 +9,7 @@ from telegram_bot.services.scraping_service import (
     scrape_yts,
 )
 
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 class DummyResponse:
     def __init__(self, text="", json_data=None):
@@ -123,24 +122,24 @@ async def test_scrape_1337x_parses_results(mocker):
     responses = [DummyResponse(text=html)]
     mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
 
-    class Ctx:
-        bot_data = {
-            "SEARCH_CONFIG": {
-                "preferences": {
-                    "movies": {
-                        "codecs": {"x265": 5},
-                        "resolutions": {"1080p": 3},
-                        "uploaders": {"Anonymous": 2},
-                    }
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x265": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"Anonymous": 2},
                 }
             }
         }
+    }
 
     results = await scrape_1337x(
         "Sample Movie 2023",
         "movie",
         "https://1337x.to/search/{query}/1/",
-        Ctx(),
+        context, # Pass the mock object here
         base_query_for_filter="Sample Movie",
     )
 
@@ -155,8 +154,8 @@ async def test_scrape_1337x_no_results(mocker):
     responses = [DummyResponse(text=html)]
     mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
 
-    class Ctx:
-        bot_data = {
+    context = Mock()
+    context.bot_data = {
             "SEARCH_CONFIG": {
                 "preferences": {
                     "movies": {
@@ -172,7 +171,8 @@ async def test_scrape_1337x_no_results(mocker):
         "Sample",
         "movie",
         "https://1337x.to/search/{query}/1/",
-        Ctx(),
+        context, # Pass the mock object here
+        base_query_for_filter="Sample Movie",
     )
 
     assert results == []
@@ -212,8 +212,8 @@ async def test_scrape_yts_parses_results(mocker):
     ]
     mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
 
-    class Ctx:
-        bot_data = {
+    context = Mock()
+    context.bot_data = {
             "SEARCH_CONFIG": {
                 "preferences": {
                     "movies": {
@@ -229,7 +229,7 @@ async def test_scrape_yts_parses_results(mocker):
         "Test Movie",
         "movie",
         "https://yts.mx/browse-movies/{query}",
-        Ctx(),
+        context, # Pass the mock object here
         year="2023",
         resolution="1080p",
     )

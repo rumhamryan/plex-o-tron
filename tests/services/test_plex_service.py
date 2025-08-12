@@ -1,14 +1,11 @@
 import sys
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-
 import pytest
-from types import SimpleNamespace
+from unittest.mock import Mock 
 from plexapi.exceptions import Unauthorized
-
 from telegram_bot.services.plex_service import get_plex_server_status
 
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 @pytest.mark.asyncio
 async def test_get_plex_server_status_connected(mocker):
@@ -17,9 +14,8 @@ async def test_get_plex_server_status_connected(mocker):
         "telegram_bot.services.plex_service.PlexServer", return_value=mock_plex
     )
 
-    context = SimpleNamespace(
-        bot_data={"PLEX_CONFIG": {"url": "http://plex", "token": "abc"}}
-    )
+    context = Mock()
+    context.bot_data = {"PLEX_CONFIG": {"url": "http://plex", "token": "abc"}}
 
     result = await get_plex_server_status(context)
     assert "Connected" in result
@@ -32,9 +28,8 @@ async def test_get_plex_server_status_unauthorized(mocker):
         side_effect=Unauthorized("bad token"),
     )
 
-    context = SimpleNamespace(
-        bot_data={"PLEX_CONFIG": {"url": "http://plex", "token": "abc"}}
-    )
+    context = Mock()
+    context.bot_data = {"PLEX_CONFIG": {"url": "http://plex", "token": "abc"}}
 
     result = await get_plex_server_status(context)
     assert "Authentication Failed" in result
@@ -47,9 +42,8 @@ async def test_get_plex_server_status_connection_error(mocker):
         side_effect=Exception("no connection"),
     )
 
-    context = SimpleNamespace(
-        bot_data={"PLEX_CONFIG": {"url": "http://plex", "token": "abc"}}
-    )
+    context = Mock()
+    context.bot_data = {"PLEX_CONFIG": {"url": "http://plex", "token": "abc"}}
 
     result = await get_plex_server_status(context)
     assert "Connection Failed" in result

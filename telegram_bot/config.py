@@ -28,8 +28,9 @@ def get_configuration() -> (
     Tuple[str, Dict[str, str], List[int], Dict[str, str], Dict[str, Any]]
 ):
     """
-    Reads bot token, paths, allowed IDs, Plex, and Search config from the config.ini file.
-    This function has been refactored to be more robust and provide clearer error messages.
+    Reads bot token, paths, allowed IDs, Plex, and Search config from the
+    config.ini file. This function has been refactored to be more robust
+    and provide clearer error messages.
     """
     config_path = "config.ini"
     if not os.path.exists(config_path):
@@ -70,7 +71,7 @@ def get_configuration() -> (
 
     if not search_config:
         logger.info(
-            "No [search] section found or it was empty. Search command will be disabled."
+            "No [search] section found or it was empty. Search command now disabled."
         )
 
     return token, paths, allowed_ids, plex_config, search_config
@@ -159,7 +160,7 @@ def _load_and_validate_paths(config: configparser.ConfigParser) -> Dict[str, str
         else default_path
     )
 
-    # 3. Assemble the final paths dictionary. All values are now guaranteed to be strings.
+    # 3. Assemble the final paths dictionary. All values are guaranteed to be strings.
     paths: Dict[str, str] = {
         "default": default_path,
         "movies": movies_path,

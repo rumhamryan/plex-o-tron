@@ -1,0 +1,8 @@
+# pyproject.toml
+
+[tool.black] # type: ignore
+line-length = 88 # type: ignore
+
+[tool.ruff] # type: ignore
+line-length = 88 # type: ignore
+ignore = ["E501"]
