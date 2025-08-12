@@ -1,17 +1,18 @@
-from pathlib import Path
 import sys
-from unittest.mock import AsyncMock
-
-import pytest
-from telegram import InlineKeyboardMarkup
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
+from unittest.mock import AsyncMock
+import pytest
+from telegram import InlineKeyboardMarkup
 
 from telegram_bot.services.torrent_service import (
     process_user_input,
     _handle_webpage_url,
     fetch_metadata_from_magnet,
 )
+
 
 
 # -------- process_user_input routing ---------

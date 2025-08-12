@@ -1,12 +1,13 @@
-import json
 import sys
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from telegram_bot.state import (
     load_state,
