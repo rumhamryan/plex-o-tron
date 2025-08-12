@@ -1,5 +1,7 @@
 # Plex-o-Tron Bot
 
+This is a tiny change to test repository hooks.
+
 This Telegram bot that automates the process of downloading torrents and organizing them for a Plex media server. It intelligently parses torrent names, enriches metadata from Wikipedia, renames files, and triggers Plex library scans automatically. It also provides tools for managing your library after downloads are complete.
 
 ## Core Features
