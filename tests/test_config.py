@@ -8,8 +8,6 @@ import pytest
 from telegram_bot.config import get_configuration
 
 
-
-
 def test_get_configuration_happy_path(mocker):
     config_data = """
 [telegram]

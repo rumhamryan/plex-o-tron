@@ -12,7 +12,6 @@ from telegram_bot.services.scraping_service import (
 )
 
 
-
 class DummyResponse:
     def __init__(self, text="", json_data=None):
         self.text = text
@@ -198,7 +197,7 @@ async def test_scrape_yts_parses_results(mocker):
                     {
                         "quality": "1080p",
                         "type": "WEB",
-                        "size_bytes": 1024 ** 3,
+                        "size_bytes": 1024**3,
                         "hash": "abcdef",
                         "seeds": 10,
                     }
@@ -238,4 +237,3 @@ async def test_scrape_yts_parses_results(mocker):
     assert len(results) == 1
     assert results[0]["source"] == "YTS.mx"
     assert results[0]["seeders"] == 10
-

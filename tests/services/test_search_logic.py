@@ -11,7 +11,6 @@ from telegram_bot.services.search_logic import (
 )
 
 
-
 @pytest.mark.parametrize(
     "title, expected",
     [

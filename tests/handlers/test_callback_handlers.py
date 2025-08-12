@@ -12,7 +12,9 @@ from telegram_bot.handlers.callback_handlers import button_handler
 
 
 @pytest.mark.asyncio
-async def test_button_handler_routes_search(mocker, make_callback_query, context, make_message):
+async def test_button_handler_routes_search(
+    mocker, make_callback_query, context, make_message
+):
     mocker.patch.object(CallbackQuery, "answer", AsyncMock())
     query = make_callback_query("search_start_movie", make_message())
     update = Update(update_id=1, callback_query=query)
@@ -32,7 +34,9 @@ async def test_button_handler_routes_search(mocker, make_callback_query, context
 
 
 @pytest.mark.asyncio
-async def test_button_handler_routes_delete(mocker, make_callback_query, context, make_message):
+async def test_button_handler_routes_delete(
+    mocker, make_callback_query, context, make_message
+):
     mocker.patch.object(CallbackQuery, "answer", AsyncMock())
     query = make_callback_query("delete_start_tv", make_message())
     update = Update(update_id=1, callback_query=query)
@@ -52,7 +56,9 @@ async def test_button_handler_routes_delete(mocker, make_callback_query, context
 
 
 @pytest.mark.asyncio
-async def test_button_handler_routes_download(mocker, make_callback_query, context, make_message):
+async def test_button_handler_routes_download(
+    mocker, make_callback_query, context, make_message
+):
     mocker.patch.object(CallbackQuery, "answer", AsyncMock())
     query = make_callback_query("confirm_download", make_message())
     update = Update(update_id=1, callback_query=query)

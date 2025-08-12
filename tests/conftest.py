@@ -24,10 +24,17 @@ def chat():
 @pytest.fixture
 def make_message(user, chat):
     def _make(text: str = "", message_id: int = 1):
-        msg = Message(message_id=message_id, date=datetime.now(), chat=chat, from_user=user, text=text)
+        msg = Message(
+            message_id=message_id,
+            date=datetime.now(),
+            chat=chat,
+            from_user=user,
+            text=text,
+        )
         bot = SimpleNamespace(delete_message=AsyncMock(), edit_message_text=AsyncMock())
         msg.set_bot(bot)
         return msg
+
     return _make
 
 
@@ -36,14 +43,24 @@ def make_callback_query(user, make_message):
     def _make(data: str, message: Message | None = None):
         if message is None:
             message = make_message()
-        return CallbackQuery(id="1", from_user=user, chat_instance="1", data=data, message=message)
+        return CallbackQuery(
+            id="1", from_user=user, chat_instance="1", data=data, message=message
+        )
+
     return _make
 
 
 @pytest.fixture
 def make_update():
-    def _make(message: Message | None = None, callback_query: CallbackQuery | None = None, update_id: int = 1):
-        return Update(update_id=update_id, message=message, callback_query=callback_query)
+    def _make(
+        message: Message | None = None,
+        callback_query: CallbackQuery | None = None,
+        update_id: int = 1,
+    ):
+        return Update(
+            update_id=update_id, message=message, callback_query=callback_query
+        )
+
     return _make
 
 

@@ -12,7 +12,6 @@ from telegram_bot.services.media_manager import (
 )
 
 
-
 def test_generate_plex_filename_movie():
     parsed = {"type": "movie", "title": "Inception", "year": "2010"}
     assert generate_plex_filename(parsed, ".mkv") == "Inception (2010).mkv"
@@ -88,6 +87,8 @@ async def test_handle_successful_download(mocker):
     )
 
     makedirs_mock.assert_called_once_with("/final", exist_ok=True)
-    move_mock.assert_called_once_with("/downloads/Movie.mkv", "/final/Sample (2023).mkv")
+    move_mock.assert_called_once_with(
+        "/downloads/Movie.mkv", "/final/Sample (2023).mkv"
+    )
     scan_mock.assert_called_once()
     assert "Success" in result

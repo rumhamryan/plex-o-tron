@@ -9,7 +9,10 @@ from telegram.ext import ContextTypes
 
 from ..config import logger
 
-async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+async def global_error_handler(
+    update: object, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """
     Catches all unhandled exceptions and logs them, providing detailed context.
     This prevents the bot from crashing and gives us the exact location of the error.
@@ -27,7 +30,7 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
 
     # 3. Gather as much context as possible.
     update_str = update.to_dict() if isinstance(update, Update) else str(update)
-    
+
     # Create a detailed message for a potential admin notification or advanced logging.
     context_message = (
         f"An exception was raised while handling an update\n"
@@ -53,8 +56,7 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         )
         try:
             await update.effective_message.reply_text(
-                text=error_text,
-                parse_mode=ParseMode.MARKDOWN_V2
+                text=error_text, parse_mode=ParseMode.MARKDOWN_V2
             )
         except Exception as e:
             logger.error(f"Failed to send the user-facing error message: {e}")
