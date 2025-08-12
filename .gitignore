@@ -1,0 +1,82 @@
+# --- Python Virtual Environments ---
+# A strong recommendation is to use 'venv' as the standard name
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# --- Python Cache & Compiled Files ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.python-version
+
+# --- Testing & Coverage ---
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+
+# --- Build, Distribution & Packaging ---
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- IDE & Editor Configuration ---
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+
+# --- OS-generated files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# --- Application-specific Files ---
+# Configuration files containing secrets.
+# NEVER commit these to version control. Use a template (e.g., config.ini.template) instead.
+config.ini
+secrets.txt
+
+# Runtime state files that should not be tracked.
+persistence.json
+
+# Log files
+*.log
+logs/
+
+# Shell scripts that may contain sensitive paths or info (optional, but good practice)
+# If your setup scripts are generic, you can remove this.
+# setup_bot.sh
+# restart_plex.sh
+
+# Temporary .torrent files downloaded by the bot
+.torrents/

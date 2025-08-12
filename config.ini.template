@@ -2,9 +2,9 @@
 
 [telegram]
 # Get your bot token from @BotFather on Telegram
-bot_token = BOT_TOKEN
+bot_token = TELEGRAM_BOT_TOKEN
 # Get your numeric User ID from @userinfobot on Telegram
-    allowed_user_ids = USER_ID_1, USER_ID_2
+allowed_user_ids = USER_ID_1, USER_ID_2
 
 [plex]
 # (Optional) Your Plex server URL and API token
@@ -13,9 +13,9 @@ plex_token = PLEX_TOKEN
 
 [host]
 # Define absolute paths for your media. Use forward slashes for both OSes.
-default_save_path = ~/Downloads
-movies_save_path = mnt/movies
-tv_shows_save_path = mnt/tv
+default_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Unsorted
+movies_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Movies
+tv_shows_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\TV
 
 [search]
 websites = {
