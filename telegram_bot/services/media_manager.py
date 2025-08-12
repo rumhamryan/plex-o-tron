@@ -21,7 +21,7 @@ from ..utils import format_bytes, safe_edit_message, parse_torrent_name
 from .scraping_service import fetch_episode_title_from_wikipedia
 
 
-def generate_plex_filename(parsed_info: Dict[str, Any], original_extension: str) -> str:
+def generate_plex_filename(parsed_info: dict[str, Any], original_extension: str) -> str:
     """Generates a clean, Plex-friendly filename from the parsed info."""
     title = parsed_info.get("title", "Unknown Title")
     invalid_chars = r'<>:"/\|?*'
@@ -70,7 +70,7 @@ def parse_resolution_from_name(name: str) -> str:
     return "N/A"
 
 
-def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]:  # type: ignore
+def validate_torrent_files(ti: lt.torrent_info) -> str | None:  # type: ignore
     """
     Checks if a torrent contains at least one large, valid media file.
     Returns an error message string if invalid, otherwise None.
@@ -110,7 +110,7 @@ def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]:  # type: ignor
 
 async def validate_and_enrich_torrent(
     ti: lt.torrent_info, progress_message: Message  # type: ignore
-) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+) -> tuple[str | None, dict[str, Any] | None]:
     """
     Validates a torrent_info object against size and file type rules,
     and enriches its metadata (e.g., fetching TV episode titles).
@@ -175,10 +175,10 @@ async def validate_and_enrich_torrent(
 
 async def handle_successful_download(
     ti: lt.torrent_info,  # type: ignore
-    parsed_info: Dict[str, Any],
+    parsed_info: dict[str, Any],
     initial_download_path: str,
-    save_paths: Dict[str, str],
-    plex_config: Optional[Dict[str, str]],
+    save_paths: dict[str, str],
+    plex_config: dict[str, str] | None,
 ) -> str:
     """
     Moves completed downloads to the correct media directory, renames them
@@ -236,7 +236,7 @@ async def handle_successful_download(
 
 
 def _get_final_destination_path(
-    parsed_info: Dict[str, Any], save_paths: Dict[str, str]
+    parsed_info: dict[str, Any], save_paths: dict[str, str]
 ) -> str:
     """Determines the final directory for the downloaded media."""
     media_type = parsed_info.get("type")
@@ -259,7 +259,7 @@ def _get_final_destination_path(
 
 
 async def _trigger_plex_scan(
-    media_type: Optional[str], plex_config: Optional[Dict[str, str]]
+    media_type: str | None, plex_config: dict[str, str] | None
 ) -> str:
     """Triggers a Plex library scan for the relevant library."""
     if not plex_config:

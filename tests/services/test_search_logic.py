@@ -9,6 +9,7 @@ from telegram_bot.services.search_logic import (
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
+
 @pytest.mark.parametrize(
     "title, expected",
     [

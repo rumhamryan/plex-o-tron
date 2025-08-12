@@ -11,7 +11,7 @@ from telegram.ext import Application
 from .config import logger, PERSISTENCE_FILE
 
 
-def save_state(file_path: str, active_downloads: Dict, download_queues: Dict) -> None:
+def save_state(file_path: str, active_downloads: dict, download_queues: dict) -> None:
     """Saves the state of active and queued downloads to a JSON file."""
     # Create a serializable copy of the active downloads, removing non-serializable objects
     serializable_active = {}
@@ -42,7 +42,7 @@ def save_state(file_path: str, active_downloads: Dict, download_queues: Dict) ->
         logger.error(f"Could not save persistence file to '{file_path}': {e}")
 
 
-def load_state(file_path: str) -> Tuple[Dict, Dict]:
+def load_state(file_path: str) -> tuple[dict, dict]:
     """Loads the state of active and queued downloads from a JSON file."""
     if not os.path.exists(file_path):
         logger.info(
@@ -51,7 +51,7 @@ def load_state(file_path: str) -> Tuple[Dict, Dict]:
         return {}, {}
 
     try:
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             data = json.load(f)
             active = data.get("active_downloads", {})
             queued = data.get("download_queues", {})
@@ -61,7 +61,7 @@ def load_state(file_path: str) -> Tuple[Dict, Dict]:
                 f"Loaded state: {len(active)} active, {queued_count} queued downloads."
             )
             return active, queued
-    except (json.JSONDecodeError, IOError) as e:
+    except (json.JSONDecodeError, OSError) as e:
         logger.error(
             f"Could not read or parse persistence file '{file_path}': {e}. Starting fresh."
         )

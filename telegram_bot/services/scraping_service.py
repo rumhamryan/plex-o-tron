@@ -22,7 +22,7 @@ from ..utils import extract_first_int, parse_torrent_name
 
 async def fetch_episode_title_from_wikipedia(
     show_title: str, season: int, episode: int
-) -> Tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """
     Fetches an episode title from Wikipedia, trying a dedicated episode list page first,
     then falling back to the main show page.
@@ -32,7 +32,7 @@ async def fetch_episode_title_from_wikipedia(
         returned if Wikipedia redirects the initial search.
     """
     html_to_scrape = None
-    corrected_show_title: Optional[str] = None
+    corrected_show_title: str | None = None
 
     # Strategy 1: Try "List of..." page directly
     try:
@@ -100,7 +100,7 @@ async def fetch_episode_title_from_wikipedia(
 
 async def _parse_dedicated_episode_page(
     soup: BeautifulSoup, season: int, episode: int
-) -> Optional[str]:
+) -> str | None:
     """
     (Primary Strategy) Parses a dedicated 'List of...' page by using the 'Series overview'
     table to calculate the exact index of the target season's table.
@@ -185,7 +185,7 @@ async def _parse_dedicated_episode_page(
 
 async def _parse_embedded_episode_page(
     soup: BeautifulSoup, season: int, episode: int
-) -> Optional[str]:
+) -> str | None:
     """
     (Fallback Strategy) Parses a page using flexible row searching for embedded episode lists.
     """
@@ -245,9 +245,9 @@ async def scrape_1337x(
     search_url_template: str,
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    base_query_for_filter: Optional[str] = None,
+    base_query_for_filter: str | None = None,
     **kwargs,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Scrapes 1337x.to for torrents using a more robust two-stage filtering process.
 
@@ -412,7 +412,7 @@ async def scrape_yts(
     search_url_template: str,
     context: ContextTypes.DEFAULT_TYPE,
     **kwargs,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Uses the YTS.mx API and website to find movie torrents."""
     year = kwargs.get("year")
     resolution = kwargs.get("resolution")
@@ -572,11 +572,11 @@ async def scrape_yts(
 # --- Generic Web Page Scraping ---
 
 
-async def find_magnet_link_on_page(url: str) -> List[str]:
+async def find_magnet_link_on_page(url: str) -> list[str]:
     """
     Fetches a web page and finds all unique magnet links.
     """
-    unique_magnet_links: Set[str] = set()
+    unique_magnet_links: set[str] = set()
     logger.info(f"[WEBSCRAPE] Fetching URL: {url}")
 
     try:

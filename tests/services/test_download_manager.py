@@ -161,7 +161,7 @@ async def test_download_task_wrapper_failure_message(mocker):
     }
     application = Mock()
     application.bot_data = {}
-    
+
     mocker.patch(
         "telegram_bot.services.download_manager.download_with_progress",
         AsyncMock(return_value=(False, None)),
@@ -222,7 +222,7 @@ async def test_process_queue_for_user_active(mocker):
     application = Mock()
     application.bot_data = {
         "active_downloads": {str(chat_id): {}},
-        "download_queues": {}
+        "download_queues": {},
     }
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",
@@ -241,7 +241,7 @@ async def test_process_queue_for_user_start(mocker):
     application = Mock()
     application.bot_data = {
         "active_downloads": {},
-        "download_queues": {str(chat_id): [download_item]}
+        "download_queues": {str(chat_id): [download_item]},
     }
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",

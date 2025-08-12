@@ -96,7 +96,7 @@ tv_shows_save_path = /mnt/tv
 ### Step 5: Run the Bot
 
 With your virtual environment active and configuration complete, start the bot:
-```bash  
+```bash
 python __main__.py
 ```
 

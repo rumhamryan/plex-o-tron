@@ -28,7 +28,7 @@ from telegram_bot.services.scraping_service import find_magnet_link_on_page
 
 async def process_user_input(
     text: str, context: ContextTypes.DEFAULT_TYPE, progress_message: Message
-) -> Optional[lt.torrent_info]:  # type: ignore
+) -> lt.torrent_info | None:  # type: ignore
     """
     Analyzes user input text to acquire a torrent_info object. It handles
     magnet links, direct .torrent URLs, and webpages containing magnet links.
@@ -62,7 +62,7 @@ async def process_user_input(
 
 async def _handle_torrent_url(
     url: str, context: ContextTypes.DEFAULT_TYPE, progress_message: Message
-) -> Optional[lt.torrent_info]:  # type: ignore
+) -> lt.torrent_info | None:  # type: ignore
     """Downloads a .torrent file from a URL and returns its torrent_info."""
     if context.user_data is None:
         logger.error(
@@ -107,7 +107,7 @@ async def _handle_torrent_url(
 
 async def _handle_webpage_url(
     url: str, context: ContextTypes.DEFAULT_TYPE, progress_message: Message
-) -> Optional[lt.torrent_info]:  # type: ignore
+) -> lt.torrent_info | None:  # type: ignore
     """Scrapes a webpage for magnet links and proceeds accordingly."""
     if context.user_data is None:
         logger.error(
@@ -187,10 +187,10 @@ async def _handle_webpage_url(
 
 
 async def _fetch_and_parse_magnet_details(
-    magnet_links: List[str],
+    magnet_links: list[str],
     context: ContextTypes.DEFAULT_TYPE,
     progress_message: Message,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Fetches metadata for multiple magnet links in parallel and parses their details."""
     ses = context.bot_data["TORRENT_SESSION"]
     await safe_edit_message(
@@ -246,7 +246,7 @@ async def _fetch_and_parse_magnet_details(
 
 async def fetch_metadata_from_magnet(
     magnet_link: str, progress_message: Message, context: ContextTypes.DEFAULT_TYPE
-) -> Optional[lt.torrent_info]:  # type: ignore
+) -> lt.torrent_info | None:  # type: ignore
     """
     Fetches torrent metadata from a magnet link with a UI timer.
     """
@@ -285,7 +285,7 @@ async def fetch_metadata_from_magnet(
         return None
 
 
-def _blocking_fetch_metadata(ses: lt.session, magnet_link: str) -> Optional[bytes]:  # type: ignore
+def _blocking_fetch_metadata(ses: lt.session, magnet_link: str) -> bytes | None:  # type: ignore
     """
     Synchronous worker function to fetch torrent metadata. Intended to be run in a thread.
     """
@@ -337,5 +337,5 @@ async def _update_fetch_timer(
         try:
             # Wait for 1 second or until the cancel event is set
             await asyncio.wait_for(cancel_event.wait(), timeout=1)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # This is the expected behavior for the loop

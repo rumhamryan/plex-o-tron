@@ -3,7 +3,8 @@
 import asyncio
 import os
 import re
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
+from collections.abc import Callable, Coroutine
 
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
@@ -12,7 +13,7 @@ from ..config import logger
 from . import scraping_service
 
 # --- Type Aliases for Readability ---
-ScraperCoroutine = Coroutine[Any, Any, List[Dict[str, Any]]]
+ScraperCoroutine = Coroutine[Any, Any, list[dict[str, Any]]]
 ScraperFunction = Callable[..., ScraperCoroutine]
 
 
@@ -21,7 +22,7 @@ ScraperFunction = Callable[..., ScraperCoroutine]
 
 async def orchestrate_searches(
     query: str, media_type: str, context: ContextTypes.DEFAULT_TYPE, **kwargs
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Coordinates searches across all enabled torrent sites concurrently.
 
@@ -42,7 +43,7 @@ async def orchestrate_searches(
         return []
 
     # A dedicated scraper for EZTV would need to be created in the future.
-    scraper_map: Dict[str, ScraperFunction] = {
+    scraper_map: dict[str, ScraperFunction] = {
         "1337x": scraping_service.scrape_1337x,
         "YTS.mx": scraping_service.scrape_yts,
     }
@@ -125,7 +126,7 @@ async def orchestrate_searches(
 
 
 def score_torrent_result(
-    title: str, uploader: str, preferences: Dict[str, Any], seeders: int = 0
+    title: str, uploader: str, preferences: dict[str, Any], seeders: int = 0
 ) -> int:  # <--- CHANGE THIS
     """
     Scores a torrent result based on user preferences (codecs, uploaders, etc.).
@@ -155,7 +156,7 @@ def score_torrent_result(
     return score
 
 
-def _parse_codec(title: str) -> Optional[str]:
+def _parse_codec(title: str) -> str | None:
     """Extracts codec information like 'x265' or 'x264' from a torrent title."""
     title_lower = title.lower()
     if "x265" in title_lower or "hevc" in title_lower:
@@ -192,9 +193,9 @@ def _parse_size_to_gb(size_str: str) -> float:
 async def find_media_by_name(
     media_type: str,
     query: str,
-    save_paths: Dict[str, str],
+    save_paths: dict[str, str],
     search_mode: str = "directory",
-) -> Union[str, List[str], None]:
+) -> str | list[str] | None:
     """
     Finds a movie or TV show in the local library using fuzzy string matching.
     """
@@ -224,7 +225,7 @@ async def find_media_by_name(
     return matches
 
 
-async def find_season_directory(show_path: str, season_num: int) -> Optional[str]:
+async def find_season_directory(show_path: str, season_num: int) -> str | None:
     """
     Finds the directory for a specific season within a TV show's folder.
     """
@@ -243,7 +244,7 @@ async def find_season_directory(show_path: str, season_num: int) -> Optional[str
 
 async def find_episode_file(
     season_path: str, season_num: int, episode_num: int
-) -> Optional[str]:
+) -> str | None:
     """
     Finds a specific episode file within a season directory.
     """

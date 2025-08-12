@@ -5,6 +5,7 @@ from telegram_bot.utils import format_bytes, extract_first_int, parse_torrent_na
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+
 # Use pytest's "parametrize" to test many cases with one function
 @pytest.mark.parametrize(
     "size_bytes, expected_str",

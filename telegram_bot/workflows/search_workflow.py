@@ -377,7 +377,7 @@ async def _send_prompt(chat_id, context, text):
 
 
 async def _prompt_for_year_selection(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: List[str]
+    message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: list[str]
 ) -> None:
     """
     Edits a message to ask the user to select a year from a list of options.
@@ -410,7 +410,7 @@ async def _prompt_for_year_selection(
 
 
 async def _prompt_for_resolution(
-    target: Union[Message, int], context: ContextTypes.DEFAULT_TYPE, full_title: str
+    target: Message | int, context: ContextTypes.DEFAULT_TYPE, full_title: str
 ) -> None:
     """
     Asks the user to select a resolution, either by sending a new message
@@ -535,7 +535,7 @@ def _clear_search_context(context):
 
 
 async def _process_preliminary_results(
-    status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: List[Dict]
+    status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: list[dict]
 ) -> None:
     """
     Analyzes preliminary search results to decide the next step in the movie workflow.

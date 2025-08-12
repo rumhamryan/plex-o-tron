@@ -3,7 +3,8 @@
 import asyncio
 import os
 import time
-from typing import Any, Callable, Coroutine, Dict, Optional
+from typing import Any, Dict, Optional
+from collections.abc import Callable, Coroutine
 
 import libtorrent as lt
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -26,9 +27,9 @@ class ProgressReporter:
         application: Application,
         chat_id: int,
         message_id: int,
-        parsed_info: Dict[str, Any],
+        parsed_info: dict[str, Any],
         clean_name: str,
-        download_data: Dict[str, Any],
+        download_data: dict[str, Any],
     ):
         self.application = application
         self.chat_id = chat_id
@@ -133,7 +134,7 @@ async def download_with_progress(
     status_callback: Callable[[lt.torrent_status], Coroutine[Any, Any, None]],  # type: ignore
     bot_data: dict,
     download_data: dict,
-) -> tuple[bool, Optional[lt.torrent_info]]:  # type: ignore
+) -> tuple[bool, lt.torrent_info | None]:  # type: ignore
     """
     Core libtorrent download logic.
     Returns (success_status, torrent_info_object).
@@ -189,7 +190,7 @@ async def download_with_progress(
     return True, handle.torrent_file()
 
 
-async def download_task_wrapper(download_data: Dict, application: Application):
+async def download_task_wrapper(download_data: dict, application: Application):
     """
     Wraps the entire download lifecycle for a single torrent.
     Handles success, failure, cancellation, and requeueing.
@@ -280,7 +281,7 @@ async def download_task_wrapper(download_data: Dict, application: Application):
             await process_queue_for_user(chat_id, application)
 
 
-async def _requeue_download(download_data: Dict, application: Application):
+async def _requeue_download(download_data: dict, application: Application):
     """Moves a paused or interrupted download to the back of the queue."""
     chat_id = download_data["chat_id"]
     chat_id_str = str(chat_id)
@@ -383,7 +384,7 @@ async def process_queue_for_user(chat_id: int, application: Application):
         await _start_download_task(next_download_data, application)
 
 
-async def _start_download_task(download_data: Dict, application: Application):
+async def _start_download_task(download_data: dict, application: Application):
     """Creates, registers, and persists a new download task."""
     active_downloads = application.bot_data.get("active_downloads", {})
     download_queues = application.bot_data.get("download_queues", {})

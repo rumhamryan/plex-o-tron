@@ -58,7 +58,7 @@ async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
         )
 
 
-async def restart_plex_server() -> Tuple[bool, str]:
+async def restart_plex_server() -> tuple[bool, str]:
     """
     Attempts to restart the Plex server by executing the 'restart_plex.sh' script.
 
