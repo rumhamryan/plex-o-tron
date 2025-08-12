@@ -1,5 +1,5 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -9,6 +9,7 @@ from telegram_bot.services.search_logic import (
     _parse_size_to_gb,
     score_torrent_result,
 )
+
 
 
 @pytest.mark.parametrize(

@@ -1,14 +1,16 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 import pytest
+
 from telegram_bot.services.media_manager import (
     generate_plex_filename,
     parse_resolution_from_name,
     handle_successful_download,
 )
+
 
 
 def test_generate_plex_filename_movie():

@@ -1,5 +1,5 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from plexapi.exceptions import Unauthorized
 
 from telegram_bot.services.plex_service import get_plex_server_status
+
 
 
 @pytest.mark.asyncio

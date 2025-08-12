@@ -1,12 +1,13 @@
-from pathlib import Path
 import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, ANY
 
 import pytest
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from telegram_bot.services.download_manager import (
     ProgressReporter,
@@ -16,6 +17,7 @@ from telegram_bot.services.download_manager import (
     handle_pause_request,
     handle_resume_request,
 )
+
 
 
 @pytest.mark.asyncio

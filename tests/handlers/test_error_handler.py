@@ -3,10 +3,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
 import pytest
 from telegram import Message
 
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from telegram_bot.handlers.error_handler import global_error_handler
 

@@ -2,11 +2,12 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+# Ensure root path for imports
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
 import pytest
 from telegram import Update, Message
 
-# Ensure root path for imports
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from telegram_bot.handlers.command_handlers import search_command, plex_status_command
 
