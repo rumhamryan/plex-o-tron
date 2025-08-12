@@ -130,6 +130,8 @@ async def test_download_task_wrapper_cancellation_cleanup(mocker):
         "handle": handle,
     }
     application = Mock()
+    application.bot_data = {"TORRENT_SESSION": ses}
+
     mocker.patch(
         "telegram_bot.services.download_manager.download_with_progress",
         AsyncMock(side_effect=asyncio.CancelledError()),
@@ -158,6 +160,8 @@ async def test_download_task_wrapper_failure_message(mocker):
         "lock": asyncio.Lock(),
     }
     application = Mock()
+    application.bot_data = {}
+    
     mocker.patch(
         "telegram_bot.services.download_manager.download_with_progress",
         AsyncMock(return_value=(False, None)),
@@ -216,6 +220,10 @@ async def test_add_download_to_queue(
 async def test_process_queue_for_user_active(mocker):
     chat_id = 111
     application = Mock()
+    application.bot_data = {
+        "active_downloads": {str(chat_id): {}},
+        "download_queues": {}
+    }
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",
         AsyncMock(),
@@ -231,6 +239,10 @@ async def test_process_queue_for_user_start(mocker):
     chat_id = 222
     download_item = {"chat_id": chat_id}
     application = Mock()
+    application.bot_data = {
+        "active_downloads": {},
+        "download_queues": {str(chat_id): [download_item]}
+    }
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",
         AsyncMock(),
