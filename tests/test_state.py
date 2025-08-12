@@ -1,12 +1,19 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from telegram_bot.state import save_state, load_state
+from telegram_bot.state import (
+    load_state,
+    post_init,
+    post_shutdown,
+    save_state,
+)
 
 
 def test_save_and_load_state_roundtrip(mocker):
@@ -59,3 +66,44 @@ def test_load_state_json_error(mocker):
     assert active == {}
     assert queue == {}
     error_mock.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_post_init_resumes_persisted_download(mocker):
+    application = SimpleNamespace(bot_data={})
+    mocker.patch(
+        "telegram_bot.state.load_state",
+        return_value=({"1": {"name": "movie"}}, {}),
+    )
+    download_mock = mocker.Mock(return_value="coro")
+    mocker.patch(
+        "telegram_bot.services.download_manager.download_task_wrapper",
+        new=download_mock,
+    )
+    create_task_mock = mocker.patch("telegram_bot.state.asyncio.create_task")
+
+    await post_init(application)
+
+    download_mock.assert_called_once()
+    passed_data, passed_app = download_mock.call_args[0]
+    assert passed_data["name"] == "movie"
+    assert passed_app is application
+    create_task_mock.assert_called_once_with("coro")
+
+
+@pytest.mark.asyncio
+async def test_post_shutdown_cancels_tasks_and_saves_state(mocker):
+    task = SimpleNamespace(cancel=mocker.Mock(), done=mocker.Mock(return_value=False))
+    application = SimpleNamespace(
+        bot_data={
+            "active_downloads": {"1": {"task": task}},
+            "download_queues": {},
+        }
+    )
+    mocker.patch("telegram_bot.state.asyncio.gather", new=AsyncMock())
+    save_mock = mocker.patch("telegram_bot.state.save_state")
+
+    await post_shutdown(application)
+
+    task.cancel.assert_called_once()
+    save_mock.assert_called_once()
