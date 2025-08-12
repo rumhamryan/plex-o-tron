@@ -13,7 +13,9 @@ from telegram_bot.handlers.error_handler import global_error_handler
 
 
 @pytest.mark.asyncio
-async def test_global_error_handler_logs_and_notifies(mocker, make_message, make_update):
+async def test_global_error_handler_logs_and_notifies(
+    mocker, make_message, make_update
+):
     message = make_message()
     update = make_update(message=message)
     context = SimpleNamespace(error=Exception("boom"), chat_data={}, user_data={})

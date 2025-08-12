@@ -10,11 +10,12 @@ from plexapi.exceptions import Unauthorized
 from telegram_bot.services.plex_service import get_plex_server_status
 
 
-
 @pytest.mark.asyncio
 async def test_get_plex_server_status_connected(mocker):
     mock_plex = mocker.Mock(version="1.0", platform="Linux")
-    mocker.patch("telegram_bot.services.plex_service.PlexServer", return_value=mock_plex)
+    mocker.patch(
+        "telegram_bot.services.plex_service.PlexServer", return_value=mock_plex
+    )
 
     context = SimpleNamespace(
         bot_data={"PLEX_CONFIG": {"url": "http://plex", "token": "abc"}}
@@ -52,4 +53,3 @@ async def test_get_plex_server_status_connection_error(mocker):
 
     result = await get_plex_server_status(context)
     assert "Connection Failed" in result
-

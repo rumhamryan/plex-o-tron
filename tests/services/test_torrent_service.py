@@ -14,8 +14,8 @@ from telegram_bot.services.torrent_service import (
 )
 
 
-
 # -------- process_user_input routing ---------
+
 
 @pytest.mark.asyncio
 async def test_process_user_input_magnet_routing(mocker, context, make_message):
@@ -60,6 +60,7 @@ async def test_process_user_input_webpage_routing(mocker, context, make_message)
 
 
 # -------- _handle_webpage_url ---------
+
 
 @pytest.mark.asyncio
 async def test_handle_webpage_url_no_links(mocker, context, make_message):
@@ -133,6 +134,7 @@ async def test_handle_webpage_url_multiple_links(mocker, context, make_message):
 
 # -------- fetch_metadata_from_magnet ---------
 
+
 @pytest.mark.asyncio
 async def test_fetch_metadata_from_magnet_timeout(mocker, context, make_message):
     progress = make_message()
@@ -150,7 +152,9 @@ async def test_fetch_metadata_from_magnet_timeout(mocker, context, make_message)
         AsyncMock(),
     )
 
-    result = await fetch_metadata_from_magnet("magnet:?xt=urn:btih:abc", progress, context)
+    result = await fetch_metadata_from_magnet(
+        "magnet:?xt=urn:btih:abc", progress, context
+    )
 
     assert result is None
     args, kwargs = safe_mock.call_args
@@ -170,8 +174,12 @@ async def test_fetch_metadata_from_magnet_success(mocker, context, make_message)
         return_value=b"data",
     )
     ti_obj = object()
-    mocker.patch("telegram_bot.services.torrent_service.lt.torrent_info", return_value=ti_obj)
+    mocker.patch(
+        "telegram_bot.services.torrent_service.lt.torrent_info", return_value=ti_obj
+    )
 
-    result = await fetch_metadata_from_magnet("magnet:?xt=urn:btih:abc", progress, context)
+    result = await fetch_metadata_from_magnet(
+        "magnet:?xt=urn:btih:abc", progress, context
+    )
 
     assert result is ti_obj

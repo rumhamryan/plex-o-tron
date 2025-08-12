@@ -2,10 +2,8 @@
 
 import asyncio
 import os
-import re
 import shutil
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
 import libtorrent as lt
 from plexapi.exceptions import NotFound, Unauthorized
@@ -13,35 +11,42 @@ from plexapi.server import PlexServer
 from telegram import Message
 from telegram.helpers import escape_markdown
 
-from ..config import ALLOWED_EXTENSIONS, MAX_TORRENT_SIZE_BYTES, MAX_TORRENT_SIZE_GB, logger
+from ..config import (
+    ALLOWED_EXTENSIONS,
+    MAX_TORRENT_SIZE_BYTES,
+    MAX_TORRENT_SIZE_GB,
+    logger,
+)
 from ..utils import format_bytes, safe_edit_message, parse_torrent_name
 from .scraping_service import fetch_episode_title_from_wikipedia
 
 
 def generate_plex_filename(parsed_info: Dict[str, Any], original_extension: str) -> str:
     """Generates a clean, Plex-friendly filename from the parsed info."""
-    title = parsed_info.get('title', 'Unknown Title')
+    title = parsed_info.get("title", "Unknown Title")
     invalid_chars = r'<>:"/\|?*'
     safe_title = "".join(c for c in title if c not in invalid_chars)
 
-    if parsed_info.get('type') == 'movie':
-        year = parsed_info.get('year', 'Unknown Year')
+    if parsed_info.get("type") == "movie":
+        year = parsed_info.get("year", "Unknown Year")
         return f"{safe_title} ({year}){original_extension}"
 
-    elif parsed_info.get('type') == 'tv':
-        season = parsed_info.get('season', 0)
-        episode = parsed_info.get('episode', 0)
-        episode_title = parsed_info.get('episode_title')
+    elif parsed_info.get("type") == "tv":
+        season = parsed_info.get("season", 0)
+        episode = parsed_info.get("episode", 0)
+        episode_title = parsed_info.get("episode_title")
         safe_episode_title = ""
         if episode_title:
-            safe_episode_title = " - " + "".join(c for c in episode_title if c not in invalid_chars)
+            safe_episode_title = " - " + "".join(
+                c for c in episode_title if c not in invalid_chars
+            )
         return f"s{season:02d}e{episode:02d}{safe_episode_title}{original_extension}"
 
     else:  # Fallback for 'unknown' type
         return f"{safe_title}{original_extension}"
 
 
-def get_dominant_file_type(files: lt.file_storage) -> str: #type: ignore
+def get_dominant_file_type(files: lt.file_storage) -> str:  # type: ignore
     """Determines the file extension of the largest file in a torrent."""
     if files.num_files() == 0:
         return "N/A"
@@ -54,18 +59,18 @@ def get_dominant_file_type(files: lt.file_storage) -> str: #type: ignore
 def parse_resolution_from_name(name: str) -> str:
     """Parses a torrent name to find the video resolution."""
     name_lower = name.lower()
-    if any(res in name_lower for res in ['2160p', '4k', 'uhd']):
+    if any(res in name_lower for res in ["2160p", "4k", "uhd"]):
         return "4K"
-    if '1080p' in name_lower:
+    if "1080p" in name_lower:
         return "1080p"
-    if '720p' in name_lower:
+    if "720p" in name_lower:
         return "720p"
-    if any(res in name_lower for res in ['480p', 'sd', 'dvdrip']):
+    if any(res in name_lower for res in ["480p", "sd", "dvdrip"]):
         return "SD"
     return "N/A"
 
 
-def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]: #type: ignore
+def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]:  # type: ignore
     """
     Checks if a torrent contains at least one large, valid media file.
     Returns an error message string if invalid, otherwise None.
@@ -75,11 +80,17 @@ def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]: #type: ignore
         return "the torrent contains no files."
 
     # Find all files larger than a 10MB threshold
-    large_files = [files.file_path(i) for i in range(files.num_files()) if files.file_size(i) > 10 * 1024 * 1024]
+    large_files = [
+        files.file_path(i)
+        for i in range(files.num_files())
+        if files.file_size(i) > 10 * 1024 * 1024
+    ]
 
     if large_files:
         # Check if at least one large file has a valid extension
-        if any(os.path.splitext(f)[1].lower() in ALLOWED_EXTENSIONS for f in large_files):
+        if any(
+            os.path.splitext(f)[1].lower() in ALLOWED_EXTENSIONS for f in large_files
+        ):
             return None  # Valid torrent
         else:
             # No valid large files found, report the largest file's extension
@@ -98,7 +109,7 @@ def validate_torrent_files(ti: lt.torrent_info) -> Optional[str]: #type: ignore
 
 
 async def validate_and_enrich_torrent(
-    ti: lt.torrent_info, progress_message: Message #type: ignore
+    ti: lt.torrent_info, progress_message: Message  # type: ignore
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
     """
     Validates a torrent_info object against size and file type rules,
@@ -120,11 +131,11 @@ async def validate_and_enrich_torrent(
             f"This torrent is *{torrent_size_str}*, which is larger than the "
             f"*{size_limit_str} GB* limit\\."
         )
-        
+
         await safe_edit_message(
-            progress_message, 
-            text=f"❌ *Size Limit Exceeded*\n\n{error_msg}", 
-            parse_mode="MarkdownV2"
+            progress_message,
+            text=f"❌ *Size Limit Exceeded*\n\n{error_msg}",
+            parse_mode="MarkdownV2",
         )
         return "Size limit exceeded", None
 
@@ -132,29 +143,38 @@ async def validate_and_enrich_torrent(
     validation_error = validate_torrent_files(ti)
     if validation_error:
         error_msg = f"This torrent {escape_markdown(validation_error)}"
-        await safe_edit_message(progress_message, text=f"❌ *Unsupported File Type*\n\n{error_msg}", parse_mode="MarkdownV2")
+        await safe_edit_message(
+            progress_message,
+            text=f"❌ *Unsupported File Type*\n\n{error_msg}",
+            parse_mode="MarkdownV2",
+        )
         return "Unsupported file type", None
 
     # 3. Parse name and enrich if it's a TV show
     parsed_info = parse_torrent_name(ti.name())
-    if parsed_info['type'] == 'tv':
-        await safe_edit_message(progress_message, text="📺 TV show detected. Searching Wikipedia for episode title...")
-        
-        episode_title, corrected_show_title = await fetch_episode_title_from_wikipedia(
-            show_title=parsed_info['title'],
-            season=parsed_info['season'],
-            episode=parsed_info['episode']
+    if parsed_info["type"] == "tv":
+        await safe_edit_message(
+            progress_message,
+            text="📺 TV show detected. Searching Wikipedia for episode title...",
         )
-        parsed_info['episode_title'] = episode_title
+
+        episode_title, corrected_show_title = await fetch_episode_title_from_wikipedia(
+            show_title=parsed_info["title"],
+            season=parsed_info["season"],
+            episode=parsed_info["episode"],
+        )
+        parsed_info["episode_title"] = episode_title
         if corrected_show_title:
-            logger.info(f"Corrected TV show title from '{parsed_info['title']}' to '{corrected_show_title}'.")
-            parsed_info['title'] = corrected_show_title
+            logger.info(
+                f"Corrected TV show title from '{parsed_info['title']}' to '{corrected_show_title}'."
+            )
+            parsed_info["title"] = corrected_show_title
 
     return None, parsed_info
 
 
 async def handle_successful_download(
-    ti: lt.torrent_info, #type: ignore
+    ti: lt.torrent_info,  # type: ignore
     parsed_info: Dict[str, Any],
     initial_download_path: str,
     save_paths: Dict[str, str],
@@ -177,9 +197,11 @@ async def handle_successful_download(
                 target_file_in_torrent = path_in_torrent
                 original_extension = ext
                 break
-        
+
         if not target_file_in_torrent:
-            raise FileNotFoundError("No valid media file (.mkv, .mp4) found in the completed torrent.")
+            raise FileNotFoundError(
+                "No valid media file (.mkv, .mp4) found in the completed torrent."
+            )
 
         # --- Determine source and destination paths ---
         current_path = os.path.join(initial_download_path, target_file_in_torrent)
@@ -193,7 +215,9 @@ async def handle_successful_download(
         await asyncio.to_thread(shutil.move, current_path, new_path)
 
         # --- Trigger Plex scan if configured ---
-        scan_status_message = await _trigger_plex_scan(parsed_info.get('type'), plex_config)
+        scan_status_message = await _trigger_plex_scan(
+            parsed_info.get("type"), plex_config
+        )
 
         # --- Clean up empty source directory ---
         _cleanup_source_directory(initial_download_path, target_file_in_torrent)
@@ -201,8 +225,8 @@ async def handle_successful_download(
     except Exception as e:
         logger.error(f"Post-processing failed: {e}", exc_info=True)
         return f"❌ *Post-Processing Error*\nDownload completed but failed during file handling.\n\n`{escape_markdown(str(e))}`"
-        
-    clean_name = parsed_info.get('title', 'Download')
+
+    clean_name = parsed_info.get("title", "Download")
     return (
         f"✅ *Success\\!*\n"
         f"Renamed and moved to Plex Server:\n"
@@ -211,28 +235,32 @@ async def handle_successful_download(
     )
 
 
-def _get_final_destination_path(parsed_info: Dict[str, Any], save_paths: Dict[str, str]) -> str:
+def _get_final_destination_path(
+    parsed_info: Dict[str, Any], save_paths: Dict[str, str]
+) -> str:
     """Determines the final directory for the downloaded media."""
-    media_type = parsed_info.get('type')
-    
-    if media_type == 'movie':
-        return save_paths.get('movies', save_paths['default'])
-    
-    if media_type == 'tv':
-        root_path = save_paths.get('tv_shows', save_paths['default'])
-        show_title = parsed_info.get('title', 'Unknown Show')
-        season_num = parsed_info.get('season', 0)
-        
+    media_type = parsed_info.get("type")
+
+    if media_type == "movie":
+        return save_paths.get("movies", save_paths["default"])
+
+    if media_type == "tv":
+        root_path = save_paths.get("tv_shows", save_paths["default"])
+        show_title = parsed_info.get("title", "Unknown Show")
+        season_num = parsed_info.get("season", 0)
+
         # Sanitize show title for directory name
         invalid_chars = r'<>:"/\|?*'
         safe_show_title = "".join(c for c in show_title if c not in invalid_chars)
-        
+
         return os.path.join(root_path, safe_show_title, f"Season {season_num:02d}")
-        
-    return save_paths['default']
+
+    return save_paths["default"]
 
 
-async def _trigger_plex_scan(media_type: Optional[str], plex_config: Optional[Dict[str, str]]) -> str:
+async def _trigger_plex_scan(
+    media_type: Optional[str], plex_config: Optional[Dict[str, str]]
+) -> str:
     """Triggers a Plex library scan for the relevant library."""
     if not plex_config:
         return ""
@@ -241,7 +269,7 @@ async def _trigger_plex_scan(media_type: Optional[str], plex_config: Optional[Di
     if not media_type:
         return ""
 
-    library_map = {'movie': 'Movies', 'tv': 'TV Shows'}
+    library_map = {"movie": "Movies", "tv": "TV Shows"}
     # `media_type` is now guaranteed to be a string, resolving the type error.
     library_name = library_map.get(media_type)
 
@@ -252,21 +280,23 @@ async def _trigger_plex_scan(media_type: Optional[str], plex_config: Optional[Di
     logger.info(f"Attempting to scan '{library_name}' library in Plex...")
     try:
         # Run blocking PlexAPI calls in a separate thread
-        plex = await asyncio.to_thread(PlexServer, plex_config['url'], plex_config['token'])
+        plex = await asyncio.to_thread(
+            PlexServer, plex_config["url"], plex_config["token"]
+        )
         target_library = await asyncio.to_thread(plex.library.section, library_name)
         await asyncio.to_thread(target_library.update)
-        
+
         logger.info(f"Successfully triggered Plex scan for '{library_name}'.")
         return f"\n\nPlex scan for the `{escape_markdown(library_name)}` library has been initiated\\."
-        
+
     except (Unauthorized, NotFound, Exception) as e:
         error_map = {
             Unauthorized: "Plex token is invalid.",
-            NotFound: f"Plex library '{library_name}' not found."
+            NotFound: f"Plex library '{library_name}' not found.",
         }
         reason = error_map.get(type(e), f"An unexpected error occurred: {e}")
         logger.error(f"Plex scan failed: {reason}")
-        return f"\n\n*Plex Error:* Could not trigger scan\\."
+        return "\n\n*Plex Error:* Could not trigger scan\\."
 
 
 def _cleanup_source_directory(initial_path: str, torrent_file_path: str):

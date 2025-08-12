@@ -41,14 +41,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     chat = update.effective_chat
     if not chat:
-        logger.warning("help_command was triggered but could not find an effective_chat.")
+        logger.warning(
+            "help_command was triggered but could not find an effective_chat."
+        )
         return
 
     message_text = get_help_message_text()
     await context.bot.send_message(
-        chat_id=chat.id,
-        text=message_text,
-        parse_mode=ParseMode.MARKDOWN_V2
+        chat_id=chat.id, text=message_text, parse_mode=ParseMode.MARKDOWN_V2
     )
 
 
@@ -66,7 +66,9 @@ async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     chat = update.effective_chat
     if not chat:
-        logger.warning("links_command was triggered but could not find an effective_chat.")
+        logger.warning(
+            "links_command was triggered but could not find an effective_chat."
+        )
         return
 
     message_text = (
@@ -79,7 +81,9 @@ async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "https://eztvx.to/\n"
         "https://1337x.to/"
     )
-    await context.bot.send_message(chat_id=chat.id, text=message_text, parse_mode=ParseMode.HTML)
+    await context.bot.send_message(
+        chat_id=chat.id, text=message_text, parse_mode=ParseMode.HTML
+    )
 
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -95,7 +99,7 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         pass
 
     # Set the active workflow to 'delete' to route future text messages correctly
-    context.user_data['active_workflow'] = 'delete'
+    context.user_data["active_workflow"] = "delete"
 
     keyboard = [
         [
@@ -121,7 +125,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_data = context.user_data
 
     if not user or not isinstance(message, Message) or user_data is None:
-        logger.warning("search_command cannot proceed without user, message, or user_data.")
+        logger.warning(
+            "search_command cannot proceed without user, message, or user_data."
+        )
         return
 
     # With the guard clause, `user.id` is now safe to access, resolving the IDE error.
@@ -133,7 +139,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         pass
 
     # Set the active workflow to 'search' to route future text messages correctly
-    user_data['active_workflow'] = 'search'
+    user_data["active_workflow"] = "search"
 
     keyboard = [
         [
@@ -147,13 +153,13 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     message_text = r"What type of media do you want to search for\?"
 
     await message.reply_text(
-        text=message_text,
-        reply_markup=reply_markup,
-        parse_mode=ParseMode.MARKDOWN_V2
+        text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2
     )
 
 
-async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def plex_status_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Checks and reports the connection status to the Plex Media Server."""
     if not await is_user_authorized(update, context):
         return
@@ -167,10 +173,14 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     chat = update.effective_chat
     if not chat:
-        logger.warning("plex_status_command was triggered but could not find an effective_chat.")
+        logger.warning(
+            "plex_status_command was triggered but could not find an effective_chat."
+        )
         return
 
-    status_message = await context.bot.send_message(chat_id=chat.id, text="Plex Status: 🟡 Checking connection...")
+    status_message = await context.bot.send_message(
+        chat_id=chat.id, text="Plex Status: 🟡 Checking connection..."
+    )
 
     # Delegate the logic to the plex_service module
     message_text = await get_plex_server_status(context)
@@ -178,7 +188,9 @@ async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await status_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
 
 
-async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def plex_restart_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Restarts the Plex server using a predefined shell script."""
     if not await is_user_authorized(update, context):
         return
@@ -192,17 +204,27 @@ async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     chat = update.effective_chat
     if not chat:
-        logger.warning("plex_restart_command was triggered but could not find an effective_chat.")
+        logger.warning(
+            "plex_restart_command was triggered but could not find an effective_chat."
+        )
         return
 
     if platform.system() != "Linux":
-        await context.bot.send_message(chat_id=chat.id, text="This command is configured to run on Linux only.")
+        await context.bot.send_message(
+            chat_id=chat.id, text="This command is configured to run on Linux only."
+        )
         return
 
-    status_message = await context.bot.send_message(chat_id=chat.id, text="Plex Restart: 🟡 Sending restart command...")
+    status_message = await context.bot.send_message(
+        chat_id=chat.id, text="Plex Restart: 🟡 Sending restart command..."
+    )
 
     # Delegate the restart logic to the plex_service module
     success, message = await restart_plex_server()
 
-    final_text = f"✅ *Plex Restart Successful*" if success else f"❌ *Plex Restart Failed*\n\n{escape_markdown(message)}"
+    final_text = (
+        "✅ *Plex Restart Successful*"
+        if success
+        else f"❌ *Plex Restart Failed*\n\n{escape_markdown(message)}"
+    )
     await status_message.edit_text(text=final_text, parse_mode=ParseMode.MARKDOWN_V2)

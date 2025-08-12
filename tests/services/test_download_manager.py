@@ -19,7 +19,6 @@ from telegram_bot.services.download_manager import (
 )
 
 
-
 @pytest.mark.asyncio
 async def test_progress_reporter_movie(mocker):
     status = SimpleNamespace(
@@ -133,7 +132,9 @@ async def test_download_task_wrapper_cancellation_cleanup(mocker):
         "lock": asyncio.Lock(),
         "handle": handle,
     }
-    application = SimpleNamespace(bot=SimpleNamespace(), bot_data={"TORRENT_SESSION": ses})
+    application = SimpleNamespace(
+        bot=SimpleNamespace(), bot_data={"TORRENT_SESSION": ses}
+    )
     mocker.patch(
         "telegram_bot.services.download_manager.download_with_progress",
         AsyncMock(side_effect=asyncio.CancelledError()),
@@ -183,11 +184,17 @@ async def test_download_task_wrapper_failure_message(mocker):
 
 
 @pytest.mark.asyncio
-async def test_add_download_to_queue(mocker, make_update, make_callback_query, make_message, context):
+async def test_add_download_to_queue(
+    mocker, make_update, make_callback_query, make_message, context
+):
     message = make_message(message_id=10)
     callback = make_callback_query(data="confirm", message=message)
     update = make_update(callback_query=callback)
-    context.user_data["pending_torrent"] = {"value": "magnet", "original_message_id": 10, "type": "magnet"}
+    context.user_data["pending_torrent"] = {
+        "value": "magnet",
+        "original_message_id": 10,
+        "type": "magnet",
+    }
     context.bot_data["active_downloads"] = {}
     context.bot_data["download_queues"] = {}
     context.bot_data["SAVE_PATHS"] = {"default": "/tmp"}
@@ -213,10 +220,12 @@ async def test_add_download_to_queue(mocker, make_update, make_callback_query, m
 @pytest.mark.asyncio
 async def test_process_queue_for_user_active(mocker):
     chat_id = 111
-    application = SimpleNamespace(bot_data={
-        "active_downloads": {str(chat_id): {}},
-        "download_queues": {str(chat_id): [{}]},
-    })
+    application = SimpleNamespace(
+        bot_data={
+            "active_downloads": {str(chat_id): {}},
+            "download_queues": {str(chat_id): [{}]},
+        }
+    )
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",
         AsyncMock(),
@@ -231,10 +240,12 @@ async def test_process_queue_for_user_active(mocker):
 async def test_process_queue_for_user_start(mocker):
     chat_id = 222
     download_item = {"chat_id": chat_id}
-    application = SimpleNamespace(bot_data={
-        "active_downloads": {},
-        "download_queues": {str(chat_id): [download_item]},
-    })
+    application = SimpleNamespace(
+        bot_data={
+            "active_downloads": {},
+            "download_queues": {str(chat_id): [download_item]},
+        }
+    )
     start_mock = mocker.patch(
         "telegram_bot.services.download_manager._start_download_task",
         AsyncMock(),
@@ -247,7 +258,9 @@ async def test_process_queue_for_user_start(mocker):
 
 
 @pytest.mark.asyncio
-async def test_pause_and_resume_requests(mocker, make_update, make_callback_query, make_message, context):
+async def test_pause_and_resume_requests(
+    mocker, make_update, make_callback_query, make_message, context
+):
     message = make_message()
     callback = make_callback_query(data="pause_download", message=message)
     update = make_update(callback_query=callback)

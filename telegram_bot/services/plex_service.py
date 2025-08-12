@@ -23,17 +23,23 @@ async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
         return "Plex Status: ⚪️ Not configured. Please add your Plex details to `config.ini`."
 
     try:
-        logger.info(f"Attempting to connect to Plex server at {plex_config.get('url')}...")
+        logger.info(
+            f"Attempting to connect to Plex server at {plex_config.get('url')}..."
+        )
 
         # Run the blocking plexapi call in a separate thread
-        plex = await asyncio.to_thread(PlexServer, plex_config['url'], plex_config['token'])
-        
+        plex = await asyncio.to_thread(
+            PlexServer, plex_config["url"], plex_config["token"]
+        )
+
         # The connection is successful if no exception was raised.
         # We can fetch info for logging, but it's not needed for the user message.
         server_version = plex.version
         server_platform = plex.platform
-        logger.info(f"Successfully connected to Plex! Version: {server_version}, Platform: {server_platform}")
-        
+        logger.info(
+            f"Successfully connected to Plex! Version: {server_version}, Platform: {server_platform}"
+        )
+
         return "Plex Status: ✅ *Connected*"
 
     except Unauthorized:
@@ -44,7 +50,7 @@ async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
         )
     except Exception as e:
         logger.error(f"Failed to connect to Plex server: {e}")
-        escaped_url = escape_markdown(plex_config.get('url', ''), version=2)
+        escaped_url = escape_markdown(plex_config.get("url", ""), version=2)
         return (
             f"Plex Status: ❌ *Connection Failed*\n"
             f"Could not connect to the Plex server at `{escaped_url}`\\. "
@@ -64,22 +70,25 @@ async def restart_plex_server() -> Tuple[bool, str]:
     if not os.path.exists(script_path):
         error_msg = f"Wrapper script not found at {script_path}"
         logger.error(f"[PLEX RESTART] {error_msg}")
-        return False, f"The `restart_plex.sh` script was not found in the bot's directory."
+        return (
+            False,
+            "The `restart_plex.sh` script was not found in the bot's directory.",
+        )
 
     command = ["/usr/bin/sudo", script_path]
 
     try:
         logger.info(f"[PLEX RESTART] Executing wrapper script: {' '.join(command)}")
-        
+
         # Run the blocking subprocess call in a separate thread
-        process = await asyncio.to_thread(
+        await asyncio.to_thread(
             subprocess.run,
             command,
             check=True,
             capture_output=True,
-            text=True
+            text=True,
         )
-        
+
         logger.info("[PLEX RESTART] Script executed successfully.")
         return True, ""
 
@@ -93,4 +102,7 @@ async def restart_plex_server() -> Tuple[bool, str]:
 
     except Exception as e:
         logger.error(f"[PLEX RESTART] An unexpected error occurred: {e}")
-        return False, f"An unexpected error occurred:\n`{escape_markdown(str(e), version=2)}`"
+        return (
+            False,
+            f"An unexpected error occurred:\n`{escape_markdown(str(e), version=2)}`",
+        )
