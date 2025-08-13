@@ -1,7 +1,7 @@
 # tests/handlers/test_error_handler.py
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock # <-- Import Mock
+from unittest.mock import AsyncMock, Mock  # <-- Import Mock
 import pytest
 from telegram import Message
 from telegram_bot.handlers.error_handler import global_error_handler

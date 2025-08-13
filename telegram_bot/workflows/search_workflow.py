@@ -378,7 +378,7 @@ async def _send_prompt(chat_id, context, text):
 
 
 async def _prompt_for_year_selection(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: List[str]
+    message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: list[str]
 ) -> None:
     """
     Edits a message to ask the user to select a year from a list of options.
@@ -411,7 +411,7 @@ async def _prompt_for_year_selection(
 
 
 async def _prompt_for_resolution(
-    target: Union[Message, int], context: ContextTypes.DEFAULT_TYPE, full_title: str
+    target: Message | int, context: ContextTypes.DEFAULT_TYPE, full_title: str
 ) -> None:
     """
     Asks the user to select a resolution, either by sending a new message
@@ -466,7 +466,7 @@ async def _prompt_for_resolution(
         context.user_data["prompt_message_id"] = prompt_message.message_id
 
 
-def _filter_results_by_resolution(results: List[Dict], resolution: str) -> List[Dict]:
+def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[dict]:
     """Filters search results to only include entries matching the desired resolution."""
     res = resolution.lower()
     patterns = ["2160p", "4k"] if res == "2160p" else ["1080p"]
@@ -545,7 +545,7 @@ def _clear_search_context(context):
 
 
 async def _process_preliminary_results(
-    status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: List[Dict]
+    status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: list[dict]
 ) -> None:
     """
     Analyzes preliminary search results to decide the next step in the movie workflow.

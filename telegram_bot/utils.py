@@ -23,7 +23,7 @@ def format_bytes(size_bytes: int) -> str:
     return f"{s} {size_name[i]}"
 
 
-def extract_first_int(text: str) -> Optional[int]:
+def extract_first_int(text: str) -> int | None:
     """Safely extracts the first integer from a string."""
     if not text:
         return None
@@ -32,7 +32,7 @@ def extract_first_int(text: str) -> Optional[int]:
 
 
 async def safe_edit_message(
-    bot_or_message: Union[Bot, Message], text: str, **kwargs
+    bot_or_message: Bot | Message, text: str, **kwargs
 ) -> None:
     """
     Safely edits a message, ignoring 'message is not modified' errors.
@@ -50,7 +50,7 @@ async def safe_edit_message(
             raise e
 
 
-def parse_torrent_name(name: str) -> Dict[str, Any]:
+def parse_torrent_name(name: str) -> dict[str, Any]:
     """
     Parses a torrent name to identify if it's a movie or a TV show
     and extracts relevant metadata.

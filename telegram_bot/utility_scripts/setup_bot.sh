@@ -92,7 +92,7 @@ read -p "This will make the bot start on boot and restart if it fails. (y/n): " 
 if [[ "$wants_service" =~ ^[Yy]$ ]]; then
     echo -e "\n${CYAN}Creating systemd service file...${NC}"
     SERVICE_FILE_PATH="/etc/systemd/system/telegram-bot.service"
-    
+
     # --- UPDATED TO PYTHON 3.12 ---
     # Note: Using "EOF" without quotes allows shell variables like $PROJECT_DIR to be expanded.
     sudo tee "$SERVICE_FILE_PATH" > /dev/null <<EOF
@@ -113,12 +113,12 @@ WantedBy=multi-user.target
 EOF
 
     echo "Service file created at $SERVICE_FILE_PATH"
-    
+
     echo -e "\n${CYAN}Enabling and starting the service...${NC}"
     sudo systemctl daemon-reload
     sudo systemctl enable telegram-bot.service
     sudo systemctl start telegram-bot.service
-    
+
     echo -e "\n${GREEN}--- Setup Complete! ---${NC}"
     echo "The bot is now running as a background service."
     echo -e "Use ${YELLOW}'sudo systemctl status telegram-bot.service'${NC} to check its status."

@@ -25,7 +25,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def get_configuration() -> (
-    Tuple[str, Dict[str, str], List[int], Dict[str, str], Dict[str, Any]]
+    tuple[str, dict[str, str], list[int], dict[str, str], dict[str, Any]]
 ):
     """
     Reads bot token, paths, allowed IDs, Plex, and Search config from the
@@ -39,7 +39,7 @@ def get_configuration() -> (
         )
         sys.exit(1)
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         lines = f.readlines()
 
     # --- Manually parse the [search] section to handle multi-line JSON ---
@@ -78,7 +78,7 @@ def get_configuration() -> (
 
 
 def _is_in_section(
-    section_header: str, current_line: str, all_lines: List[str]
+    section_header: str, current_line: str, all_lines: list[str]
 ) -> bool:
     """Helper to check if a line belongs to a given section."""
     try:
@@ -92,7 +92,7 @@ def _is_in_section(
         return False
 
 
-def _parse_search_section(lines: List[str]) -> Dict[str, Any]:
+def _parse_search_section(lines: list[str]) -> dict[str, Any]:
     """Extracts and parses the [search] section JSON content."""
     search_config = {}
     search_section_content = {}
@@ -130,7 +130,7 @@ def _parse_search_section(lines: List[str]) -> Dict[str, Any]:
     return search_config
 
 
-def _load_and_validate_paths(config: configparser.ConfigParser) -> Dict[str, str]:
+def _load_and_validate_paths(config: configparser.ConfigParser) -> dict[str, str]:
     """
     Loads, validates, and creates all necessary media paths from the configuration.
 
@@ -161,7 +161,7 @@ def _load_and_validate_paths(config: configparser.ConfigParser) -> Dict[str, str
     )
 
     # 3. Assemble the final paths dictionary. All values are guaranteed to be strings.
-    paths: Dict[str, str] = {
+    paths: dict[str, str] = {
         "default": default_path,
         "movies": movies_path,
         "tv_shows": tv_shows_path,
@@ -177,7 +177,7 @@ def _load_and_validate_paths(config: configparser.ConfigParser) -> Dict[str, str
     return paths
 
 
-def _load_plex_config(config: configparser.ConfigParser) -> Dict[str, str]:
+def _load_plex_config(config: configparser.ConfigParser) -> dict[str, str]:
     """Loads the Plex configuration if it exists and is valid."""
     plex_config = {}
     if config.has_section("plex"):

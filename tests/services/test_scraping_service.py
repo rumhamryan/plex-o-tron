@@ -11,6 +11,7 @@ from telegram_bot.services.scraping_service import (
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
+
 class DummyResponse:
     def __init__(self, text="", json_data=None):
         self.text = text
@@ -139,7 +140,7 @@ async def test_scrape_1337x_parses_results(mocker):
         "Sample Movie 2023",
         "movie",
         "https://1337x.to/search/{query}/1/",
-        context, # Pass the mock object here
+        context,  # Pass the mock object here
         base_query_for_filter="Sample Movie",
     )
 
@@ -156,22 +157,22 @@ async def test_scrape_1337x_no_results(mocker):
 
     context = Mock()
     context.bot_data = {
-            "SEARCH_CONFIG": {
-                "preferences": {
-                    "movies": {
-                        "codecs": {},
-                        "resolutions": {},
-                        "uploaders": {},
-                    }
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {},
+                    "resolutions": {},
+                    "uploaders": {},
                 }
             }
         }
+    }
 
     results = await scrape_1337x(
         "Sample",
         "movie",
         "https://1337x.to/search/{query}/1/",
-        context, # Pass the mock object here
+        context,  # Pass the mock object here
         base_query_for_filter="Sample Movie",
     )
 
@@ -214,22 +215,22 @@ async def test_scrape_yts_parses_results(mocker):
 
     context = Mock()
     context.bot_data = {
-            "SEARCH_CONFIG": {
-                "preferences": {
-                    "movies": {
-                        "codecs": {"x264": 5},
-                        "resolutions": {"1080p": 3},
-                        "uploaders": {"YTS": 2},
-                    }
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x264": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"YTS": 2},
                 }
             }
         }
+    }
 
     results = await scrape_yts(
         "Test Movie",
         "movie",
         "https://yts.mx/browse-movies/{query}",
-        context, # Pass the mock object here
+        context,  # Pass the mock object here
         year="2023",
         resolution="1080p",
     )

@@ -1,11 +1,12 @@
 import sys
 from pathlib import Path
 import pytest
-from unittest.mock import Mock 
+from unittest.mock import Mock
 from plexapi.exceptions import Unauthorized
 from telegram_bot.services.plex_service import get_plex_server_status
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
 
 @pytest.mark.asyncio
 async def test_get_plex_server_status_connected(mocker):
