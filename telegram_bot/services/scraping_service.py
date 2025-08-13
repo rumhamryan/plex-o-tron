@@ -142,7 +142,8 @@ async def fetch_season_episode_count_from_wikipedia(
         return None
 
     header_cells = [
-        th.get_text(strip=True).lower() for th in overview_table.find("tr").find_all("th")
+        th.get_text(strip=True).lower()
+        for th in overview_table.find("tr").find_all("th")
     ]
     episodes_col = None
     for idx, text in enumerate(header_cells):

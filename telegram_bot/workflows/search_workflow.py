@@ -223,7 +223,9 @@ async def _handle_tv_episode_reply(chat_id, query, context):
 # --- Scope Selection Logic ---
 
 
-async def _handle_tv_scope_selection(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_tv_scope_selection(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handles user's choice between single episode or entire season."""
     if not isinstance(query.message, Message):
         return
@@ -261,8 +263,10 @@ async def _handle_tv_scope_selection(query: CallbackQuery, context: ContextTypes
             "Verifying season details on Wikipedia...",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        episode_count = await scraping_service.fetch_season_episode_count_from_wikipedia(
-            title, season
+        episode_count = (
+            await scraping_service.fetch_season_episode_count_from_wikipedia(
+                title, season
+            )
         )
         if not episode_count:
             await safe_edit_message(
@@ -303,6 +307,7 @@ async def _handle_tv_scope_selection(query: CallbackQuery, context: ContextTypes
         await _present_season_download_confirmation(
             query.message, context, torrent_links
         )
+
 
 # --- Button Press Handlers ---
 
@@ -536,9 +541,7 @@ async def _present_season_download_confirmation(
     if len(found_torrents) == 1:
         summary = f"Found a season pack for Season {season}."
     else:
-        summary = (
-            f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}."
-        )
+        summary = f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}."
 
     keyboard = [
         [

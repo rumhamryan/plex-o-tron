@@ -73,9 +73,7 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
         "telegram_bot.workflows.search_workflow.safe_edit_message",
         new=AsyncMock(),
     )
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow._send_prompt", new=AsyncMock()
-    )
+    mocker.patch("telegram_bot.workflows.search_workflow._send_prompt", new=AsyncMock())
     orchestrate_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
         new=AsyncMock(return_value=[]),
@@ -225,9 +223,7 @@ async def test_handle_tv_scope_selection_single(
     context.user_data["search_season_number"] = 1
     update = Update(
         update_id=1,
-        callback_query=make_callback_query(
-            "search_tv_scope_single", make_message()
-        ),
+        callback_query=make_callback_query("search_tv_scope_single", make_message()),
     )
     await handle_search_buttons(update, context)
     assert context.user_data["next_action"] == "search_tv_get_episode"
@@ -257,9 +253,7 @@ async def test_handle_tv_scope_selection_season(
     context.user_data["search_season_number"] = 1
     update = Update(
         update_id=1,
-        callback_query=make_callback_query(
-            "search_tv_scope_season", make_message()
-        ),
+        callback_query=make_callback_query("search_tv_scope_season", make_message()),
     )
     await handle_search_buttons(update, context)
     orch_mock.assert_awaited()
@@ -274,8 +268,6 @@ async def test_present_season_download_confirmation(mocker, context, make_messag
     )
     context.user_data["search_season_number"] = 1
     context.user_data["season_episode_count"] = 2
-    await _present_season_download_confirmation(
-        make_message(), context, ["a", "b"]
-    )
+    await _present_season_download_confirmation(make_message(), context, ["a", "b"])
     assert context.user_data["pending_season_download"] == ["a", "b"]
     safe_mock.assert_awaited_once()

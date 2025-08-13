@@ -222,9 +222,7 @@ async def test_add_season_to_queue(
     mocker, make_update, make_callback_query, make_message, context
 ):
     message = make_message(message_id=20)
-    callback = make_callback_query(
-        data="confirm_season_download", message=message
-    )
+    callback = make_callback_query(data="confirm_season_download", message=message)
     update = make_update(callback_query=callback)
     context.user_data["pending_season_download"] = ["magnet1", "magnet2"]
     context.bot_data["active_downloads"] = {}

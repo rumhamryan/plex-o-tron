@@ -484,7 +484,9 @@ async def add_season_to_queue(update, context):
     download_queues = context.bot_data["download_queues"]
     chat_id_str = str(chat_id)
 
-    if chat_id_str in active_downloads and active_downloads[chat_id_str].get("is_paused"):
+    if chat_id_str in active_downloads and active_downloads[chat_id_str].get(
+        "is_paused"
+    ):
         active_data = active_downloads[chat_id_str]
         active_data["requeued"] = True
         if "task" in active_data and not active_data["task"].done():
