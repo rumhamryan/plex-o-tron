@@ -8,6 +8,7 @@ from ..config import logger
 from ..services.auth_service import is_user_authorized
 from ..services.download_manager import (
     add_download_to_queue,
+    add_season_to_queue,
     handle_cancel_request,
     handle_pause_request,
     handle_resume_request,
@@ -42,6 +43,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif action == "confirm_download":
         await add_download_to_queue(update, context)
+    elif action == "confirm_season_download":
+        await add_season_to_queue(update, context)
 
     elif action == "pause_download":
         await handle_pause_request(update, context)

@@ -8,6 +8,7 @@ from telegram_bot.services.download_manager import (
     ProgressReporter,
     download_task_wrapper,
     add_download_to_queue,
+    add_season_to_queue,
     process_queue_for_user,
     handle_pause_request,
     handle_resume_request,
@@ -213,6 +214,38 @@ async def test_add_download_to_queue(
 
     q = context.bot_data["download_queues"][str(message.chat.id)]
     assert len(q) == 1
+    process_mock.assert_awaited_once_with(message.chat.id, context.application)
+
+
+@pytest.mark.asyncio
+async def test_add_season_to_queue(
+    mocker, make_update, make_callback_query, make_message, context
+):
+    message = make_message(message_id=20)
+    callback = make_callback_query(
+        data="confirm_season_download", message=message
+    )
+    update = make_update(callback_query=callback)
+    context.user_data["pending_season_download"] = ["magnet1", "magnet2"]
+    context.bot_data["active_downloads"] = {}
+    context.bot_data["download_queues"] = {}
+    context.bot_data["SAVE_PATHS"] = {"default": "/tmp"}
+    context.application = SimpleNamespace(bot=context.bot, bot_data=context.bot_data)
+
+    mocker.patch("telegram_bot.services.download_manager.save_state")
+    process_mock = mocker.patch(
+        "telegram_bot.services.download_manager.process_queue_for_user",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message",
+        AsyncMock(),
+    )
+
+    await add_season_to_queue(update, context)
+
+    q = context.bot_data["download_queues"][str(message.chat.id)]
+    assert len(q) == 2
     process_mock.assert_awaited_once_with(message.chat.id, context.application)
 
 

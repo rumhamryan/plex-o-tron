@@ -1,6 +1,7 @@
 # telegram_bot/workflows/search_workflow.py
 
 import re
+from typing import Any
 
 from telegram import (
     Update,
@@ -15,7 +16,7 @@ from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 
 from ..config import logger, MAX_TORRENT_SIZE_GB
-from ..services import search_logic, torrent_service
+from ..services import search_logic, torrent_service, scraping_service
 from ..services.media_manager import validate_and_enrich_torrent
 from ..utils import safe_edit_message
 from ..ui.views import send_confirmation_prompt
@@ -82,6 +83,8 @@ async def handle_search_buttons(
         await _handle_start_button(query, context)
     elif action.startswith("search_resolution_"):
         await _handle_resolution_button(query, context)
+    elif action.startswith("search_tv_scope_"):
+        await _handle_tv_scope_selection(query, context)
     elif action.startswith("search_select_year_"):  # <-- NEWLY ADDED BLOCK
         await _handle_year_selection_button(query, context)
     elif action.startswith("search_select_"):
@@ -167,9 +170,29 @@ async def _handle_tv_season_reply(chat_id, query, context):
         return
 
     context.user_data["search_season_number"] = int(query)
-    context.user_data["next_action"] = "search_tv_get_episode"
-    prompt_text = f"Season *{escape_markdown(query, version=2)}* selected\\. Now, please send the episode number\\."
-    await _send_prompt(chat_id, context, prompt_text)
+    prompt_text = (
+        f"Season *{escape_markdown(query, version=2)}* selected\\. "
+        "Do you want a single episode or the entire season?"
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "Single Episode", callback_data="search_tv_scope_single"
+            ),
+            InlineKeyboardButton(
+                "Entire Season", callback_data="search_tv_scope_season"
+            ),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+    ]
+    sent_message = await context.bot.send_message(
+        chat_id,
+        prompt_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    context.user_data["prompt_message_id"] = sent_message.message_id
+    context.user_data["next_action"] = "search_tv_scope"
 
 
 async def _handle_tv_episode_reply(chat_id, query, context):
@@ -196,6 +219,90 @@ async def _handle_tv_episode_reply(chat_id, query, context):
     results = await search_logic.orchestrate_searches(full_search_term, "tv", context)
     await _present_search_results(status_message, context, results, full_search_term)
 
+
+# --- Scope Selection Logic ---
+
+
+async def _handle_tv_scope_selection(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles user's choice between single episode or entire season."""
+    if not isinstance(query.message, Message):
+        return
+    if context.user_data is None:
+        context.user_data = {}
+
+    title = context.user_data.get("search_query_title")
+    season = context.user_data.get("search_season_number")
+    if not title or season is None:
+        await safe_edit_message(
+            query.message,
+            "❌ Search context has expired. Please start over.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    if query.data == "search_tv_scope_single":
+        context.user_data["next_action"] = "search_tv_get_episode"
+        await safe_edit_message(
+            query.message,
+            text=f"Season *{escape_markdown(str(season), version=2)}* selected.",
+            reply_markup=None,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        await _send_prompt(
+            query.message.chat_id,
+            context,
+            f"Please send the episode number for Season {escape_markdown(str(season), version=2)}.",
+        )
+        return
+
+    if query.data == "search_tv_scope_season":
+        await safe_edit_message(
+            query.message,
+            "Verifying season details on Wikipedia...",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        episode_count = await scraping_service.fetch_season_episode_count_from_wikipedia(
+            title, season
+        )
+        if not episode_count:
+            await safe_edit_message(
+                query.message,
+                "❌ Could not verify episode count. Operation cancelled.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+
+        context.user_data["season_episode_count"] = episode_count
+        season_queries = [f"{title} S{season:02d}", f"{title} Season {season}"]
+        found_results: list[dict[str, Any]] = []
+        for q in season_queries:
+            res = await search_logic.orchestrate_searches(q, "tv", context)
+            if res:
+                found_results.extend(res)
+            if len(found_results) >= 3:
+                break
+
+        torrent_links: list[str] = []
+        if len(found_results) >= 3:
+            torrent_links = [
+                r.get("page_url") for r in found_results[:1] if r.get("page_url")
+            ]
+        else:
+            for ep in range(1, episode_count + 1):
+                search_term = f"{title} S{season:02d}E{ep:02d}"
+                ep_results = await search_logic.orchestrate_searches(
+                    search_term, "tv", context
+                )
+                if not ep_results:
+                    continue
+                best = ep_results[0]
+                link = best.get("page_url")
+                if link:
+                    torrent_links.append(link)
+
+        await _present_season_download_confirmation(
+            query.message, context, torrent_links
+        )
 
 # --- Button Press Handlers ---
 
@@ -409,6 +516,46 @@ async def _prompt_for_year_selection(
     )
 
 
+async def _present_season_download_confirmation(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, found_torrents: list[str]
+) -> None:
+    """Summarizes season search results and asks for confirmation."""
+    if context.user_data is None:
+        context.user_data = {}
+    season = context.user_data.get("search_season_number")
+    total_eps = context.user_data.get("season_episode_count")
+
+    if not found_torrents:
+        await safe_edit_message(
+            message,
+            text="❌ No torrents found for this season.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    if len(found_torrents) == 1:
+        summary = f"Found a season pack for Season {season}."
+    else:
+        summary = (
+            f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}."
+        )
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Confirm", callback_data="confirm_season_download"),
+            InlineKeyboardButton("Cancel", callback_data="cancel_operation"),
+        ]
+    ]
+
+    await safe_edit_message(
+        message,
+        text=summary,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    context.user_data["pending_season_download"] = found_torrents
+
+
 async def _prompt_for_resolution(
     target: Message | int, context: ContextTypes.DEFAULT_TYPE, full_title: str
 ) -> None:
@@ -538,6 +685,7 @@ def _clear_search_context(context):
         "search_final_title",
         "search_media_type",
         "search_season_number",
+        "season_episode_count",
     ]
     for key in keys_to_clear:
         context.user_data.pop(key, None)
