@@ -75,9 +75,9 @@ Configuration is handled in the config.ini file.
 ```ini
 [telegram]
 # Get your bot token from @BotFather on Telegram
-token = PLACE_TOKEN_HERE
+token = TELEGRAM_BOT_TOKEN
 # Get your numeric User ID from @userinfobot on Telegram
-allowed_user_ids = 123456789
+allowed_user_ids = USER_ID_1, USER_ID_2, ...
 
 [plex]
 # (Optional) Your Plex server URL and API token
