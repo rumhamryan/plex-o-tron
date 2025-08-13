@@ -71,7 +71,7 @@ def test_load_state_json_error(mocker):
 async def test_post_init_resumes_persisted_download(mocker):
     # Instead of SimpleNamespace, create a Mock instance
     application = Mock()
-    application.bot_data = {} # Attach the required bot_data attribute
+    application.bot_data = {}  # Attach the required bot_data attribute
 
     mocker.patch(
         "telegram_bot.state.load_state",
@@ -84,7 +84,7 @@ async def test_post_init_resumes_persisted_download(mocker):
     )
     create_task_mock = mocker.patch("telegram_bot.state.asyncio.create_task")
 
-    await post_init(application) # This will no longer show an error
+    await post_init(application)  # This will no longer show an error
 
     download_mock.assert_called_once()
     passed_data, passed_app = download_mock.call_args[0]
@@ -108,7 +108,7 @@ async def test_post_shutdown_cancels_tasks_and_saves_state(mocker):
     mocker.patch("telegram_bot.state.asyncio.gather", new=AsyncMock())
     save_mock = mocker.patch("telegram_bot.state.save_state")
 
-    await post_shutdown(application) # This will no longer show an error
+    await post_shutdown(application)  # This will no longer show an error
 
     task.cancel.assert_called_once()
     save_mock.assert_called_once()

@@ -25,7 +25,7 @@ async def send_confirmation_prompt(
     progress_message: Message,
     context: ContextTypes.DEFAULT_TYPE,
     ti: lt.torrent_info,  # type: ignore
-    parsed_info: Dict[str, Any],
+    parsed_info: dict[str, Any],
 ) -> None:
     """
     Formats and sends the final confirmation message with 'Confirm' and 'Cancel' buttons.
