@@ -3,7 +3,7 @@
 import asyncio
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 from collections.abc import Callable, Coroutine
 
 import libtorrent as lt

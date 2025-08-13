@@ -3,7 +3,7 @@
 import asyncio
 import os
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 from collections.abc import Callable, Coroutine
 
 from telegram.ext import ContextTypes

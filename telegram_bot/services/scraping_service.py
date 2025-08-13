@@ -4,7 +4,7 @@ import asyncio
 from collections import Counter
 import re
 import urllib.parse
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import httpx
 import wikipedia

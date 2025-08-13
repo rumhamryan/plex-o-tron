@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-from typing import List, Optional, Union, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from plexapi.server import PlexServer
 from plexapi.exceptions import Unauthorized

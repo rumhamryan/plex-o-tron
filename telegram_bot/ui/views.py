@@ -1,6 +1,6 @@
 # telegram_bot/ui/views.py
 
-from typing import Any, Dict
+from typing import Any
 
 import libtorrent as lt
 from telegram import (

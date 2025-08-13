@@ -3,7 +3,7 @@
 import asyncio
 import os
 import shutil
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import libtorrent as lt
 from plexapi.exceptions import NotFound, Unauthorized

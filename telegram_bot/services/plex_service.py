@@ -3,7 +3,6 @@
 import asyncio
 import os
 import subprocess
-from typing import Tuple
 
 from plexapi.exceptions import Unauthorized
 from plexapi.server import PlexServer

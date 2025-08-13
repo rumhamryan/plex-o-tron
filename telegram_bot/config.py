@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 # --- Constants ---
 MAX_TORRENT_SIZE_GB = 10

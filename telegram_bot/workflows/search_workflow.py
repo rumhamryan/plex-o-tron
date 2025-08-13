@@ -1,7 +1,6 @@
 # telegram_bot/workflows/search_workflow.py
 
 import re
-from typing import Dict, List, Union
 
 from telegram import (
     Update,

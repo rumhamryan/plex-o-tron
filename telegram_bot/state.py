@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-from typing import Dict, Tuple
 
 from telegram.ext import Application
 

@@ -3,7 +3,7 @@
 import math
 import os
 import re
-from typing import Optional, Union, Dict, Any
+from typing import Any
 
 from telegram import Message, Bot
 from telegram.error import BadRequest
@@ -31,9 +31,7 @@ def extract_first_int(text: str) -> int | None:
     return int(match.group(0)) if match else None
 
 
-async def safe_edit_message(
-    bot_or_message: Bot | Message, text: str, **kwargs
-) -> None:
+async def safe_edit_message(bot_or_message: Bot | Message, text: str, **kwargs) -> None:
     """
     Safely edits a message, ignoring 'message is not modified' errors.
     This function can be called in two ways:
