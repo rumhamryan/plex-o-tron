@@ -98,7 +98,7 @@ With your virtual environment active and configuration complete, start the bot:
 python __main__.py
 ```
 
-To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment `(source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.
+To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment (`source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.
 
 ### Bot Commands
 
