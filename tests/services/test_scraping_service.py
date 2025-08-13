@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import wikipedia
 from telegram_bot.services.scraping_service import (
     fetch_episode_title_from_wikipedia,
+    fetch_season_episode_count_from_wikipedia,
     scrape_1337x,
     scrape_yts,
 )
@@ -69,6 +70,14 @@ NO_EPISODE_HTML = """
 </table>
 """
 
+SEASON_OVERVIEW_HTML = """
+<table class="wikitable">
+<tr><th>Season</th><th>Episodes</th></tr>
+<tr><td>1</td><td>10</td></tr>
+<tr><td>2</td><td>8</td></tr>
+</table>
+"""
+
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_dedicated_page(mocker):
@@ -105,6 +114,16 @@ async def test_fetch_episode_title_not_found(mocker):
 
     title, _ = await fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_season_episode_count(mocker):
+    mock_page = mocker.Mock()
+    mock_page.html.return_value = SEASON_OVERVIEW_HTML
+    mocker.patch("wikipedia.page", return_value=mock_page)
+
+    count = await fetch_season_episode_count_from_wikipedia("Show", 2)
+    assert count == 8
 
 
 @pytest.mark.asyncio

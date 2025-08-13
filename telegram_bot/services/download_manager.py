@@ -467,6 +467,60 @@ async def add_download_to_queue(update, context):
     await process_queue_for_user(chat_id, context.application)
 
 
+async def add_season_to_queue(update, context):
+    """Adds an entire season's torrents to the queue."""
+    query = update.callback_query
+    chat_id = query.message.chat_id
+
+    pending_list = context.user_data.pop("pending_season_download", [])
+    if not pending_list:
+        await safe_edit_message(
+            query.message,
+            text="This action has expired. Please start over.",
+        )
+        return
+
+    active_downloads = context.bot_data["active_downloads"]
+    download_queues = context.bot_data["download_queues"]
+    chat_id_str = str(chat_id)
+
+    if chat_id_str in active_downloads and active_downloads[chat_id_str].get(
+        "is_paused"
+    ):
+        active_data = active_downloads[chat_id_str]
+        active_data["requeued"] = True
+        if "task" in active_data and not active_data["task"].done():
+            active_data["task"].cancel()
+
+    save_paths = context.bot_data["SAVE_PATHS"]
+    if chat_id_str not in download_queues:
+        download_queues[chat_id_str] = []
+
+    for link in pending_list:
+        source_dict = {
+            "value": link,
+            "type": "magnet" if link.startswith("magnet:") else "url",
+            "parsed_info": {},
+            "original_message_id": query.message.message_id,
+        }
+        download_data = {
+            "source_dict": source_dict,
+            "chat_id": chat_id,
+            "message_id": query.message.message_id,
+            "save_path": save_paths["default"],
+        }
+        download_queues[chat_id_str].append(download_data)
+
+    added = len(pending_list)
+    await safe_edit_message(
+        query.message,
+        text=f"✅ Success! Added {added} episodes to your download queue.",
+        reply_markup=None,
+    )
+    save_state(PERSISTENCE_FILE, active_downloads, download_queues)
+    await process_queue_for_user(chat_id, context.application)
+
+
 async def handle_pause_request(update, context):
     """Handles a user's request to pause a download."""
     query = update.callback_query

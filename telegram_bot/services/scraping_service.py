@@ -98,6 +98,73 @@ async def fetch_episode_title_from_wikipedia(
     return episode_title, corrected_show_title
 
 
+async def fetch_season_episode_count_from_wikipedia(
+    show_title: str, season: int
+) -> int | None:
+    """Fetches the number of episodes for a given season from Wikipedia."""
+    html_to_scrape = None
+    try:
+        page = await asyncio.to_thread(
+            wikipedia.page,
+            f"List of {show_title} episodes",
+            auto_suggest=False,
+            redirect=True,
+        )
+        html_to_scrape = await asyncio.to_thread(page.html)
+    except wikipedia.exceptions.PageError:
+        try:
+            page = await asyncio.to_thread(
+                wikipedia.page, show_title, auto_suggest=True, redirect=True
+            )
+            html_to_scrape = await asyncio.to_thread(page.html)
+        except Exception as e:
+            logger.error(f"[WIKI] Failed to fetch page for '{show_title}': {e}")
+            return None
+    except Exception as e:
+        logger.error(f"[WIKI] Unexpected error when fetching page: {e}")
+        return None
+
+    if not html_to_scrape:
+        return None
+
+    soup = BeautifulSoup(html_to_scrape, "lxml")
+    overview_table = None
+    for table in soup.find_all("table", class_="wikitable"):
+        header = table.find("tr")
+        if not isinstance(header, Tag):
+            continue
+        headers = [th.get_text(strip=True).lower() for th in header.find_all("th")]
+        if headers and "season" in headers[0] and any("episode" in h for h in headers):
+            overview_table = table
+            break
+
+    if not isinstance(overview_table, Tag):
+        return None
+
+    header_cells = [
+        th.get_text(strip=True).lower()
+        for th in overview_table.find("tr").find_all("th")
+    ]
+    episodes_col = None
+    for idx, text in enumerate(header_cells):
+        if "episode" in text:
+            episodes_col = idx
+            break
+    if episodes_col is None:
+        return None
+
+    for row in overview_table.find_all("tr")[1:]:
+        cells = row.find_all(["td", "th"])
+        if not cells:
+            continue
+        season_num = extract_first_int(cells[0].get_text(strip=True))
+        if season_num == season:
+            ep_text = cells[episodes_col].get_text(strip=True)
+            count = extract_first_int(ep_text)
+            return count
+    return None
+
+
 async def _parse_dedicated_episode_page(
     soup: BeautifulSoup, season: int, episode: int
 ) -> str | None:
