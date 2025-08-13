@@ -75,9 +75,9 @@ Configuration is handled in the config.ini file.
 ```ini
 [telegram]
 # Get your bot token from @BotFather on Telegram
-token = PLACE_TOKEN_HERE
+token = TELEGRAM_BOT_TOKEN
 # Get your numeric User ID from @userinfobot on Telegram
-allowed_user_ids = 123456789
+allowed_user_ids = USER_ID_1, USER_ID_2, ...
 
 [plex]
 # (Optional) Your Plex server URL and API token
@@ -94,11 +94,11 @@ tv_shows_save_path = /mnt/tv
 ### Step 5: Run the Bot
 
 With your virtual environment active and configuration complete, start the bot:
-```bash  
+```bash
 python __main__.py
 ```
 
-To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment `(source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.
+To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment (`source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.
 
 ### Bot Commands
 

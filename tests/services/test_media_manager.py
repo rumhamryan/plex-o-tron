@@ -86,14 +86,12 @@ async def test_handle_successful_download(mocker):
     )
 
     makedirs_mock.assert_called_once_with("/final", exist_ok=True)
-    
+
     # FIX: Construct the expected paths using os.path.join
     expected_source_path = os.path.join("/downloads", "Movie.mkv")
     expected_dest_path = os.path.join("/final", "Sample (2023).mkv")
-    
-    move_mock.assert_called_once_with(
-        expected_source_path, expected_dest_path
-    )
-    
+
+    move_mock.assert_called_once_with(expected_source_path, expected_dest_path)
+
     scan_mock.assert_called_once()
     assert "Success" in result

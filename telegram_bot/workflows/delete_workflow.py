@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-from typing import List, Optional, Union, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from plexapi.server import PlexServer
 from plexapi.exceptions import Unauthorized
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 def _find_media_in_plex_by_path(
     plex: PlexServer, path_to_delete: str
-) -> Optional[Union[Movie, Episode, Show, Season]]:
+) -> Movie | Episode | Show | Season | None:
     """
     Scans all Plex libraries to find the media item that corresponds to a given file or directory path.
 
@@ -75,7 +75,7 @@ def _find_media_in_plex_by_path(
 
 async def _delete_item_from_plex(
     path_to_delete: str, plex_config: dict, context: ContextTypes.DEFAULT_TYPE
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Connects to Plex, finds a media item by its path, and deletes it via the API.
     Returns (success_boolean, status_message).
@@ -134,7 +134,7 @@ async def handle_delete_workflow(
     chat_id = update.message.chat_id
     text = update.message.text.strip()
     next_action = context.user_data.get("next_action", "")
-    status_message: Optional[Message] = None
+    status_message: Message | None = None
 
     # Clean up the user's message and the bot's last prompt
     prompt_message_id = context.user_data.pop("prompt_message_id", None)
@@ -314,7 +314,7 @@ async def handle_delete_buttons(
 
 
 async def _present_delete_results(
-    results: Union[str, List[str], None],
+    results: str | list[str] | None,
     status_message: Message,
     media_name: str,
     query_text: str,

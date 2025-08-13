@@ -1,7 +1,6 @@
 # telegram_bot/workflows/search_workflow.py
 
 import re
-from typing import Dict, List, Union
 
 from telegram import (
     Update,
@@ -249,8 +248,9 @@ async def _handle_resolution_button(query, context):
     results = await search_logic.orchestrate_searches(
         search_title, "movie", context, year=year, resolution=resolution
     )
+    filtered_results = _filter_results_by_resolution(results, resolution)
     await _present_search_results(
-        query.message, context, results, f"{final_title} [{resolution}]"
+        query.message, context, filtered_results, f"{final_title} [{resolution}]"
     )
 
 
@@ -377,7 +377,7 @@ async def _send_prompt(chat_id, context, text):
 
 
 async def _prompt_for_year_selection(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: List[str]
+    message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: list[str]
 ) -> None:
     """
     Edits a message to ask the user to select a year from a list of options.
@@ -410,7 +410,7 @@ async def _prompt_for_year_selection(
 
 
 async def _prompt_for_resolution(
-    target: Union[Message, int], context: ContextTypes.DEFAULT_TYPE, full_title: str
+    target: Message | int, context: ContextTypes.DEFAULT_TYPE, full_title: str
 ) -> None:
     """
     Asks the user to select a resolution, either by sending a new message
@@ -463,6 +463,15 @@ async def _prompt_for_resolution(
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         context.user_data["prompt_message_id"] = prompt_message.message_id
+
+
+def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[dict]:
+    """Filters search results to only include entries matching the desired resolution."""
+    res = resolution.lower()
+    patterns = ["2160p", "4k"] if res == "2160p" else ["1080p"]
+    return [
+        r for r in results if any(p in r.get("title", "").lower() for p in patterns)
+    ]
 
 
 async def _present_search_results(message, context, results, query_str):
@@ -535,7 +544,7 @@ def _clear_search_context(context):
 
 
 async def _process_preliminary_results(
-    status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: List[Dict]
+    status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: list[dict]
 ) -> None:
     """
     Analyzes preliminary search results to decide the next step in the movie workflow.

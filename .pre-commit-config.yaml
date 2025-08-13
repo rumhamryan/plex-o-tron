@@ -1,34 +1,30 @@
+default_stages: [pre-commit]
+
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0 # Use the latest version
-    hooks:
-    -   id: check-yaml
-    -   id: end-of-file-fixer
-    -   id: trailing-whitespace
-
--   repo: https://github.com/psf/black
-    rev: 23.3.0 # Use the latest version
-    hooks:
-    -   id: black
-
--   repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.278 # Use the latest version
-    hooks:
-    -   id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-
--   repo: local
-    hooks:
-    -   id: pytest
-        name: pytest
-        entry: pytest
-        language: system
-        types: [python]
-        pass_filenames: false
-        stages: [pre-push]
-
-- repo: https://github.com/asottile/pyupgrade
-  rev: v3.17.0
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.4.0
   hooks:
-    - id: pyupgrade
-      args: [--py312-plus]
+    - id: check-yaml
+    - id: end-of-file-fixer
+    - id: trailing-whitespace
+
+- repo: https://github.com/psf/black
+  rev: 23.3.0
+  hooks:
+    - id: black
+
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.6.8
+  hooks:
+    - id: ruff
+      args: [--fix, --exit-non-zero-on-fix]
+
+- repo: local
+  hooks:
+    - id: pytest
+      name: pytest
+      entry: pytest
+      language: system
+      types: [python]
+      pass_filenames: false
+      stages: [pre-push]
