@@ -249,8 +249,9 @@ async def _handle_resolution_button(query, context):
     results = await search_logic.orchestrate_searches(
         search_title, "movie", context, year=year, resolution=resolution
     )
+    filtered_results = _filter_results_by_resolution(results, resolution)
     await _present_search_results(
-        query.message, context, results, f"{final_title} [{resolution}]"
+        query.message, context, filtered_results, f"{final_title} [{resolution}]"
     )
 
 
@@ -463,6 +464,15 @@ async def _prompt_for_resolution(
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         context.user_data["prompt_message_id"] = prompt_message.message_id
+
+
+def _filter_results_by_resolution(results: List[Dict], resolution: str) -> List[Dict]:
+    """Filters search results to only include entries matching the desired resolution."""
+    res = resolution.lower()
+    patterns = ["2160p", "4k"] if res == "2160p" else ["1080p"]
+    return [
+        r for r in results if any(p in r.get("title", "").lower() for p in patterns)
+    ]
 
 
 async def _present_search_results(message, context, results, query_str):

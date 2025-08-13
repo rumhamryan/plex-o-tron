@@ -130,3 +130,49 @@ async def test_search_cancel_clears_context(
     _clear_search_context(context)
     assert "active_workflow" not in context.user_data
     assert "next_action" not in context.user_data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "callback_data,expected_titles",
+    [
+        ("search_resolution_4k", ["Movie 2160p", "Movie 4K"]),
+        ("search_resolution_1080p", ["Movie 1080p"]),
+    ],
+)
+async def test_resolution_filters_results(
+    mocker, context, make_callback_query, make_message, callback_data, expected_titles
+):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    sample_results = [
+        {"title": "Movie 1080p"},
+        {"title": "Movie 2160p"},
+        {"title": "Movie 4K"},
+    ]
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
+        new=AsyncMock(return_value=sample_results),
+    )
+    present_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._present_search_results",
+        new=AsyncMock(),
+    )
+
+    context.user_data["search_final_title"] = "Movie (2021)"
+    context.user_data["search_media_type"] = "movie"
+
+    message = make_message()
+    await handle_search_buttons(
+        Update(
+            update_id=1,
+            callback_query=make_callback_query(callback_data, message),
+        ),
+        context,
+    )
+
+    assert present_mock.await_count == 1
+    filtered = present_mock.await_args.args[2]
+    assert [r["title"] for r in filtered] == expected_titles
