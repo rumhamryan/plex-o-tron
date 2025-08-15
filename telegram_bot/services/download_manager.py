@@ -6,6 +6,7 @@ import time
 from typing import Any
 from collections.abc import Callable, Coroutine
 
+import httpx
 import libtorrent as lt
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application
@@ -136,26 +137,57 @@ async def download_with_progress(
     download_data: dict,
 ) -> tuple[bool, lt.torrent_info | None]:  # type: ignore
     """
-    Core libtorrent download logic.
+    Core libtorrent download logic. Handles magnet links, torrent URLs, and local files.
     Returns (success_status, torrent_info_object).
     """
     ses = bot_data["TORRENT_SESSION"]
-    params = {
-        "save_path": save_path,
-        "storage_mode": lt.storage_mode_t.storage_mode_sparse,  # type: ignore
-    }
+    params: dict[str, Any] = {}
 
-    if source.startswith("magnet:"):
-        params = lt.parse_magnet_uri(source)  # type: ignore
-        params.save_path = save_path
-        # You can add other params attributes here if needed
-    else:
-        params = {
-            "save_path": save_path,
-            "storage_mode": lt.storage_mode_t.storage_mode_sparse,  # type: ignore
-            "ti": lt.torrent_info(source),  # type: ignore
-        }
+    try:
+        # --- LOGIC TO HANDLE DIFFERENT SOURCE TYPES ---
+        if source.startswith("magnet:"):
+            logger.info("Source is a magnet link.")
+            # libtorrent handles magnet URI parsing directly.
+            params = lt.parse_magnet_uri(source)  # type: ignore
+            params.save_path = save_path  # type: ignore
+            params.storage_mode = lt.storage_mode_t.storage_mode_sparse  # type: ignore
 
+        elif source.startswith(("http://", "https://")):
+            logger.info(f"Source is a URL. Downloading .torrent file from: {source}")
+            # Source is a URL, so we must download the .torrent content first.
+            async with httpx.AsyncClient() as client:
+                response = await client.get(source, follow_redirects=True, timeout=30)
+                response.raise_for_status()
+            
+            # Create the torrent_info object from the downloaded content.
+            ti = lt.torrent_info(response.content)  # type: ignore
+            params = {
+                "save_path": save_path,
+                "storage_mode": lt.storage_mode_t.storage_mode_sparse,  # type: ignore
+                "ti": ti,
+            }
+
+        else:
+            logger.info(f"Source is a local file path: {source}")
+            # Source is assumed to be a local file path.
+            params = {
+                "save_path": save_path,
+                "storage_mode": lt.storage_mode_t.storage_mode_sparse,  # type: ignore
+                "ti": lt.torrent_info(source),  # type: ignore
+            }
+
+    except httpx.RequestError as e:
+        logger.error(f"Failed to download .torrent file from URL '{source}': {e}")
+        return False, None
+    except RuntimeError as e:
+        # This catches errors from lt.torrent_info(), e.g., "not a valid torrent".
+        logger.error(f"Libtorrent failed to parse source '{source}': {e}")
+        return False, None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while preparing download params for '{source}': {e}", exc_info=True)
+        return False, None
+
+    # --- ADD TORRENT TO SESSION AND START DOWNLOAD LOOP ---
     handle = ses.add_torrent(params)
     download_data["handle"] = handle  # Store handle for pausing/resuming
 
@@ -230,7 +262,7 @@ async def download_task_wrapper(download_data: dict, application: Application):
             )
         else:
             if not download_data.get("requeued"):
-                message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager."
+                message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager\\."
 
     except asyncio.CancelledError:
         if download_data.get("requeued"):
@@ -404,7 +436,8 @@ async def _start_download_task(download_data: dict, application: Application):
         application.bot,
         chat_id=download_data["chat_id"],
         message_id=download_data["message_id"],
-        text="▶️ Your download is now starting...",
+        text="▶️ Your download is now starting\\.\\.\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
         reply_markup=reply_markup,
     )
 
@@ -417,7 +450,8 @@ async def add_download_to_queue(update, context):
     pending_torrent = context.user_data.pop("pending_torrent", None)
     if not pending_torrent:
         await safe_edit_message(
-            query.message, text="This action has expired. Please send the link again."
+            query.message, text="This action has expired\\. Please send the link again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
         )
         return
 
@@ -458,11 +492,11 @@ async def add_download_to_queue(update, context):
         chat_id_str
     ].get("requeued")
     if is_truly_active:
-        message_text = f"✅ Download queued. You are position #{position} in line."
+        message_text = f"✅ Download queued\\. You are position #{position} in line\\."
     else:
-        message_text = "✅ Your download is next in line and will begin shortly."
+        message_text = "✅ Your download is next in line and will begin shortly\\."
 
-    await safe_edit_message(query.message, text=message_text, reply_markup=None)
+    await safe_edit_message(query.message, text=message_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
     await process_queue_for_user(chat_id, context.application)
 
@@ -476,7 +510,8 @@ async def add_season_to_queue(update, context):
     if not pending_list:
         await safe_edit_message(
             query.message,
-            text="This action has expired. Please start over.",
+            text="This action has expired\\. Please start over\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
         )
         return
 
@@ -514,7 +549,8 @@ async def add_season_to_queue(update, context):
     added = len(pending_list)
     await safe_edit_message(
         query.message,
-        text=f"✅ Success! Added {added} episodes to your download queue.",
+        text=f"✅ Success\\! Added {added} episodes to your download queue\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
         reply_markup=None,
     )
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
@@ -534,7 +570,8 @@ async def handle_pause_request(update, context):
             logger.info(f"Pause request received for download for user {chat_id_str}.")
     else:
         await safe_edit_message(
-            query.message, text="ℹ️ Could not find an active download to pause."
+            query.message, text="ℹ️ Could not find an active download to pause\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
         )
 
 
@@ -552,7 +589,8 @@ async def handle_resume_request(update, context):
     else:
         await safe_edit_message(
             query.message,
-            text="ℹ️ This download is in the queue and will resume automatically.",
+            text="ℹ️ This download is in the queue and will resume automatically\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
         )
 
 
@@ -564,14 +602,15 @@ async def handle_cancel_request(update, context):
 
     if chat_id_str not in active_downloads:
         await safe_edit_message(
-            query.message, text="ℹ️ Could not find an active download to cancel."
+            query.message, text="ℹ️ Could not find an active download to cancel\\.",
+            parse_mode=ParseMode.MARKDOWN_V2
         )
         return
 
     download_data = active_downloads[chat_id_str]
     async with download_data["lock"]:
         if query.data == "cancel_download":
-            message_text = "Are you sure you want to cancel this download?"
+            message_text = "Are you sure you want to cancel this download\\?"
             reply_markup = InlineKeyboardMarkup(
                 [
                     [
@@ -585,7 +624,7 @@ async def handle_cancel_request(update, context):
                 ]
             )
             await safe_edit_message(
-                query.message, text=message_text, reply_markup=reply_markup
+                query.message, text=message_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup
             )
 
         elif query.data == "cancel_confirm":

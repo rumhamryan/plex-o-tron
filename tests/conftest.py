@@ -2,10 +2,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from datetime import datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from telegram import Update, Message, Chat, User, CallbackQuery
+from telegram import Update, Message, Chat, User, CallbackQuery, Bot
 
 # Ensure root path is available for imports
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -31,7 +31,9 @@ def make_message(user, chat):
             from_user=user,
             text=text,
         )
-        bot = SimpleNamespace(delete_message=AsyncMock(), edit_message_text=AsyncMock())
+        bot = Mock(spec=Bot)
+        bot.delete_message = AsyncMock()
+        bot.edit_message_text = AsyncMock()
         msg.set_bot(bot)
         return msg
 

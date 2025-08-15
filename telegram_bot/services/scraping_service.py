@@ -104,6 +104,7 @@ async def fetch_season_episode_count_from_wikipedia(
     """Fetches the number of episodes for a given season from Wikipedia."""
     html_to_scrape = None
     try:
+        # Attempt to get the dedicated "List of..." page first
         page = await asyncio.to_thread(
             wikipedia.page,
             f"List of {show_title} episodes",
@@ -112,6 +113,7 @@ async def fetch_season_episode_count_from_wikipedia(
         )
         html_to_scrape = await asyncio.to_thread(page.html)
     except wikipedia.exceptions.PageError:
+        # Fallback to the main show page if the list page doesn't exist
         try:
             page = await asyncio.to_thread(
                 wikipedia.page, show_title, auto_suggest=True, redirect=True
@@ -129,11 +131,18 @@ async def fetch_season_episode_count_from_wikipedia(
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
     overview_table = None
+
+    # Find the "Series overview" table
     for table in soup.find_all("table", class_="wikitable"):
-        header = table.find("tr")
-        if not isinstance(header, Tag):
+        if not isinstance(table, Tag):
             continue
-        headers = [th.get_text(strip=True).lower() for th in header.find_all("th")]
+
+        header_row = table.find("tr")
+        if not isinstance(header_row, Tag):
+            continue
+
+        headers = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
+        # Check if this looks like the right table
         if headers and "season" in headers[0] and any("episode" in h for h in headers):
             overview_table = table
             break
@@ -141,27 +150,38 @@ async def fetch_season_episode_count_from_wikipedia(
     if not isinstance(overview_table, Tag):
         return None
 
-    header_cells = [
-        th.get_text(strip=True).lower()
-        for th in overview_table.find("tr").find_all("th")
-    ]
-    episodes_col = None
-    for idx, text in enumerate(header_cells):
-        if "episode" in text:
-            episodes_col = idx
-            break
-    if episodes_col is None:
+    # Find the column index for "Episodes"
+    header_row = overview_table.find("tr")
+    if not isinstance(header_row, Tag):
         return None
 
+    header_cells = [
+        th.get_text(strip=True).lower() for th in header_row.find_all("th")
+    ]
+    episodes_col_index = -1
+    for idx, text in enumerate(header_cells):
+        if "episode" in text:
+            episodes_col_index = idx
+            break
+
+    if episodes_col_index == -1:
+        return None
+
+    # Find the specific season in the table
     for row in overview_table.find_all("tr")[1:]:
-        cells = row.find_all(["td", "th"])
-        if not cells:
+        if not isinstance(row, Tag):
             continue
+
+        cells = row.find_all(["td", "th"])
+        if len(cells) <= episodes_col_index: # Ensure the episode column exists in this row
+            continue
+
         season_num = extract_first_int(cells[0].get_text(strip=True))
         if season_num == season:
-            ep_text = cells[episodes_col].get_text(strip=True)
+            ep_text = cells[episodes_col_index].get_text(strip=True)
             count = extract_first_int(ep_text)
-            return count
+            return count # Return the extracted episode count
+
     return None
 
 
@@ -316,14 +336,10 @@ async def scrape_1337x(
     **kwargs,
 ) -> list[dict[str, Any]]:
     """
-    Scrapes 1337x.to for torrents using a more robust two-stage filtering process.
-
-    1.  It scrapes all results and parses their "base media name".
-    2.  It identifies the most common base name to determine the correct media.
-    3.  It then gathers and scores all torrents belonging to that media.
+    Scrapes 1337x.to for torrents. It now correctly performs all network
+    requests within a single client session to prevent closure errors.
     """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
-    # FIX: Ensure consistent key lookup for preferences
     prefs_key = "movies" if "movie" in media_type else "tv"
     preferences = search_config.get("preferences", {}).get(prefs_key, {})
 
@@ -335,133 +351,115 @@ async def scrape_1337x(
 
     formatted_query = urllib.parse.quote_plus(query)
     search_url = search_url_template.replace("{query}", formatted_query)
-    logger.info(f"[SCRAPER] 1337x Stage 1: Scraping candidates from {search_url}")
-
     headers = {
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
     }
+    
+    results = []
+    best_match_base_name = "N/A"
 
     try:
+        # CORRECTED: The 'async with' block now wraps ALL network activity.
         async with httpx.AsyncClient(
             headers=headers, timeout=30, follow_redirects=True
         ) as client:
+            
+            # --- Initial Search Request ---
+            logger.info(f"[SCRAPER] 1337x Stage 1: Scraping candidates from {search_url}")
             response = await client.get(search_url)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
 
-        # --- Stage 1: Scrape candidates and their parsed base names ---
-        candidates = []
-        table_body = soup.find("tbody")
-        if not isinstance(table_body, Tag):
-            return []
+            # --- Stage 1: Scrape candidates ---
+            candidates = []
+            table_body = soup.find("tbody")
+            if not isinstance(table_body, Tag):
+                return []
 
-        for row in table_body.find_all("tr"):
-            if not isinstance(row, Tag) or len(row.find_all("td")) < 2:
-                continue
-
-            name_cell = row.find_all("td")[0]
-            if (
-                not isinstance(name_cell, Tag)
-                or len(links := name_cell.find_all("a")) < 2
-            ):
-                continue
-
-            title = links[1].get_text(strip=True)
-            # Parse the torrent name to get a clean base name
-            parsed_info = parse_torrent_name(title)
-            base_name = parsed_info.get("title")
-
-            if title and base_name:
-                candidates.append(
-                    {
-                        "title": title,
-                        "base_name": base_name,
-                        "row_element": row,
-                        "parsed_info": parsed_info,
-                    }
-                )
-
-        if not candidates:
-            logger.warning("[SCRAPER] 1337x: Found no candidates on page.")
-            return []
-
-        filter_query = base_query_for_filter or query
-        candidates = [
-            c
-            for c in candidates
-            # Use the new, safe 'filter_query' variable here
-            if fuzz.ratio(filter_query.lower(), c["base_name"].lower()) > 90
-        ]
-
-        # Add a check in case the stricter filter removed all candidates.
-        if not candidates:
-            logger.warning(
-                f"[SCRAPER] 1337x: No candidates survived the fuzzy filter for query '{query}'."
-            )
-            return []
-
-        # --- Stage 2: Find the most common base name to identify the correct media ---
-        base_name_counts = Counter(c["base_name"] for c in candidates)
-        if not base_name_counts:
-            return []
-
-        # The most common name is our best match for the media itself
-        best_match_base_name, _ = base_name_counts.most_common(1)[0]
-        logger.info(
-            f"[SCRAPER] 1337x Stage 2: Identified most common media name: '{best_match_base_name}'"
-        )
-
-        # --- Stage 3: Filter and process torrents belonging to the identified media ---
-        results = []
-        base_url = "https://1337x.to"
-        for candidate in candidates:
-            # Process only torrents that match our identified media name
-            if candidate["base_name"] == best_match_base_name:
-                row = candidate["row_element"]
-                cells = row.find_all("td")
-                if len(cells) < 6:
+            for row in table_body.find_all("tr"):
+                if not isinstance(row, Tag) or len(row.find_all("td")) < 2:
                     continue
-
-                name_cell, seeds_cell, size_cell, uploader_cell = (
-                    cells[0],
-                    cells[1],
-                    cells[4],
-                    cells[5],
-                )
-                page_url_relative = name_cell.find_all("a")[1].get("href")
-                if not isinstance(page_url_relative, str):
+                name_cell = row.find_all("td")[0]
+                if not isinstance(name_cell, Tag) or len(links := name_cell.find_all("a")) < 2:
                     continue
-
-                size_str = size_cell.get_text(strip=True)
-                seeds_str = seeds_cell.get_text(strip=True)
-                parsed_size_gb = _parse_size_to_gb(size_str)
-
-                uploader = "Anonymous"
-                if uploader_tag := uploader_cell.find("a"):
-                    uploader = uploader_tag.get_text(strip=True)
-
-                seeders_int = (
-                    int(seeds_str) if seeds_str.isdigit() else 0
-                )  # <--- ADD THIS
-                score = score_torrent_result(
-                    candidate["title"], uploader, preferences, seeders=seeders_int
-                )  # <--- CHANGE THIS
-                if score > 0:
-                    results.append(
+                title = links[1].get_text(strip=True)
+                parsed_info = parse_torrent_name(title)
+                base_name = parsed_info.get("title")
+                if title and base_name:
+                    candidates.append(
                         {
+                            "title": title,
+                            "base_name": base_name,
+                            "row_element": row,
+                            "parsed_info": parsed_info,
+                        }
+                    )
+            
+            if not candidates:
+                logger.warning("[SCRAPER] 1337x: Found no candidates on page.")
+                return []
+
+            # --- Stage 2: Identify best match ---
+            filter_query = base_query_for_filter or query
+            candidates = [c for c in candidates if fuzz.ratio(filter_query.lower(), c["base_name"].lower()) > 90]
+
+            if not candidates:
+                logger.warning(f"[SCRAPER] 1337x: No candidates survived fuzzy filter for query '{query}'.")
+                return []
+            
+            base_name_counts = Counter(c["base_name"] for c in candidates)
+            if not base_name_counts:
+                return []
+                
+            best_match_base_name, _ = base_name_counts.most_common(1)[0]
+            logger.info(f"[SCRAPER] 1337x Stage 2: Identified most common media name: '{best_match_base_name}'")
+
+            # --- Stage 3: Fetch detail pages and process torrents ---
+            base_url = "https://1337x.to"
+            for candidate in candidates:
+                if candidate["base_name"] == best_match_base_name:
+                    row = candidate["row_element"]
+                    cells = row.find_all("td")
+                    if len(cells) < 6: continue
+
+                    name_cell, seeds_cell, size_cell, uploader_cell = (cells[0], cells[1], cells[4], cells[5])
+                    page_url_relative = name_cell.find_all("a")[1].get("href")
+                    if not isinstance(page_url_relative, str): continue
+
+                    detail_page_url = f"{base_url}{page_url_relative}"
+
+                    # This request now happens inside the active client session.
+                    detail_response = await client.get(detail_page_url)
+                    if detail_response.status_code != 200:
+                        logger.warning(f"Failed to fetch 1337x detail page {detail_page_url}, status: {detail_response.status_code}")
+                        continue
+                        
+                    detail_soup = BeautifulSoup(detail_response.text, "lxml")
+                    magnet_tag = detail_soup.find("a", href=re.compile(r"^magnet:"))
+                    if not magnet_tag or not isinstance(magnet_tag, Tag) or not (magnet_link := magnet_tag.get("href")):
+                        logger.warning(f"Could not find magnet link on page: {detail_page_url}")
+                        continue
+
+                    # Process the rest of the data
+                    size_str = size_cell.get_text(strip=True)
+                    seeds_str = seeds_cell.get_text(strip=True)
+                    parsed_size_gb = _parse_size_to_gb(size_str)
+                    uploader = uploader_cell.find("a").get_text(strip=True) if uploader_cell.find("a") else "Anonymous"
+                    seeders_int = int(seeds_str) if seeds_str.isdigit() else 0
+                    score = score_torrent_result(candidate["title"], uploader, preferences, seeders=seeders_int)
+
+                    if score > 0 and isinstance(magnet_link, str):
+                        results.append({
                             "title": candidate["title"],
-                            "page_url": f"{base_url}{page_url_relative}",
+                            "page_url": magnet_link,
                             "score": score,
                             "source": "1337x",
                             "uploader": uploader,
                             "size_gb": parsed_size_gb,
                             "codec": _parse_codec(candidate["title"]),
                             "seeders": seeders_int,
-                            "year": candidate["parsed_info"].get(
-                                "year"
-                            ),  # <-- NEWLY ADDED
-                        }
-                    )
+                            "year": candidate["parsed_info"].get("year"),
+                        })
 
     except Exception as e:
         logger.error(f"[SCRAPER ERROR] 1337x scrape failed: {e}", exc_info=True)

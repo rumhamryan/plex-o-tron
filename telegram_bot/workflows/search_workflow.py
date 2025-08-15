@@ -172,7 +172,7 @@ async def _handle_tv_season_reply(chat_id, query, context):
     context.user_data["search_season_number"] = int(query)
     prompt_text = (
         f"Season *{escape_markdown(query, version=2)}* selected\\. "
-        "Do you want a single episode or the entire season?"
+        "Do you want a single episode or the entire season\\?"
     )
     keyboard = [
         [
@@ -237,7 +237,7 @@ async def _handle_tv_scope_selection(
     if not title or season is None:
         await safe_edit_message(
             query.message,
-            "❌ Search context has expired. Please start over.",
+            "❌ Search context has expired\\. Please start over\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -253,14 +253,14 @@ async def _handle_tv_scope_selection(
         await _send_prompt(
             query.message.chat_id,
             context,
-            f"Please send the episode number for Season {escape_markdown(str(season), version=2)}.",
+            f"Please send the episode number for Season {escape_markdown(str(season), version=2)}\\.",
         )
         return
 
     if query.data == "search_tv_scope_season":
         await safe_edit_message(
             query.message,
-            "Verifying season details on Wikipedia...",
+            "Verifying season details on Wikipedia\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         episode_count = (
@@ -271,7 +271,7 @@ async def _handle_tv_scope_selection(
         if not episode_count:
             await safe_edit_message(
                 query.message,
-                "❌ Could not verify episode count. Operation cancelled.",
+                "❌ Could not verify episode count\\. Operation cancelled\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
@@ -289,7 +289,7 @@ async def _handle_tv_scope_selection(
         torrent_links: list[str] = []
         if len(found_results) >= 3:
             torrent_links = [
-                r.get("page_url") for r in found_results[:1] if r.get("page_url")
+                r["page_url"] for r in found_results[:1] if r.get("page_url")
             ]
         else:
             for ep in range(1, episode_count + 1):
@@ -533,15 +533,15 @@ async def _present_season_download_confirmation(
     if not found_torrents:
         await safe_edit_message(
             message,
-            text="❌ No torrents found for this season.",
+            text="❌ No torrents found for this season\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
     if len(found_torrents) == 1:
-        summary = f"Found a season pack for Season {season}."
+        summary = f"Found a season pack for Season {season}\\."
     else:
-        summary = f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}."
+        summary = f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}\\."
 
     keyboard = [
         [

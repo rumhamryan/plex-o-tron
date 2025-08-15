@@ -1,89 +1,73 @@
-Here is a plan to implement the feature for downloading a whole season of a TV show. Follow these instructions to modify the existing codebase.
+Here is a plan to resolve the download renaming and season handling issues. Follow these instructions to modify the existing codebase.
 
-### Phase 1: Modify the User-Facing Search Workflow
+### Phase 1: Improve Season Pack Detection and Data Structure
 
-**Objective:** Change the conversation flow to give the user the option to download a whole season after selecting a season number.
-
-**File to Modify:** `telegram_bot/workflows/search_workflow.py`
-
-1.  **Update `_handle_tv_season_reply` function:**
-    *   Locate the `_handle_tv_season_reply` function.
-    *   Instead of immediately asking for an episode number, modify it to present the user with two new inline buttons: "Single Episode" and "Entire Season".
-    *   The message text should be updated to something like: "Season X selected. Do you want a single episode or the entire season?"
-    *   The callback data for the buttons should be `search_tv_scope_single` and `search_tv_scope_season`.
-
-2.  **Create a New Button Handler Function: `_handle_tv_scope_selection`:**
-    *   Create a new asynchronous function `_handle_tv_scope_selection(query, context)`.
-    *   This function will handle the callbacks from the new buttons.
-    *   **If `query.data` is `search_tv_scope_single`:** Implement the original logic. Call `_send_prompt` to ask for the episode number and set `context.user_data["next_action"] = "search_tv_get_episode"`.
-    *   **If `query.data` is `search_tv_scope_season`:** This will trigger the new season download logic. It should send a status message to the user, such as "Verifying season details on Wikipedia...", and then proceed to call the logic outlined in Phase 2.
-
-**File to Modify:** `telegram_bot/handlers/callback_handlers.py`
-
-1.  **Update `button_handler`:**
-    *   Add a new `elif` condition to the router.
-    *   The condition should check if `action.startswith("search_tv_scope_")`.
-    *   If true, it should await the new `handle_search_buttons` function which will now contain the `_handle_tv_scope_selection` logic. *Correction*: Since `handle_search_buttons` already exists as a router, add the new `elif` block inside it to call `_handle_tv_scope_selection`.
-
----
-
-### Phase 2: Implement Wikipedia Episode Count Verification
-
-**Objective:** Scrape Wikipedia to determine the number of episodes in the selected season.
-
-**File to Modify:** `telegram_bot/services/scraping_service.py`
-
-1.  **Create `fetch_season_episode_count_from_wikipedia` function:**
-    *   Define a new asynchronous function: `async def fetch_season_episode_count_from_wikipedia(show_title: str, season: int) -> int | None:`.
-    *   Reuse the existing page-finding logic from `fetch_episode_title_from_wikipedia` to get the correct Wikipedia page (`"List of {show_title} episodes"` first, then fallback to the main show page).
-    *   Parse the page's HTML with BeautifulSoup.
-    *   Locate the "Series overview" table. Iterate through its rows to find the one corresponding to the `season` argument.
-    *   In that row, find the cell corresponding to the "Episodes" column. This usually requires finding the header row first to get the correct column index.
-    *   Extract the number from that cell, convert it to an integer, and return it.
-    *   Return `None` if the page, table, or episode count cannot be found.
-
----
-
-### Phase 3: Adapt Search and Selection Logic
-
-**Objective:** Implement the core logic for searching for season packs or individual episodes and presenting the results.
+**Objective:** Refine the season search to better identify true "season packs" and change the data structure to carry full metadata for each torrent, not just the link.
 
 **File to Modify:** `telegram_bot/workflows/search_workflow.py`
 
-1.  **Implement the "Entire Season" Logic in `_handle_tv_scope_selection`:**
-    *   When the user has chosen the "Entire Season" option:
-        a.  Call the new `fetch_season_episode_count_from_wikipedia` function from `scraping_service`. If it returns `None`, inform the user that the episode count could not be verified and cancel the operation.
-        b.  **Primary Strategy (Season Packs):** Perform a search by calling `search_logic.orchestrate_searches`. Use a query formatted to find season packs (e.g., f'{show_title} S{season:02d}', f'{show_title} Season {season}').
-        c.  **Fallback Strategy (Individual Episodes):** If the primary strategy yields no high-quality season pack (define a threshold, e.g., fewer than 3 good results), initiate a fallback. Loop from `episode = 1` to the count retrieved from Wikipedia. In each iteration, call `search_logic.orchestrate_searches` with a query for the specific episode (e.g., f'{show_title} S{season:02d}E{episode:02d}'). From the results for each episode, programmatically select the single best torrent based on the existing scoring logic.
-        d.  Store all the selected torrents (whether it's a single season pack or multiple individual episodes) in a list.
+1.  **Update `_handle_tv_scope_selection` Function:**
+    *   Locate the `if query.data == "search_tv_scope_season":` block.
+    *   **Primary Strategy (Season Packs):** After getting `found_results` from `orchestrate_searches`, filter this list to find potential season packs. A torrent is a "season pack" if its title case-insensitively contains keywords like `complete`, `collection`, `season pack`, or `sXX ` (e.g., `s17 `) without an episode number.
+    *   If this filtering yields any results, select the single best one (highest score). This is your `season_pack_torrent`.
+    *   **New Data Structure:** Instead of creating a simple list of links (`torrent_links`), create a list of dictionaries called `torrents_to_queue`.
+    *   **If a `season_pack_torrent` is found:**
+        *   Create `parsed_info` for the pack by calling `parse_torrent_name` on its title.
+        *   Add a special flag: `parsed_info['is_season_pack'] = True`.
+        *   Append a single dictionary to `torrents_to_queue`: `[{ "link": season_pack_torrent['page_url'], "parsed_info": parsed_info }]`.
+    *   **If no season pack is found (Fallback Strategy):**
+        *   Proceed with the existing loop that searches for each episode individually (`for ep in range(1, episode_count + 1):`).
+        *   Inside the loop, when you find the `best` torrent for an episode, do not just append its link.
+        *   Instead, generate `parsed_info` for it by calling `parse_torrent_name(best['title'])`.
+        *   Append a dictionary for each episode to `torrents_to_queue`: `{"link": best['page_url'], "parsed_info": parsed_info}`.
+    *   Finally, pass the `torrents_to_queue` list to `_present_season_download_confirmation`.
 
-2.  **Create `_present_season_download_confirmation` function:**
-    *   Create a new asynchronous function `_present_season_download_confirmation(message, context, found_torrents)`.
-    *   This function will format a message to the user summarizing what was found. For example: "Found a season pack for Season 1." or "Found torrents for 10 of the 12 episodes in Season 1."
-    *   The message should include "Confirm" and "Cancel" buttons.
-    *   Store the list of magnet links/URLs for the `found_torrents` in `context.user_data['pending_season_download']`.
-    *   The 'Confirm' button should have the callback data `confirm_season_download`.
+2.  **Update `_present_season_download_confirmation` Function:**
+    *   This function now receives a list of dictionaries (`found_torrents`).
+    *   The message summary logic remains similar (e.g., "Found a season pack" if `len(found_torrents) == 1` and `is_season_pack` is true, or "Found torrents for X of Y episodes" otherwise).
+    *   In `context.user_data['pending_season_download']`, store the entire `found_torrents` list of dictionaries.
 
----
+### Phase 2: Adapt Queuing to Handle Rich Metadata
 
-### Phase 4: Implement Queuing for Multiple Downloads
-
-**Objective:** Add all selected torrents for the season to the existing download queue.
+**Objective:** Modify the download manager to use the new data structure, ensuring each queued item has the `parsed_info` it needs for later processing.
 
 **File to Modify:** `telegram_bot/services/download_manager.py`
 
-1.  **Create `add_season_to_queue` function:**
-    *   Define a new asynchronous function `async def add_season_to_queue(update, context):`.
-    *   This function is triggered by the `confirm_season_download` callback.
-    *   Retrieve the list of torrent links from `context.user_data.pop('pending_season_download', [])`.
-    *   Loop through this list of links. In each iteration:
-        i.  Construct the `download_data` dictionary exactly as it's done in the existing `add_download_to_queue` function.
-        ii. Append this dictionary to the user's queue located at `context.bot_data["download_queues"][str(chat_id)]`.
-    *   After the loop finishes, call `save_state(...)` to persist the updated queue.
-    *   Call `await process_queue_for_user(...)` to kick off the download process if the queue is not already running.
-    *   Edit the original message to give the user a final confirmation, e.g., "✅ Success! Added 10 episodes to your download queue."
+1.  **Update `add_season_to_queue` Function:**
+    *   This function will now retrieve a list of dictionaries from `context.user_data.pop('pending_season_download', [])`.
+    *   The `for` loop should be changed to iterate through these dictionaries (e.g., `for torrent_data in pending_list:`).
+    *   Inside the loop, when constructing the `source_dict`, extract the link and the `parsed_info` from `torrent_data`.
+    '''python
+    # Example of the new logic inside the loop
+    link = torrent_data.get("link")
+    parsed_info = torrent_data.get("parsed_info", {})
 
-**File to Modify:** `telegram_bot/handlers/callback_handlers.py`
+    source_dict = {
+        "value": link,
+        "type": "magnet" if link.startswith("magnet:") else "url",
+        "parsed_info": parsed_info,  # <-- This is the crucial change
+        "original_message_id": query.message.message_id,
+    }
+    '''
 
-1.  **Update `button_handler`:**
-    *   Add an `elif` condition to route the `confirm_season_download` callback to the new `add_season_to_queue` function in `download_manager.py`.
+### Phase 3: Implement Multi-File Post-Processing
+
+**Objective:** Rework the post-download logic to handle both single-file torrents and multi-file season packs correctly.
+
+**File to Modify:** `telegram_bot/services/media_manager.py`
+
+1.  **Update `handle_successful_download` Function:**
+    *   At the beginning of the function, check if the `parsed_info` dictionary contains the `'is_season_pack': True` flag.
+    *   **If it is a season pack:**
+        a. Initialize a counter for successfully processed files.
+        b. Instead of finding just one file, iterate through all files in the torrent: `for i in range(files.num_files()):`.
+        c. Inside the loop, check if the file has a valid media extension (`.mkv`, `.mp4`).
+        d. For each valid media file, get its path within the torrent: `path_in_torrent = files.file_path(i)`.
+        e. **Crucially, generate a *new* `parsed_info_for_file` by calling `parse_torrent_name(os.path.basename(path_in_torrent))`. This is essential to get the correct season/episode for each individual file.**
+        f. Use this `parsed_info_for_file` to fetch the episode title from Wikipedia.
+        g. Use `parsed_info_for_file` to generate the final Plex filename and determine the destination path.
+        h. Move the file.
+        i. Increment the success counter.
+        j. After the loop, return a summary message, like: "✅ *Success\!* \nProcessed and moved {counter} episodes from the season pack."
+    *   **If it is NOT a season pack (the `else` block):**
+        a. Keep the existing logic that finds the single largest media file and processes it. This ensures single-episode downloads continue to work as they did before.
