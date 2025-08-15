@@ -243,7 +243,12 @@ async def test_handle_tv_scope_selection_season(
     )
     orch_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
-        new=AsyncMock(return_value=[{"page_url": "link"}] * 3),
+        new=AsyncMock(
+            side_effect=[
+                [{"title": "Show Season 1 Complete", "page_url": "pack", "score": 10}],
+                [],
+            ]
+        ),
     )
     present_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow._present_season_download_confirmation",
@@ -256,9 +261,46 @@ async def test_handle_tv_scope_selection_season(
         callback_query=make_callback_query("search_tv_scope_season", make_message()),
     )
     await handle_search_buttons(update, context)
-    orch_mock.assert_awaited()
+    assert orch_mock.call_count == 2
     present_mock.assert_awaited_once()
-    assert present_mock.await_args.args[2] == ["link"]
+    passed = present_mock.await_args.args[2]
+    assert passed[0]["link"] == "pack"
+    assert passed[0]["parsed_info"]["is_season_pack"]
+
+
+@pytest.mark.asyncio
+async def test_handle_tv_scope_selection_season_fallback(
+    mocker, context, make_callback_query, make_message
+):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        new=AsyncMock(return_value=2),
+    )
+
+    orch_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
+        new=AsyncMock(
+            side_effect=[[], [], [{"title": "Show S01E01", "page_url": "e1"}], []]
+        ),
+    )
+    present_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._present_season_download_confirmation",
+        new=AsyncMock(),
+    )
+    context.user_data["search_query_title"] = "Show"
+    context.user_data["search_season_number"] = 1
+    update = Update(
+        update_id=1,
+        callback_query=make_callback_query("search_tv_scope_season", make_message()),
+    )
+    await handle_search_buttons(update, context)
+    assert orch_mock.call_count == 4
+    passed = present_mock.await_args.args[2]
+    assert passed[0]["link"] == "e1"
+    assert passed[0]["parsed_info"]["episode"] == 1
 
 
 @pytest.mark.asyncio
@@ -268,6 +310,22 @@ async def test_present_season_download_confirmation(mocker, context, make_messag
     )
     context.user_data["search_season_number"] = 1
     context.user_data["season_episode_count"] = 2
-    await _present_season_download_confirmation(make_message(), context, ["a", "b"])
-    assert context.user_data["pending_season_download"] == ["a", "b"]
+    torrents = [{"link": "a", "parsed_info": {}}, {"link": "b", "parsed_info": {}}]
+    await _present_season_download_confirmation(make_message(), context, torrents)
+    assert context.user_data["pending_season_download"] == torrents
+    assert "torrents for" in safe_mock.await_args.kwargs["text"]
+    safe_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_present_season_download_confirmation_pack(mocker, context, make_message):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+    )
+    context.user_data["search_season_number"] = 1
+    context.user_data["season_episode_count"] = 2
+    torrents = [{"link": "a", "parsed_info": {"is_season_pack": True}}]
+    await _present_season_download_confirmation(make_message(), context, torrents)
+    assert context.user_data["pending_season_download"] == torrents
+    assert "season pack" in safe_mock.await_args.kwargs["text"].lower()
     safe_mock.assert_awaited_once()
