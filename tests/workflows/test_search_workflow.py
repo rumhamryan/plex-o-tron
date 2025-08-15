@@ -300,6 +300,7 @@ async def test_handle_tv_scope_selection_season_fallback(
     )
     await handle_search_buttons(update, context)
     assert orch_mock.call_count == 4
+
     # Episode searches should use the plain title for fuzzy filtering
     assert orch_mock.await_args_list[2].kwargs["base_query_for_filter"] == "Show"
     assert orch_mock.await_args_list[3].kwargs["base_query_for_filter"] == "Show"
