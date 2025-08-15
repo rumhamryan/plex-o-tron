@@ -123,7 +123,9 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
     await handle_search_workflow(
         Update(update_id=5, message=make_message("2")), context
     )
-    orchestrate_mock.assert_awaited_once_with("My Show S01E02", "tv", context)
+    orchestrate_mock.assert_awaited_once_with(
+        "My Show S01E02", "tv", context, base_query_for_filter="My Show"
+    )
 
 
 @pytest.mark.asyncio
@@ -298,6 +300,10 @@ async def test_handle_tv_scope_selection_season_fallback(
     )
     await handle_search_buttons(update, context)
     assert orch_mock.call_count == 4
+
+    # Episode searches should use the plain title for fuzzy filtering
+    assert orch_mock.await_args_list[2].kwargs["base_query_for_filter"] == "Show"
+    assert orch_mock.await_args_list[3].kwargs["base_query_for_filter"] == "Show"
     passed = present_mock.await_args.args[2]
     assert passed[0]["link"] == "e1"
     assert passed[0]["parsed_info"]["episode"] == 1

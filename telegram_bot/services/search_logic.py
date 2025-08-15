@@ -85,6 +85,15 @@ async def orchestrate_searches(
                 logger.info(
                     f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
                 )
+
+                # Allow callers to override the string used for fuzzy filtering. This
+                # is useful for episode-specific searches where the query contains
+                # season/episode tokens that would otherwise reduce the match score.
+                base_filter = kwargs.get("base_query_for_filter", query)
+                extra_kwargs = {
+                    k: v for k, v in kwargs.items() if k != "base_query_for_filter"
+                }
+
                 if site_name == "1337x":
                     task = asyncio.create_task(
                         scraper_func(
@@ -92,14 +101,14 @@ async def orchestrate_searches(
                             media_type,
                             site_url,
                             context,
-                            base_query_for_filter=query,
-                            **kwargs,
+                            base_query_for_filter=base_filter,
+                            **extra_kwargs,
                         )
                     )
                 else:
                     task = asyncio.create_task(
                         scraper_func(
-                            search_query, media_type, site_url, context, **kwargs
+                            search_query, media_type, site_url, context, **extra_kwargs
                         )
                     )
                 tasks.append(task)

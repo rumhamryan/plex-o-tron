@@ -216,7 +216,10 @@ async def _handle_tv_episode_reply(chat_id, query, context):
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-    results = await search_logic.orchestrate_searches(full_search_term, "tv", context)
+    # Pass the base show title so the fuzzy filter doesn't drop episode results
+    results = await search_logic.orchestrate_searches(
+        full_search_term, "tv", context, base_query_for_filter=title
+    )
     await _present_search_results(status_message, context, results, full_search_term)
 
 
@@ -322,8 +325,9 @@ async def _handle_tv_scope_selection(
             # --- Fallback: search for each episode individually ---
             for ep in range(1, episode_count + 1):
                 search_term = f"{title} S{season:02d}E{ep:02d}"
+                # Reuse single-episode search logic and filter using only the show title
                 ep_results = await search_logic.orchestrate_searches(
-                    search_term, "tv", context
+                    search_term, "tv", context, base_query_for_filter=title
                 )
                 if not ep_results:
                     continue
