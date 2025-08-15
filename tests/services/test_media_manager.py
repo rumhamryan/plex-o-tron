@@ -1,6 +1,7 @@
 import sys
 import os
 from pathlib import Path
+from unittest.mock import AsyncMock
 import pytest
 from telegram_bot.services.media_manager import (
     generate_plex_filename,
@@ -95,3 +96,68 @@ async def test_handle_successful_download(mocker):
 
     scan_mock.assert_called_once()
     assert "Success" in result
+
+
+class SeasonFiles:
+    def num_files(self):
+        return 2
+
+    def file_path(self, index):
+        return ["Show.S01E01.mkv", "Show.S01E02.mkv"][index]
+
+
+class SeasonTorrent:
+    def files(self):
+        return SeasonFiles()
+
+
+@pytest.mark.asyncio
+async def test_handle_successful_download_season_pack(mocker):
+    ti = SeasonTorrent()
+    parsed = {
+        "type": "tv",
+        "title": "Show",
+        "season": 1,
+        "is_season_pack": True,
+    }
+    save_paths = {"tv_shows": "/tv", "default": "/default"}
+
+    mocker.patch(
+        "telegram_bot.services.media_manager._get_final_destination_path",
+        return_value="/final",
+    )
+    makedirs_mock = mocker.patch("telegram_bot.services.media_manager.os.makedirs")
+    move_mock = mocker.patch("telegram_bot.services.media_manager.shutil.move")
+    fetch_mock = mocker.patch(
+        "telegram_bot.services.media_manager.fetch_episode_title_from_wikipedia",
+        AsyncMock(side_effect=[("Ep1", None), ("Ep2", None)]),
+    )
+    scan_mock = mocker.patch(
+        "telegram_bot.services.media_manager._trigger_plex_scan",
+        return_value="",
+    )
+    mocker.patch("telegram_bot.services.media_manager._cleanup_source_directory")
+
+    result = await handle_successful_download(
+        ti,
+        parsed,
+        "/downloads",
+        save_paths,
+        {"url": "u", "token": "t"},
+    )
+
+    assert makedirs_mock.call_count == 2
+    expected1_src = os.path.join("/downloads", "Show.S01E01.mkv")
+    expected1_dest = os.path.join("/final", "s01e01 - Ep1.mkv")
+    expected2_src = os.path.join("/downloads", "Show.S01E02.mkv")
+    expected2_dest = os.path.join("/final", "s01e02 - Ep2.mkv")
+    move_mock.assert_has_calls(
+        [
+            mocker.call(expected1_src, expected1_dest),
+            mocker.call(expected2_src, expected2_dest),
+        ],
+        any_order=True,
+    )
+    assert fetch_mock.await_count == 2
+    assert scan_mock.call_count == 2
+    assert "Processed and moved 2 episodes" in result

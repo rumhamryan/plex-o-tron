@@ -185,8 +185,56 @@ async def handle_successful_download(
     for Plex, and triggers a library scan.
     """
     try:
-        # Find the main media file in the completed torrent
         files = ti.files()
+
+        if parsed_info.get("is_season_pack"):
+            processed = 0
+            for i in range(files.num_files()):
+                path_in_torrent = files.file_path(i)
+                _, ext = os.path.splitext(path_in_torrent)
+                if ext.lower() not in ALLOWED_EXTENSIONS:
+                    continue
+
+                parsed_info_for_file = parse_torrent_name(
+                    os.path.basename(path_in_torrent)
+                )
+                if parsed_info_for_file.get("type") != "tv":
+                    continue
+
+                (
+                    episode_title,
+                    corrected_show_title,
+                ) = await fetch_episode_title_from_wikipedia(
+                    show_title=parsed_info_for_file["title"],
+                    season=parsed_info_for_file["season"],
+                    episode=parsed_info_for_file["episode"],
+                )
+                parsed_info_for_file["episode_title"] = episode_title
+                if corrected_show_title:
+                    parsed_info_for_file["title"] = corrected_show_title
+
+                destination_directory = _get_final_destination_path(
+                    parsed_info_for_file, save_paths
+                )
+                os.makedirs(destination_directory, exist_ok=True)
+
+                final_filename = generate_plex_filename(parsed_info_for_file, ext)
+                current_path = os.path.join(initial_download_path, path_in_torrent)
+                new_path = os.path.join(destination_directory, final_filename)
+                logger.info(f"Moving file from '{current_path}' to '{new_path}'")
+                await asyncio.to_thread(shutil.move, current_path, new_path)
+
+                await _trigger_plex_scan(parsed_info_for_file.get("type"), plex_config)
+                processed += 1
+
+            if processed:
+                _cleanup_source_directory(initial_download_path, files.file_path(0))
+            return (
+                "✅ *Success\\!*\n"
+                f"Processed and moved {processed} episodes from the season pack."
+            )
+
+        # --- Single file torrent processing ---
         target_file_in_torrent = None
         original_extension = ".mkv"  # Default
 
@@ -203,23 +251,19 @@ async def handle_successful_download(
                 "No valid media file (.mkv, .mp4) found in the completed torrent."
             )
 
-        # --- Determine source and destination paths ---
         current_path = os.path.join(initial_download_path, target_file_in_torrent)
         final_filename = generate_plex_filename(parsed_info, original_extension)
         destination_directory = _get_final_destination_path(parsed_info, save_paths)
         os.makedirs(destination_directory, exist_ok=True)
         new_path = os.path.join(destination_directory, final_filename)
 
-        # --- Move the file ---
         logger.info(f"Moving file from '{current_path}' to '{new_path}'")
         await asyncio.to_thread(shutil.move, current_path, new_path)
 
-        # --- Trigger Plex scan if configured ---
         scan_status_message = await _trigger_plex_scan(
             parsed_info.get("type"), plex_config
         )
 
-        # --- Clean up empty source directory ---
         _cleanup_source_directory(initial_download_path, target_file_in_torrent)
 
     except Exception as e:
