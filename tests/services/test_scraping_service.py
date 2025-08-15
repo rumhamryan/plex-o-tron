@@ -14,9 +14,10 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 
 class DummyResponse:
-    def __init__(self, text="", json_data=None):
+    def __init__(self, text="", json_data=None, status_code=200):
         self.text = text
         self._json = json_data
+        self.status_code = status_code
 
     def raise_for_status(self):
         pass
@@ -128,18 +129,28 @@ async def test_fetch_season_episode_count(mocker):
 
 @pytest.mark.asyncio
 async def test_scrape_1337x_parses_results(mocker):
-    html = """
+    # This is the response for the initial search results page
+    search_html = """
     <table><tbody>
     <tr>
       <td>
         <a href="/cat">Movies</a>
-        <a href="/torrent/1">Sample.Movie.2023.1080p.x265</a>
+        <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
       </td>
       <td>10</td><td>0</td><td>0</td><td>1.5 GB</td><td><a>Anonymous</a></td>
     </tr>
     </tbody></table>
     """
-    responses = [DummyResponse(text=html)]
+    
+    # This is the required second response for the torrent detail page
+    detail_html = """
+    <div>
+      <a href="magnet:?xt=urn:btih:FAKEHASH">Magnet Download</a>
+    </div>
+    """
+
+    # The mock client now has TWO responses to give, and they will have a default status_code of 200
+    responses = [DummyResponse(text=search_html), DummyResponse(text=detail_html)]
     mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
 
     context = Mock()
@@ -159,12 +170,13 @@ async def test_scrape_1337x_parses_results(mocker):
         "Sample Movie 2023",
         "movie",
         "https://1337x.to/search/{query}/1/",
-        context,  # Pass the mock object here
+        context,
         base_query_for_filter="Sample Movie",
     )
 
     assert len(results) == 1
     assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
+    assert results[0]["page_url"].startswith("magnet:")
     assert results[0]["source"] == "1337x"
 
 

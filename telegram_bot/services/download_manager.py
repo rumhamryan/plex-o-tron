@@ -158,7 +158,7 @@ async def download_with_progress(
             async with httpx.AsyncClient() as client:
                 response = await client.get(source, follow_redirects=True, timeout=30)
                 response.raise_for_status()
-            
+
             # Create the torrent_info object from the downloaded content.
             ti = lt.torrent_info(response.content)  # type: ignore
             params = {
@@ -184,7 +184,10 @@ async def download_with_progress(
         logger.error(f"Libtorrent failed to parse source '{source}': {e}")
         return False, None
     except Exception as e:
-        logger.error(f"An unexpected error occurred while preparing download params for '{source}': {e}", exc_info=True)
+        logger.error(
+            f"An unexpected error occurred while preparing download params for '{source}': {e}",
+            exc_info=True,
+        )
         return False, None
 
     # --- ADD TORRENT TO SESSION AND START DOWNLOAD LOOP ---
@@ -450,8 +453,9 @@ async def add_download_to_queue(update, context):
     pending_torrent = context.user_data.pop("pending_torrent", None)
     if not pending_torrent:
         await safe_edit_message(
-            query.message, text="This action has expired\\. Please send the link again\\.",
-            parse_mode=ParseMode.MARKDOWN_V2
+            query.message,
+            text="This action has expired\\. Please send the link again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
@@ -496,7 +500,12 @@ async def add_download_to_queue(update, context):
     else:
         message_text = "✅ Your download is next in line and will begin shortly\\."
 
-    await safe_edit_message(query.message, text=message_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
+    await safe_edit_message(
+        query.message,
+        text=message_text,
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=None,
+    )
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
     await process_queue_for_user(chat_id, context.application)
 
@@ -511,7 +520,7 @@ async def add_season_to_queue(update, context):
         await safe_edit_message(
             query.message,
             text="This action has expired\\. Please start over\\.",
-            parse_mode=ParseMode.MARKDOWN_V2
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
@@ -570,8 +579,9 @@ async def handle_pause_request(update, context):
             logger.info(f"Pause request received for download for user {chat_id_str}.")
     else:
         await safe_edit_message(
-            query.message, text="ℹ️ Could not find an active download to pause\\.",
-            parse_mode=ParseMode.MARKDOWN_V2
+            query.message,
+            text="ℹ️ Could not find an active download to pause\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
 
 
@@ -590,7 +600,7 @@ async def handle_resume_request(update, context):
         await safe_edit_message(
             query.message,
             text="ℹ️ This download is in the queue and will resume automatically\\.",
-            parse_mode=ParseMode.MARKDOWN_V2
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
 
 
@@ -602,8 +612,9 @@ async def handle_cancel_request(update, context):
 
     if chat_id_str not in active_downloads:
         await safe_edit_message(
-            query.message, text="ℹ️ Could not find an active download to cancel\\.",
-            parse_mode=ParseMode.MARKDOWN_V2
+            query.message,
+            text="ℹ️ Could not find an active download to cancel\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
@@ -624,7 +635,10 @@ async def handle_cancel_request(update, context):
                 ]
             )
             await safe_edit_message(
-                query.message, text=message_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup
+                query.message,
+                text=message_text,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=reply_markup,
             )
 
         elif query.data == "cancel_confirm":
