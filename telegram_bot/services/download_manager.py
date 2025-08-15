@@ -540,11 +540,15 @@ async def add_season_to_queue(update, context):
     if chat_id_str not in download_queues:
         download_queues[chat_id_str] = []
 
-    for link in pending_list:
+    for torrent_data in pending_list:
+        link = torrent_data.get("link")
+        if not link:
+            continue
+        parsed_info = torrent_data.get("parsed_info", {})
         source_dict = {
             "value": link,
             "type": "magnet" if link.startswith("magnet:") else "url",
-            "parsed_info": {},
+            "parsed_info": parsed_info,
             "original_message_id": query.message.message_id,
         }
         download_data = {

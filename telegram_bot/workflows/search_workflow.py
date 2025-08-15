@@ -18,7 +18,7 @@ from telegram.helpers import escape_markdown
 from ..config import logger, MAX_TORRENT_SIZE_GB
 from ..services import search_logic, torrent_service, scraping_service
 from ..services.media_manager import validate_and_enrich_torrent
-from ..utils import safe_edit_message
+from ..utils import safe_edit_message, parse_torrent_name
 from ..ui.views import send_confirmation_prompt
 
 
@@ -216,7 +216,10 @@ async def _handle_tv_episode_reply(chat_id, query, context):
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-    results = await search_logic.orchestrate_searches(full_search_term, "tv", context)
+    # Pass the base show title so the fuzzy filter doesn't drop episode results
+    results = await search_logic.orchestrate_searches(
+        full_search_term, "tv", context, base_query_for_filter=title
+    )
     await _present_search_results(status_message, context, results, full_search_term)
 
 
@@ -286,26 +289,61 @@ async def _handle_tv_scope_selection(
             if len(found_results) >= 3:
                 break
 
-        torrent_links: list[str] = []
-        if len(found_results) >= 3:
-            torrent_links = [
-                r["page_url"] for r in found_results[:1] if r.get("page_url")
-            ]
+        torrents_to_queue: list[dict[str, Any]] = []
+
+        # --- Primary strategy: look for an actual season pack ---
+        season_token = f"s{season:02d} "
+        pack_candidates = []
+        for item in found_results:
+            title_lower = item.get("title", "").lower()
+            if (
+                any(k in title_lower for k in ["complete", "collection", "season pack"])
+                or season_token in title_lower
+            ):
+                if not re.search(r"s\d{1,2}e\d{1,2}", title_lower):
+                    pack_candidates.append(item)
+
+        season_pack_torrent = (
+            max(pack_candidates, key=lambda x: x.get("score", 0))
+            if pack_candidates
+            else None
+        )
+
+        if season_pack_torrent:
+            parsed_info = parse_torrent_name(season_pack_torrent.get("title", ""))
+            parsed_info.setdefault("title", title)
+            parsed_info.setdefault("season", season)
+            parsed_info["type"] = "tv"
+            parsed_info["is_season_pack"] = True
+            torrents_to_queue.append(
+                {
+                    "link": season_pack_torrent.get("page_url"),
+                    "parsed_info": parsed_info,
+                }
+            )
         else:
+            # --- Fallback: search for each episode individually ---
             for ep in range(1, episode_count + 1):
                 search_term = f"{title} S{season:02d}E{ep:02d}"
+                # Reuse single-episode search logic and filter using only the show title
                 ep_results = await search_logic.orchestrate_searches(
-                    search_term, "tv", context
+                    search_term, "tv", context, base_query_for_filter=title
                 )
                 if not ep_results:
                     continue
                 best = ep_results[0]
                 link = best.get("page_url")
-                if link:
-                    torrent_links.append(link)
+                if not link:
+                    continue
+                parsed_info = parse_torrent_name(best.get("title", ""))
+                parsed_info.setdefault("title", title)
+                parsed_info.setdefault("season", season)
+                parsed_info.setdefault("episode", ep)
+                parsed_info["type"] = "tv"
+                torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
 
         await _present_season_download_confirmation(
-            query.message, context, torrent_links
+            query.message, context, torrents_to_queue
         )
 
 
@@ -522,7 +560,9 @@ async def _prompt_for_year_selection(
 
 
 async def _present_season_download_confirmation(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, found_torrents: list[str]
+    message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    found_torrents: list[dict[str, Any]],
 ) -> None:
     """Summarizes season search results and asks for confirmation."""
     if context.user_data is None:
@@ -538,7 +578,11 @@ async def _present_season_download_confirmation(
         )
         return
 
-    if len(found_torrents) == 1:
+    is_pack = len(found_torrents) == 1 and found_torrents[0].get("parsed_info", {}).get(
+        "is_season_pack"
+    )
+
+    if is_pack:
         summary = f"Found a season pack for Season {season}\\."
     else:
         summary = f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}\\."
