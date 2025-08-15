@@ -141,7 +141,7 @@ async def test_scrape_1337x_parses_results(mocker):
     </tr>
     </tbody></table>
     """
-    
+
     # This is the required second response for the torrent detail page
     detail_html = """
     <div>
