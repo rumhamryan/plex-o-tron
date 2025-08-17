@@ -84,6 +84,7 @@ SEASON_OVERVIEW_HTML = """
 @pytest.mark.asyncio
 async def test_fetch_episode_title_dedicated_page(mocker):
     mock_page = mocker.Mock()
+    mock_page.title = "Show"
     mock_page.html.return_value = DEDICATED_HTML
     mocker.patch("wikipedia.page", return_value=mock_page)
 
@@ -98,8 +99,8 @@ async def test_fetch_episode_title_embedded_page(mocker):
     mock_page.html.return_value = EMBEDDED_HTML
     mocker.patch(
         "wikipedia.page",
-        side_effect=[wikipedia.exceptions.PageError("not found"), mock_page],
-    )
+        side_effect=[mock_page, wikipedia.exceptions.PageError("not found")],
+        )
 
     title, _ = await fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title == "Pilot"
@@ -111,7 +112,7 @@ async def test_fetch_episode_title_not_found(mocker):
     mock_page.html.return_value = NO_EPISODE_HTML
     mocker.patch(
         "wikipedia.page",
-        side_effect=[wikipedia.exceptions.PageError("no page"), mock_page],
+        side_effect=[mock_page, wikipedia.exceptions.PageError("not found")],
     )
 
     title, _ = await fetch_episode_title_from_wikipedia("Show", 1, 1)
