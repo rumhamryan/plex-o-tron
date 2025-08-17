@@ -100,7 +100,7 @@ async def test_fetch_episode_title_embedded_page(mocker):
     mocker.patch(
         "wikipedia.page",
         side_effect=[mock_page, wikipedia.exceptions.PageError("not found")],
-        )
+    )
 
     title, _ = await fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title == "Pilot"
