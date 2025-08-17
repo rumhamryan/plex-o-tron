@@ -8,9 +8,6 @@ from typing import Any
 from telegram import Message, Bot
 from telegram.error import BadRequest
 
-# The escape_markdown function is no longer imported or defined here.
-# Other modules will import it directly from telegram.helpers.
-
 
 def format_bytes(size_bytes: int) -> str:
     """Converts bytes into a human-readable string (e.g., KB, MB, GB)."""
