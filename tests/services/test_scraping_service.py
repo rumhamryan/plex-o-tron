@@ -49,6 +49,7 @@ DEDICATED_HTML = """
 <tr><td>0</td></tr>
 <tr><td>1</td></tr>
 </table>
+<h3>Season 1</h3>
 <table class="wikitable">
 <tr><th>No.</th><th>No. in season</th><th>Title</th></tr>
 <tr><td>1</td><td>1</td><td>"Pilot"</td></tr>

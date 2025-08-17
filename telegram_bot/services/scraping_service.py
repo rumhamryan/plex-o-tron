@@ -37,7 +37,9 @@ async def fetch_episode_title_from_wikipedia(
 
     # --- Step 1: Find the main show page to get the canonical, corrected title ---
     try:
-        logger.info(f"[WIKI] Step 1: Finding main page to correct title for '{show_title}'")
+        logger.info(
+            f"[WIKI] Step 1: Finding main page to correct title for '{show_title}'"
+        )
         main_page = await asyncio.to_thread(
             wikipedia.page, show_title, auto_suggest=True, redirect=True
         )
@@ -46,23 +48,30 @@ async def fetch_episode_title_from_wikipedia(
         if main_page.title != show_title:
             corrected_show_title = main_page.title
             canonical_title = corrected_show_title
-            logger.info(f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'")
+            logger.info(
+                f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'"
+            )
         else:
             logger.info("[WIKI] Successfully found main show page with original title.")
 
     except wikipedia.exceptions.PageError:
-        logger.error(f"[WIKI] Could not find any Wikipedia page for '{show_title}'. Aborting.")
+        logger.error(
+            f"[WIKI] Could not find any Wikipedia page for '{show_title}'. Aborting."
+        )
         return None, None
     except Exception as e:
-        logger.error(f"[WIKI] An unexpected error occurred during main page search: {e}")
+        logger.error(
+            f"[WIKI] An unexpected error occurred during main page search: {e}"
+        )
         return None, None
-
 
     # --- Step 2: Use the canonical title to find the dedicated episode page ---
     html_to_scrape: str | None = None
     try:
         direct_query = f"List of {canonical_title} episodes"
-        logger.info(f"[WIKI] Step 2: Attempting to find dedicated episode page: '{direct_query}'")
+        logger.info(
+            f"[WIKI] Step 2: Attempting to find dedicated episode page: '{direct_query}'"
+        )
         list_page = await asyncio.to_thread(
             wikipedia.page, direct_query, auto_suggest=False, redirect=True
         )
@@ -70,10 +79,14 @@ async def fetch_episode_title_from_wikipedia(
         logger.info("[WIKI] Found and will use dedicated episode page.")
 
     except wikipedia.exceptions.PageError:
-        logger.warning(f"[WIKI] No dedicated episode page found. Falling back to main show page HTML.")
+        logger.warning(
+            "[WIKI] No dedicated episode page found. Falling back to main show page HTML."
+        )
         html_to_scrape = main_page_html
     except Exception as e:
-        logger.error(f"[WIKI] Unexpected error fetching list page, falling back to main page HTML: {e}")
+        logger.error(
+            f"[WIKI] Unexpected error fetching list page, falling back to main page HTML: {e}"
+        )
         html_to_scrape = main_page_html
 
     if not html_to_scrape:
@@ -192,25 +205,33 @@ async def _parse_dedicated_episode_page(
 
     # Step 1: Find the header for the specific season (e.g., "Season 17")
     season_pattern = re.compile(f"Season\\s+{season}\\b", re.IGNORECASE)
-    logger.info(f"[WIKI DEBUG] Searching for header with regex pattern: '{season_pattern.pattern}'")
+    logger.info(
+        f"[WIKI DEBUG] Searching for header with regex pattern: '{season_pattern.pattern}'"
+    )
 
     header_tag = None
     for tag in soup.find_all("h3"):
         if re.search(season_pattern, tag.get_text()):
             header_tag = tag
-            break # Stop searching once we find the first match
+            break  # Stop searching once we find the first match
 
     if not header_tag:
-        logger.warning(f"[WIKI] Could not find the <h3> header for Season {season} after checking all tags.")
+        logger.warning(
+            f"[WIKI] Could not find the <h3> header for Season {season} after checking all tags."
+        )
         return None
 
-    logger.info(f"[WIKI] Successfully found header for Season {season}: '{header_tag.text}'")
+    logger.info(
+        f"[WIKI] Successfully found header for Season {season}: '{header_tag.text}'"
+    )
 
     # Step 2: Find the first 'wikitable' that appears after the header tag
     target_table = header_tag.find_next("table", class_="wikitable")
 
     if not isinstance(target_table, Tag):
-        logger.warning(f"[WIKI] Found the header for Season {season}, but could not find a table immediately following it.")
+        logger.warning(
+            f"[WIKI] Found the header for Season {season}, but could not find a table immediately following it."
+        )
         return None
 
     # Step 3: Parse the correct table
