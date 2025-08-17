@@ -31,54 +31,50 @@ async def fetch_episode_title_from_wikipedia(
         A tuple of (episode_title, corrected_show_title). The corrected title is
         returned if Wikipedia redirects the initial search.
     """
-    html_to_scrape = None
+    main_page_html: str | None = None
     corrected_show_title: str | None = None
+    canonical_title = show_title
 
-    # Strategy 1: Try "List of..." page directly
+    # --- Step 1: Find the main show page to get the canonical, corrected title ---
     try:
-        direct_query = f"List of {show_title} episodes"
-        logger.info(
-            f"[WIKI] Attempting to find dedicated episode page: '{direct_query}'"
+        logger.info(f"[WIKI] Step 1: Finding main page to correct title for '{show_title}'")
+        main_page = await asyncio.to_thread(
+            wikipedia.page, show_title, auto_suggest=True, redirect=True
         )
-        page = await asyncio.to_thread(
-            wikipedia.page, direct_query, auto_suggest=False, redirect=True
-        )
-        html_to_scrape = await asyncio.to_thread(page.html)
-        logger.info("[WIKI] Found dedicated episode page.")
+        main_page_html = await asyncio.to_thread(main_page.html)
+
+        if main_page.title != show_title:
+            corrected_show_title = main_page.title
+            canonical_title = corrected_show_title
+            logger.info(f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'")
+        else:
+            logger.info("[WIKI] Successfully found main show page with original title.")
 
     except wikipedia.exceptions.PageError:
-        # Strategy 2: Fallback to main show page
-        logger.warning(
-            f"[WIKI] No dedicated page found for '{show_title}'. Falling back to main show page."
-        )
-        try:
-            page = await asyncio.to_thread(
-                wikipedia.page, show_title, auto_suggest=True, redirect=True
-            )
-            html_to_scrape = await asyncio.to_thread(page.html)
-
-            # Check if Wikipedia corrected the title for us
-            if page.title != show_title:
-                corrected_show_title = page.title
-                logger.info(
-                    f"[WIKI] Title was corrected: '{show_title}' -> '{corrected_show_title}'"
-                )
-            else:
-                logger.info(
-                    "[WIKI] Successfully found main show page with original title."
-                )
-
-        except Exception as e:
-            logger.error(
-                f"[WIKI] An unexpected error occurred during fallback page search: {e}"
-            )
-            return None, None
-
-    except Exception as e:
-        logger.error(
-            f"[WIKI] An unexpected error occurred during direct Wikipedia search: {e}"
-        )
+        logger.error(f"[WIKI] Could not find any Wikipedia page for '{show_title}'. Aborting.")
         return None, None
+    except Exception as e:
+        logger.error(f"[WIKI] An unexpected error occurred during main page search: {e}")
+        return None, None
+
+
+    # --- Step 2: Use the canonical title to find the dedicated episode page ---
+    html_to_scrape: str | None = None
+    try:
+        direct_query = f"List of {canonical_title} episodes"
+        logger.info(f"[WIKI] Step 2: Attempting to find dedicated episode page: '{direct_query}'")
+        list_page = await asyncio.to_thread(
+            wikipedia.page, direct_query, auto_suggest=False, redirect=True
+        )
+        html_to_scrape = await asyncio.to_thread(list_page.html)
+        logger.info("[WIKI] Found and will use dedicated episode page.")
+
+    except wikipedia.exceptions.PageError:
+        logger.warning(f"[WIKI] No dedicated episode page found. Falling back to main show page HTML.")
+        html_to_scrape = main_page_html
+    except Exception as e:
+        logger.error(f"[WIKI] Unexpected error fetching list page, falling back to main page HTML: {e}")
+        html_to_scrape = main_page_html
 
     if not html_to_scrape:
         logger.error("[WIKI] All page search attempts failed.")
@@ -189,53 +185,35 @@ async def _parse_dedicated_episode_page(
     soup: BeautifulSoup, season: int, episode: int
 ) -> str | None:
     """
-    (Primary Strategy) Parses a dedicated 'List of...' page by using the 'Series overview'
-    table to calculate the exact index of the target season's table.
+    (Primary Strategy) Parses a dedicated 'List of...' page by finding the
+    season's header and then the next table.
     """
-    logger.info("[WIKI] Trying Primary Strategy: Index Calculation via Overview Table")
-    all_tables = soup.find_all("table", class_="wikitable")
-    if not all_tables:
+    logger.info("[WIKI] Trying Primary Strategy: Header Search")
+
+    # Step 1: Find the header for the specific season (e.g., "Season 17")
+    season_pattern = re.compile(f"Season\\s+{season}\\b", re.IGNORECASE)
+    logger.info(f"[WIKI DEBUG] Searching for header with regex pattern: '{season_pattern.pattern}'")
+
+    header_tag = None
+    for tag in soup.find_all("h3"):
+        if re.search(season_pattern, tag.get_text()):
+            header_tag = tag
+            break # Stop searching once we find the first match
+
+    if not header_tag:
+        logger.warning(f"[WIKI] Could not find the <h3> header for Season {season} after checking all tags.")
         return None
 
-    # Step 1: Find the "Series overview" table to use as an index
-    index_table = None
-    if isinstance(first_table := all_tables[0], Tag):
-        if isinstance(first_row := first_table.find("tr"), Tag):
-            headers = [th.get_text(strip=True) for th in first_row.find_all("th")]
-            if headers and headers[0] == "Season":
-                index_table = first_table
+    logger.info(f"[WIKI] Successfully found header for Season {season}: '{header_tag.text}'")
 
-    if not isinstance(index_table, Tag):
-        logger.info(
-            "[WIKI] Could not find 'Series overview' table. Aborting Primary Strategy."
-        )
-        return None
+    # Step 2: Find the first 'wikitable' that appears after the header tag
+    target_table = header_tag.find_next("table", class_="wikitable")
 
-    # Step 2: Calculate the target table's actual index
-    target_table_index = -1
-    current_table_index_counter = 0  # Index of table *after* the overview
-    for row in index_table.find_all("tr")[1:]:
-        if isinstance(row, Tag) and (cells := row.find_all(["th", "td"])):
-            season_num_from_cell = extract_first_int(cells[0].get_text(strip=True))
-            if season_num_from_cell == season:
-                target_table_index = current_table_index_counter
-                logger.info(
-                    f"[WIKI] Match for Season {season} found. Calculated target table index: {target_table_index}"
-                )
-                break
-        current_table_index_counter += 1
-
-    if target_table_index == -1 or target_table_index >= len(all_tables):
-        logger.warning(
-            f"[WIKI] Could not find Season {season} in the index table or index is out of bounds."
-        )
-        return None
-
-    # Step 3: Parse the correct table using the calculated index
-    target_table = all_tables[target_table_index]
     if not isinstance(target_table, Tag):
+        logger.warning(f"[WIKI] Found the header for Season {season}, but could not find a table immediately following it.")
         return None
 
+    # Step 3: Parse the correct table
     for row in target_table.find_all("tr")[1:]:
         if not isinstance(row, Tag):
             continue
@@ -244,6 +222,7 @@ async def _parse_dedicated_episode_page(
             continue
 
         try:
+            # This column index might need adjustment, but '1' is common for "No. in season"
             episode_num_from_cell = extract_first_int(cells[1].get_text(strip=True))
             if episode_num_from_cell == episode:
                 title_cell = cells[2]
@@ -258,7 +237,7 @@ async def _parse_dedicated_episode_page(
                     cleaned_title = title_cell.get_text(strip=True)
 
                 logger.info(
-                    f"[SUCCESS] Found title via Primary Strategy: '{cleaned_title}'"
+                    f"[SUCCESS] Found title via Header Strategy: '{cleaned_title}'"
                 )
                 return cleaned_title
         except (ValueError, IndexError):
@@ -408,7 +387,7 @@ async def scrape_1337x(
             candidates = [
                 c
                 for c in candidates
-                if fuzz.ratio(filter_query.lower(), c["base_name"].lower()) > 90
+                if fuzz.ratio(filter_query.lower(), c["base_name"].lower()) > 85
             ]
 
             if not candidates:

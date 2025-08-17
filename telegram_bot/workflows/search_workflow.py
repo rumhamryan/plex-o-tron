@@ -249,7 +249,7 @@ async def _handle_tv_scope_selection(
         context.user_data["next_action"] = "search_tv_get_episode"
         await safe_edit_message(
             query.message,
-            text=f"Season *{escape_markdown(str(season), version=2)}* selected.",
+            text=f"Season *{escape_markdown(str(season), version=2)}* selected\\.",
             reply_markup=None,
             parse_mode=ParseMode.MARKDOWN_V2,
         )

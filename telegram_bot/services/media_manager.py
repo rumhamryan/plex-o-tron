@@ -198,7 +198,14 @@ async def handle_successful_download(
                 parsed_info_for_file = parse_torrent_name(
                     os.path.basename(path_in_torrent)
                 )
-                if parsed_info_for_file.get("type") != "tv":
+                parsed_info_for_file.setdefault("title", parsed_info.get("title"))
+                parsed_info_for_file.setdefault("season", parsed_info.get("season"))
+                parsed_info_for_file["type"] = "tv"
+
+                if (
+                    parsed_info_for_file.get("season") is None
+                    or parsed_info_for_file.get("episode") is None
+                ):
                     continue
 
                 (
