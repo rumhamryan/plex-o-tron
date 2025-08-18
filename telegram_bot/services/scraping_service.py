@@ -325,7 +325,9 @@ async def _parse_embedded_episode_table(
                 if found_text:
                     cleaned_title = str(found_text).strip().strip('"')
                 else:
-                    cleaned_title = title_cell.get_text(separator=" ", strip=True).strip('"')
+                    cleaned_title = title_cell.get_text(
+                        separator=" ", strip=True
+                    ).strip('"')
 
                 if cleaned_title.isdigit():
                     continue
@@ -355,7 +357,9 @@ async def _extract_title_from_table(
     if not isinstance(header_row, Tag):
         return None
 
-    headers = [h.get_text(strip=True).lower() for h in header_row.find_all(["th", "td"])]
+    headers = [
+        h.get_text(strip=True).lower() for h in header_row.find_all(["th", "td"])
+    ]
     season_col = None
     episode_col = None
     title_col = None
@@ -363,7 +367,9 @@ async def _extract_title_from_table(
     for idx, text in enumerate(headers):
         if title_col is None and "title" in text:
             title_col = idx
-        if episode_col is None and ("no." in text and "season" in text or "episode" in text):
+        if episode_col is None and (
+            "no." in text and "season" in text or "episode" in text
+        ):
             episode_col = idx
         if season_col is None and text.strip() == "season":
             season_col = idx
