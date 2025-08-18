@@ -158,6 +158,11 @@ async def _parse_episode_tables(
     if episode_title:
         return episode_title
 
+    # Strategy 4: Search for embedded episode tables.
+    episode_title = await _parse_embedded_episode_table(soup, season, episode)
+    if episode_title:
+        return episode_title
+
     return None
 
 
@@ -170,7 +175,7 @@ async def _parse_table_by_season_link(
     """
     logger.info(f"[WIKI] Trying Strategy 1: Find link for Season {season}")
     # Pattern to find "South Park season 27" or similar, case-insensitively.
-    season_pattern = re.compile(f"season {season}\b", re.IGNORECASE)
+    season_pattern = re.compile(f"season {season}\\b", re.IGNORECASE)
     
     # Find an 'a' tag whose 'title' attribute matches the season pattern.
     season_link = soup.find("a", title=season_pattern)
@@ -264,6 +269,51 @@ async def _parse_all_tables_flexibly(
                 return title
     
     logger.info("[WIKI] Fallback Strategy: Failed to find title in any table.")
+    return None
+
+
+async def _parse_embedded_episode_table(
+    soup: BeautifulSoup, season: int, episode: int
+) -> str | None:
+    """
+    (Strategy 4) Parses a page using flexible row searching for embedded episode lists.
+    """
+    logger.info("[WIKI] Trying Strategy 4: Flexible Row Search")
+    tables = soup.find_all("table", class_="wikitable")
+
+    for table in tables:
+        if not isinstance(table, Tag):
+            continue
+        for row in table.find_all("tr")[1:]:  # Skip header
+            if not isinstance(row, Tag):
+                continue
+            cells = row.find_all(["td", "th"])
+            if len(cells) < 2:
+                continue
+
+            try:
+                # Heuristic: Check if the first cell contains the season and episode number
+                # in the format "S.E" or "S E"
+                cell_text = cells[0].get_text(strip=True)
+                match = re.match(r"(\d+)\s*(\d+)", cell_text)
+                if match:
+                    row_season, row_episode = map(int, match.groups())
+                    if row_season == season and row_episode == episode:
+                        title_cell = cells[1]
+                        if isinstance(title_cell, Tag):
+                            found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+                            if found_text:
+                                cleaned_title = str(found_text).strip().strip('"')
+                            else:
+                                cleaned_title = title_cell.get_text(strip=True)
+                            logger.info(
+                                f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
+                            )
+                            return cleaned_title
+            except (ValueError, IndexError):
+                continue
+
+    logger.warning("[WIKI] Flexible Row Search failed.")
     return None
 
 
@@ -501,9 +551,9 @@ async def scrape_1337x(
                         continue
 
                     name_cell, seeds_cell, size_cell, uploader_cell = (
-                        cells[0],
-                        cells[1],
-                        cells[4],
+                        cells[0], 
+                        cells[1], 
+                        cells[4], 
                         cells[5],
                     )
                     page_url_relative = name_cell.find_all("a")[1].get("href")

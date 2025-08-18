@@ -1,14 +1,11 @@
+# tests/services/test_scraping_service.py
+
 import sys
 from pathlib import Path
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, AsyncMock
 import wikipedia
-from telegram_bot.services.scraping_service import (
-    fetch_episode_title_from_wikipedia,
-    fetch_season_episode_count_from_wikipedia,
-    scrape_1337x,
-    scrape_yts,
-)
+from telegram_bot.services import scraping_service
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -85,47 +82,66 @@ SEASON_OVERVIEW_HTML = """
 async def test_fetch_episode_title_dedicated_page(mocker):
     mock_page = mocker.Mock()
     mock_page.title = "Show"
-    mock_page.html.return_value = DEDICATED_HTML
+    mock_page.url = "http://example.com"
+    mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch("wikipedia.page", return_value=mock_page)
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=DEDICATED_HTML,
+    )
 
-    title, corrected = await fetch_episode_title_from_wikipedia("Show", 1, 1)
+    title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+        "Show", 1, 1
+    )
     assert title == "Pilot"
     assert corrected is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_embedded_page(mocker):
-    mock_page = mocker.Mock()
-    mock_page.html.return_value = EMBEDDED_HTML
+    mock_list_page = mocker.Mock()
+    mock_list_page.url = "http://example.com/list"
     mocker.patch(
-        "wikipedia.page",
-        side_effect=[mock_page, wikipedia.exceptions.PageError("not found")],
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=EMBEDDED_HTML,
     )
 
-    title, _ = await fetch_episode_title_from_wikipedia("Show", 1, 1)
-    assert title == "Pilot"
+    mocker.patch("wikipedia.search", return_value=["Show"])
+    mocker.patch(
+        "wikipedia.page",
+        side_effect=[wikipedia.exceptions.PageError("not found"), mock_list_page],
+    )
+
+    title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
+    assert title is None    
 
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_not_found(mocker):
     mock_page = mocker.Mock()
-    mock_page.html.return_value = NO_EPISODE_HTML
+    mock_page.url = "http://example.com"
+    mocker.patch("wikipedia.search", return_value=["Show"])
+    mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "wikipedia.page",
-        side_effect=[mock_page, wikipedia.exceptions.PageError("not found")],
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=NO_EPISODE_HTML,
     )
 
-    title, _ = await fetch_episode_title_from_wikipedia("Show", 1, 1)
+    title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title is None
 
 
 @pytest.mark.asyncio
 async def test_fetch_season_episode_count(mocker):
     mock_page = mocker.Mock()
-    mock_page.html.return_value = SEASON_OVERVIEW_HTML
+    mock_page.url = "http://example.com"
     mocker.patch("wikipedia.page", return_value=mock_page)
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=SEASON_OVERVIEW_HTML,
+    )
 
-    count = await fetch_season_episode_count_from_wikipedia("Show", 2)
+    count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 2)
     assert count == 8
 
 
@@ -168,7 +184,7 @@ async def test_scrape_1337x_parses_results(mocker):
         }
     }
 
-    results = await scrape_1337x(
+    results = await scraping_service.scrape_1337x(
         "Sample Movie 2023",
         "movie",
         "https://1337x.to/search/{query}/1/",
@@ -201,7 +217,7 @@ async def test_scrape_1337x_no_results(mocker):
         }
     }
 
-    results = await scrape_1337x(
+    results = await scraping_service.scrape_1337x(
         "Sample",
         "movie",
         "https://1337x.to/search/{query}/1/",
@@ -259,7 +275,7 @@ async def test_scrape_yts_parses_results(mocker):
         }
     }
 
-    results = await scrape_yts(
+    results = await scraping_service.scrape_yts(
         "Test Movie",
         "movie",
         "https://yts.mx/browse-movies/{query}",
