@@ -768,7 +768,9 @@ def _strategy_contextual_search(soup: BeautifulSoup, query: str) -> set[str]:
 
         text_lc = tag.get_text(strip=True).lower()
         parent_text_lc = (
-            tag.parent.get_text(" ", strip=True).lower() if isinstance(tag.parent, Tag) else ""
+            tag.parent.get_text(" ", strip=True).lower()
+            if isinstance(tag.parent, Tag)
+            else ""
         )
         href_lc = href.lower()
 

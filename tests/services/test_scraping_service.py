@@ -422,7 +422,5 @@ def test_score_candidate_links_prefers_better_match():
     )
     soup = BeautifulSoup(html, "lxml")
     links = {"/high", "/low"}
-    best = scraping_service._score_candidate_links(
-        links, "My Show Episode", {}, soup
-    )
+    best = scraping_service._score_candidate_links(links, "My Show Episode", {}, soup)
     assert best == "/high"
