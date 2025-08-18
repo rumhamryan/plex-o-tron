@@ -270,6 +270,15 @@ async def download_task_wrapper(download_data: dict, application: Application):
                 save_paths=application.bot_data.get("SAVE_PATHS", {}),
                 plex_config=application.bot_data.get("PLEX_CONFIG"),
             )
+            # Now that the media file has been moved, we can safely delete the originals.
+            logger.info(
+                f"Removing torrent and deleting original files for: {clean_name}"
+            )
+            ses = application.bot_data["TORRENT_SESSION"]
+            handle = download_data.get("handle")
+            if handle and handle.is_valid():
+                # This flag tells libtorrent to remove the torrent and delete all its files.
+                ses.remove_torrent(handle, lt.session.delete_files)  # type: ignore
         else:
             if not download_data.get("requeued"):
                 message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager\\."
