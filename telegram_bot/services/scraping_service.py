@@ -41,6 +41,7 @@ def _clean_episode_title(raw_title: str) -> str:
         text = text.strip(ch)
     return text.strip()
 
+
 # --- Wikipedia Scraping ---
 
 
@@ -335,7 +336,6 @@ async def _parse_embedded_episode_table(
 
     logger.warning("[WIKI] Flexible Row Search failed.")
     return None
-
 
 
 async def _extract_title_from_table(
