@@ -297,24 +297,48 @@ async def _parse_embedded_episode_table(
     for table in tables:
         if not isinstance(table, Tag):
             continue
-        for row in table.find_all("tr")[1:]:  # Skip header row
+
+        # Capture an explicit season if a header precedes the table. This enables
+        # matching tables that only list episode numbers.
+        table_season = None
+        prev_header = table.find_previous(["h2", "h3"])
+        if isinstance(prev_header, Tag):
+            match = re.search(r"Season\s+(\d+)", prev_header.get_text(), re.IGNORECASE)
+            if match:
+                table_season = int(match.group(1))
+
+        for row in table.find_all("tr")[1:]:
             if not isinstance(row, Tag):
                 continue
+
             cells = row.find_all(["td", "th"])
             if len(cells) < 2:
                 continue
 
             try:
-                cell_text = cells[0].get_text(strip=True)
-                match = re.match(r"(\d+)\s*(\d+)", cell_text)
-                if not match:
-                    continue
+                first_cell_text = cells[0].get_text(strip=True)
 
-                row_season, row_episode = map(int, match.groups())
-                if row_season != season or row_episode != episode:
-                    continue
+                # Pattern A: both season and episode numbers appear in the first cell
+                match = re.match(r"(\d+)\s+(\d+)", first_cell_text)
+                if match:
+                    row_season, row_episode = map(int, match.groups())
+                    title_cell = (
+                        cells[1]
+                        if row_season == season and row_episode == episode
+                        else None
+                    )
+                else:
+                    # Pattern B: table season is inferred from a preceding header and
+                    # the first cell holds only the episode number.
+                    row_episode = extract_first_int(first_cell_text)
+                    title_cell = (
+                        cells[1]
+                        if table_season == season
+                        and row_episode == episode
+                        and len(cells) > 1
+                        else None
+                    )
 
-                title_cell = cells[1]
                 if not isinstance(title_cell, Tag):
                     continue
 
@@ -322,12 +346,11 @@ async def _parse_embedded_episode_table(
                 # other tags (e.g., <i> or <a>). If the final text is numeric only,
                 # skip to avoid returning bogus data.
                 found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
-                if found_text:
-                    cleaned_title = str(found_text).strip().strip('"')
-                else:
-                    cleaned_title = title_cell.get_text(
-                        separator=" ", strip=True
-                    ).strip('"')
+                cleaned_title = (
+                    str(found_text).strip().strip('"')
+                    if found_text
+                    else title_cell.get_text(separator=" ", strip=True).strip('"')
+                )
 
                 if cleaned_title.isdigit():
                     continue
@@ -375,10 +398,11 @@ async def _extract_title_from_table(
             season_col = idx
 
     # Fallback to conventional positions if headers could not be identified.
+    col_count = len(headers)
     if episode_col is None:
-        episode_col = 1
+        episode_col = 0 if col_count < 3 else 1
     if title_col is None:
-        title_col = 2
+        title_col = 1 if col_count < 3 else 2
 
     for row in table.find_all("tr")[1:]:
         if not isinstance(row, Tag):
