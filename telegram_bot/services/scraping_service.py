@@ -176,8 +176,10 @@ async def _parse_table_by_season_link(
     This is highly effective for series like South Park with dedicated season pages.
     """
     logger.info(f"[WIKI] Trying Strategy 1: Find link for Season {season}")
-    # Pattern to find "South Park season 27" or similar, case-insensitively.
-    season_pattern = re.compile(f"season {season}\\b", re.IGNORECASE)
+    # Pattern to find "Season 1", "1 Season", etc.
+    season_pattern = re.compile(
+        rf"(season\s+{season}|{season}\s+season)", re.IGNORECASE
+    )
 
     # Find an 'a' tag whose 'title' attribute matches the season pattern.
     season_link = soup.find("a", title=season_pattern)
@@ -190,26 +192,9 @@ async def _parse_table_by_season_link(
         f"[WIKI] Strategy 1: Found link for Season {season}: '{season_link.get_text(strip=True)}'"
     )
 
-    # The episode table is often the next 'wikitable' after the link's container.
-    # We search from the link's parent to be robust against minor structural changes.
-    search_node = season_link.parent
-    if not isinstance(search_node, Tag):
-        logger.warning("[WIKI] Strategy 1: Could not find parent of the season link.")
-        return None
-
-    target_table = None
-    # Iterate through next siblings to find the first wikitable
-    for sibling in search_node.find_next_siblings():
-        if isinstance(sibling, Tag):
-            classes = sibling.get("class")
-            if classes and "wikitable" in classes:
-                target_table = sibling
-                break
-            # Also check within the sibling if it's a container
-            found = sibling.find("table", class_="wikitable")
-            if found:
-                target_table = found
-                break
+    # The episode table is often somewhere after the link. Using find_next is
+    # more robust than relying solely on direct siblings.
+    target_table = season_link.find_next("table", class_="wikitable")
 
     if not isinstance(target_table, Tag):
         logger.warning(
@@ -264,18 +249,16 @@ async def _parse_all_tables_flexibly(
     """
     logger.info("[WIKI] Trying Fallback Strategy: Flexible search of all tables.")
     for table in soup.find_all("table", class_="wikitable"):
-        if isinstance(table, Tag):
-            # Check if the table is for the correct season by checking the previous header
-            prev_header = table.find_previous(["h2", "h3"])
-            if prev_header and isinstance(prev_header, Tag):
-                season_pattern = re.compile(f"Season\\s+{season}", re.IGNORECASE)
-                if not season_pattern.search(prev_header.get_text()):
-                    continue  # Not the right season, skip this table
+        if not isinstance(table, Tag):
+            continue
 
-            title = await _extract_title_from_table(table, season, episode)
-            if title:
-                logger.info("[WIKI] Fallback Strategy: Found title.")
-                return title
+        # Be lenient: attempt extraction regardless of nearby headers. This
+        # accommodates pages where season headers are missing or formatted
+        # unexpectedly.
+        title = await _extract_title_from_table(table, season, episode)
+        if title:
+            logger.info("[WIKI] Fallback Strategy: Found title.")
+            return title
 
     logger.info("[WIKI] Fallback Strategy: Failed to find title in any table.")
     return None
@@ -293,18 +276,20 @@ async def _parse_embedded_episode_table(
     for table in tables:
         if not isinstance(table, Tag):
             continue
+
         for row in table.find_all("tr")[1:]:  # Skip header
             if not isinstance(row, Tag):
                 continue
+
             cells = row.find_all(["td", "th"])
             if len(cells) < 2:
                 continue
 
             try:
-                # Heuristic: Check if the first cell contains the season and episode number
-                # in the format "S.E" or "S E"
-                cell_text = cells[0].get_text(strip=True)
-                match = re.match(r"(\d+)\s*(\d+)", cell_text)
+                # Many embedded tables encode season and episode in the first cell
+                # as "S E" or "S.E". Using a non-digit separator handles both.
+                cell_text = cells[0].get_text(" ", strip=True)
+                match = re.match(r"(\d+)\D+(\d+)", cell_text)
                 if match:
                     row_season, row_episode = map(int, match.groups())
                     if row_season == season and row_episode == episode:
@@ -317,10 +302,12 @@ async def _parse_embedded_episode_table(
                                 cleaned_title = str(found_text).strip().strip('"')
                             else:
                                 cleaned_title = title_cell.get_text(strip=True)
-                            logger.info(
-                                f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
-                            )
-                            return cleaned_title
+
+                            if cleaned_title and not cleaned_title.isdigit():
+                                logger.info(
+                                    f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
+                                )
+                                return cleaned_title
             except (ValueError, IndexError):
                 continue
 
@@ -334,29 +321,46 @@ async def _extract_title_from_table(
     """
     Extracts an episode title from a given table based on season and episode number.
     """
+    # Determine column positions from the header row to support varying layouts.
+    header_row = table.find("tr")
+    headers: list[str] = []
+    if isinstance(header_row, Tag):
+        headers = [
+            cell.get_text(strip=True).lower()
+            for cell in header_row.find_all(["th", "td"])
+        ]
+
+    no_in_season_col = None
+    title_col = None
+    for idx, header in enumerate(headers):
+        if re.search(r"no\.?.*in.*season", header):
+            no_in_season_col = idx
+        if "title" in header and title_col is None:
+            title_col = idx
+
+    # Fallback to common positions if headers were not clearly identified.
+    if no_in_season_col is None:
+        no_in_season_col = 1
+    if title_col is None:
+        title_col = no_in_season_col + 1
+
     for row in table.find_all("tr")[1:]:
         if not isinstance(row, Tag):
             continue
 
         cells = row.find_all(["td", "th"])
-        if len(cells) < 3:  # Basic validation for required columns
-            continue
-
         try:
-            # Column 1: Episode number in season. This is a common convention.
-            episode_num_cell = cells[1].get_text(strip=True)
+            episode_num_cell = cells[no_in_season_col].get_text(strip=True)
             if extract_first_int(episode_num_cell) == episode:
-                title_cell = cells[2]
+                title_cell = cells[title_col]
                 if isinstance(title_cell, Tag):
-                    # The title is often in quotes. Prioritize finding that.
                     found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
                     if found_text:
-                        # Cleanly extract the text within the quotes.
                         return str(found_text).strip().strip('"')
-                    # Fallback to the full, stripped text of the cell.
-                    return title_cell.get_text(strip=True)
+                    cleaned_title = title_cell.get_text(strip=True)
+                    if cleaned_title and not cleaned_title.isdigit():
+                        return cleaned_title
         except (ValueError, IndexError):
-            # This handles cases where a row doesn't match the expected format.
             continue
 
     return None

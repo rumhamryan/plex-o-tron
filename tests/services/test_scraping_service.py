@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import Mock
 import wikipedia
 from telegram_bot.services import scraping_service
+from bs4 import BeautifulSoup
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -77,6 +78,28 @@ SEASON_OVERVIEW_HTML = """
 </table>
 """
 
+TABLE_WITH_LINK_HTML = """
+<a title="Show season 1">Season 1</a>
+<table class="wikitable">
+<tr><th>No.</th><th>No. in season</th><th>Title</th></tr>
+<tr><td>1</td><td>1</td><td>"Pilot"</td></tr>
+</table>
+"""
+
+UNORDERED_HEADER_HTML = """
+<table class="wikitable">
+<tr><th>No.</th><th>Title</th><th>No. in season</th></tr>
+<tr><td>1</td><td>"Pilot"</td><td>1</td></tr>
+</table>
+"""
+
+EMBEDDED_NO_QUOTES_HTML = """
+<table class="wikitable">
+<tr><th>Info</th><th>Title</th></tr>
+<tr><td>1 1</td><td><i>Pilot</i></td></tr>
+</table>
+"""
+
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_dedicated_page(mocker):
@@ -129,6 +152,35 @@ async def test_fetch_episode_title_not_found(mocker):
 
     title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title is None
+
+
+@pytest.mark.asyncio
+async def test_parse_table_by_season_link_finds_title():
+    soup = BeautifulSoup(TABLE_WITH_LINK_HTML, "lxml")
+    title = await scraping_service._parse_table_by_season_link(soup, 1, 1)
+    assert title == "Pilot"
+
+
+@pytest.mark.asyncio
+async def test_extract_title_from_table_handles_unordered_headers():
+    soup = BeautifulSoup(UNORDERED_HEADER_HTML, "lxml")
+    table = soup.find("table")
+    title = await scraping_service._extract_title_from_table(table, 1, 1)
+    assert title == "Pilot"
+
+
+@pytest.mark.asyncio
+async def test_parse_embedded_episode_table_without_quotes():
+    soup = BeautifulSoup(EMBEDDED_NO_QUOTES_HTML, "lxml")
+    title = await scraping_service._parse_embedded_episode_table(soup, 1, 1)
+    assert title == "Pilot"
+
+
+@pytest.mark.asyncio
+async def test_parse_all_tables_flexibly_without_season_header():
+    soup = BeautifulSoup(UNORDERED_HEADER_HTML, "lxml")
+    title = await scraping_service._parse_all_tables_flexibly(soup, 1, 1)
+    assert title == "Pilot"
 
 
 @pytest.mark.asyncio
