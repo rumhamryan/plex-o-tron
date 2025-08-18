@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from unittest.mock import Mock
 import wikipedia
+from bs4 import BeautifulSoup
 from telegram_bot.services import scraping_service
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -57,7 +58,14 @@ DEDICATED_HTML = """
 EMBEDDED_HTML = """
 <table class="wikitable">
 <tr><th>Info</th><th>Title</th></tr>
-<tr><td>1 1</td><td>"Pilot"</td></tr>
+<tr><td>1 1</td><td><i>Pilot</i><sup>[1]</sup></td></tr>
+</table>
+"""
+
+DEDICATED_VARIANT_HTML = """
+<table class="wikitable">
+<tr><th>No. overall</th><th>Title</th><th>No. in season</th></tr>
+<tr><td>1</td><td>"Pilot"</td><td>1</td></tr>
 </table>
 """
 
@@ -99,21 +107,24 @@ async def test_fetch_episode_title_dedicated_page(mocker):
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_embedded_page(mocker):
-    mock_list_page = mocker.Mock()
-    mock_list_page.url = "http://example.com/list"
+    mock_main_page = mocker.Mock()
+    mock_main_page.title = "Show"
+    mock_main_page.url = "http://example.com/main"
+    mocker.patch("wikipedia.search", return_value=["Show"])
+    mocker.patch(
+        "wikipedia.page",
+        side_effect=[mock_main_page, wikipedia.exceptions.PageError("not found")],
+    )
     mocker.patch(
         "telegram_bot.services.scraping_service._get_page_html",
         return_value=EMBEDDED_HTML,
     )
 
-    mocker.patch("wikipedia.search", return_value=["Show"])
-    mocker.patch(
-        "wikipedia.page",
-        side_effect=[wikipedia.exceptions.PageError("not found"), mock_list_page],
+    title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+        "Show", 1, 1
     )
-
-    title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
-    assert title is None
+    assert title == "Pilot"
+    assert corrected is None
 
 
 @pytest.mark.asyncio
@@ -143,6 +154,21 @@ async def test_fetch_season_episode_count(mocker):
 
     count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 2)
     assert count == 8
+
+
+@pytest.mark.asyncio
+async def test_extract_title_from_table_handles_column_variation():
+    soup = BeautifulSoup(DEDICATED_VARIANT_HTML, "lxml")
+    table = soup.find("table", class_="wikitable")
+    title = await scraping_service._extract_title_from_table(table, 1, 1)
+    assert title == "Pilot"
+
+
+@pytest.mark.asyncio
+async def test_parse_embedded_episode_table_extracts_title():
+    soup = BeautifulSoup(EMBEDDED_HTML, "lxml")
+    title = await scraping_service._parse_embedded_episode_table(soup, 1, 1)
+    assert title == "Pilot"
 
 
 @pytest.mark.asyncio

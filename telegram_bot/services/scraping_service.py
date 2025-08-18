@@ -179,8 +179,10 @@ async def _parse_table_by_season_link(
     # Pattern to find "South Park season 27" or similar, case-insensitively.
     season_pattern = re.compile(f"season {season}\\b", re.IGNORECASE)
 
-    # Find an 'a' tag whose 'title' attribute matches the season pattern.
+    # Find an 'a' tag whose 'title' attribute or text matches the season pattern.
     season_link = soup.find("a", title=season_pattern)
+    if not isinstance(season_link, Tag):
+        season_link = soup.find("a", string=season_pattern)
 
     if not isinstance(season_link, Tag):
         logger.info(f"[WIKI] Strategy 1: Could not find a link for Season {season}.")
@@ -302,25 +304,30 @@ async def _parse_embedded_episode_table(
 
             try:
                 # Heuristic: Check if the first cell contains the season and episode number
-                # in the format "S.E" or "S E"
-                cell_text = cells[0].get_text(strip=True)
-                match = re.match(r"(\d+)\s*(\d+)", cell_text)
-                if match:
-                    row_season, row_episode = map(int, match.groups())
+                # in the format "S E" or "S.E". Extract digits to ignore stray text.
+                cell_numbers = re.findall(r"\d+", cells[0].get_text(" ", strip=True))
+                if len(cell_numbers) >= 2:
+                    row_season, row_episode = map(int, cell_numbers[:2])
                     if row_season == season and row_episode == episode:
                         title_cell = cells[1]
                         if isinstance(title_cell, Tag):
-                            found_text = title_cell.find(
-                                string=re.compile(r'"([^"]+)"')
-                            )
-                            if found_text:
-                                cleaned_title = str(found_text).strip().strip('"')
+                            # Titles are often italicized or linked. Check those first.
+                            candidate = title_cell.find("i") or title_cell.find("a")
+                            if candidate and candidate.get_text(strip=True):
+                                cleaned_title = candidate.get_text(strip=True)
                             else:
-                                cleaned_title = title_cell.get_text(strip=True)
-                            logger.info(
-                                f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
-                            )
-                            return cleaned_title
+                                found_text = title_cell.find(
+                                    string=re.compile(r'"([^\"]+)"')
+                                )
+                                if found_text:
+                                    cleaned_title = str(found_text).strip().strip('"')
+                                else:
+                                    cleaned_title = title_cell.get_text(strip=True)
+                            if cleaned_title and not cleaned_title.isdigit():
+                                logger.info(
+                                    f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
+                                )
+                                return cleaned_title
             except (ValueError, IndexError):
                 continue
 
@@ -334,29 +341,56 @@ async def _extract_title_from_table(
     """
     Extracts an episode title from a given table based on season and episode number.
     """
+    # Determine column indexes from header row to handle varying table layouts.
+    header_row = table.find("tr")
+    if not isinstance(header_row, Tag):
+        return None
+
+    headers = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
+    no_in_season_col = None
+    title_col = None
+    for idx, header in enumerate(headers):
+        if re.search(r"no\.\s*in\s*season|in\s*season|#", header):
+            no_in_season_col = idx
+        if "title" in header:
+            title_col = idx
+
+    # Fallback logic: assume the title column is next to the episode number column
+    if no_in_season_col is None and title_col is not None and title_col > 0:
+        no_in_season_col = title_col - 1
+    elif no_in_season_col is None:
+        no_in_season_col = 0 if headers else None
+
+    if title_col is None and no_in_season_col is not None:
+        title_col = (
+            no_in_season_col + 1 if len(headers) > no_in_season_col + 1 else None
+        )
+
+    if no_in_season_col is None or title_col is None:
+        return None
+
     for row in table.find_all("tr")[1:]:
         if not isinstance(row, Tag):
             continue
 
         cells = row.find_all(["td", "th"])
-        if len(cells) < 3:  # Basic validation for required columns
+        if len(cells) <= max(no_in_season_col, title_col):
             continue
 
         try:
-            # Column 1: Episode number in season. This is a common convention.
-            episode_num_cell = cells[1].get_text(strip=True)
+            episode_num_cell = cells[no_in_season_col].get_text(strip=True)
             if extract_first_int(episode_num_cell) == episode:
-                title_cell = cells[2]
+                title_cell = cells[title_col]
                 if isinstance(title_cell, Tag):
-                    # The title is often in quotes. Prioritize finding that.
-                    found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+                    candidate = title_cell.find("i") or title_cell.find("a")
+                    if candidate and candidate.get_text(strip=True):
+                        return candidate.get_text(strip=True)
+                    found_text = title_cell.find(string=re.compile(r'"([^\"]+)"'))
                     if found_text:
-                        # Cleanly extract the text within the quotes.
                         return str(found_text).strip().strip('"')
-                    # Fallback to the full, stripped text of the cell.
-                    return title_cell.get_text(strip=True)
+                    text = title_cell.get_text(strip=True)
+                    return re.sub(r"\[\d+\]", "", text)
         except (ValueError, IndexError):
-            # This handles cases where a row doesn't match the expected format.
             continue
 
     return None
