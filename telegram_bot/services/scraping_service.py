@@ -32,6 +32,15 @@ async def _get_page_html(url: str) -> str | None:
         return None
 
 
+def _clean_episode_title(raw_title: str) -> str:
+    """Normalize an episode title by trimming whitespace and removing quotes."""
+    if not raw_title:
+        return ""
+    text = raw_title.strip()
+    for ch in ['"', "'", "“", "”", "‘", "’"]:
+        text = text.strip(ch)
+    return text.strip()
+
 # --- Wikipedia Scraping ---
 
 
@@ -284,16 +293,14 @@ async def _parse_all_tables_flexibly(
 async def _parse_embedded_episode_table(
     soup: BeautifulSoup, season: int, episode: int
 ) -> str | None:
-    """
-    (Strategy 4) Parses a page using flexible row searching for embedded episode lists.
-    """
+    """(Strategy 4) Parses a page using flexible row searching for embedded episode lists."""
     logger.info("[WIKI] Trying Strategy 4: Flexible Row Search")
     tables = soup.find_all("table", class_="wikitable")
 
     for table in tables:
         if not isinstance(table, Tag):
             continue
-        for row in table.find_all("tr")[1:]:  # Skip header
+        for row in table.find_all("tr")[1:]:  # Skip header row
             if not isinstance(row, Tag):
                 continue
             cells = row.find_all(["td", "th"])
@@ -301,31 +308,34 @@ async def _parse_embedded_episode_table(
                 continue
 
             try:
-                # Heuristic: Check if the first cell contains the season and episode number
-                # in the format "S.E" or "S E"
                 cell_text = cells[0].get_text(strip=True)
                 match = re.match(r"(\d+)\s*(\d+)", cell_text)
-                if match:
-                    row_season, row_episode = map(int, match.groups())
-                    if row_season == season and row_episode == episode:
-                        title_cell = cells[1]
-                        if isinstance(title_cell, Tag):
-                            found_text = title_cell.find(
-                                string=re.compile(r'"([^"]+)"')
-                            )
-                            if found_text:
-                                cleaned_title = str(found_text).strip().strip('"')
-                            else:
-                                cleaned_title = title_cell.get_text(strip=True)
-                            logger.info(
-                                f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
-                            )
-                            return cleaned_title
-            except (ValueError, IndexError):
+                if not match:
+                    continue
+                row_season, row_episode = map(int, match.groups())
+                if row_season != season or row_episode != episode:
+                    continue
+
+                title_cell = None
+                for candidate in cells[1:]:
+                    if not re.fullmatch(r"\d+", candidate.get_text(strip=True)):
+                        title_cell = candidate
+                        break
+
+                if isinstance(title_cell, Tag):
+                    cleaned_title = _clean_episode_title(
+                        title_cell.get_text(" ", strip=True)
+                    )
+                    logger.info(
+                        f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
+                    )
+                    return cleaned_title
+            except Exception:
                 continue
 
     logger.warning("[WIKI] Flexible Row Search failed.")
     return None
+
 
 
 async def _extract_title_from_table(
@@ -349,12 +359,11 @@ async def _extract_title_from_table(
                 title_cell = cells[2]
                 if isinstance(title_cell, Tag):
                     # The title is often in quotes. Prioritize finding that.
-                    found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+                    found_text = title_cell.find(string=re.compile(r'"([^\"]+)"'))
                     if found_text:
-                        # Cleanly extract the text within the quotes.
-                        return str(found_text).strip().strip('"')
+                        return _clean_episode_title(str(found_text))
                     # Fallback to the full, stripped text of the cell.
-                    return title_cell.get_text(strip=True)
+                    return _clean_episode_title(title_cell.get_text(" ", strip=True))
         except (ValueError, IndexError):
             # This handles cases where a row doesn't match the expected format.
             continue

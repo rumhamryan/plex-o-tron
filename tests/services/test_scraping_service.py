@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from unittest.mock import Mock
 import wikipedia
+from bs4 import BeautifulSoup
 from telegram_bot.services import scraping_service
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -61,6 +62,13 @@ EMBEDDED_HTML = """
 </table>
 """
 
+FLEX_ROW_HTML = """
+<table class="wikitable">
+<tr><th>Info</th><th>Title</th><th>Extra</th></tr>
+<tr><td>1 1</td><td>1</td><td>"Pilot"</td></tr>
+</table>
+"""
+
 
 NO_EPISODE_HTML = """
 <table class="wikitable">
@@ -99,8 +107,8 @@ async def test_fetch_episode_title_dedicated_page(mocker):
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_embedded_page(mocker):
-    mock_list_page = mocker.Mock()
-    mock_list_page.url = "http://example.com/list"
+    mock_main_page = mocker.Mock()
+    mock_main_page.url = "http://example.com/main"
     mocker.patch(
         "telegram_bot.services.scraping_service._get_page_html",
         return_value=EMBEDDED_HTML,
@@ -109,11 +117,11 @@ async def test_fetch_episode_title_embedded_page(mocker):
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch(
         "wikipedia.page",
-        side_effect=[wikipedia.exceptions.PageError("not found"), mock_list_page],
+        side_effect=[mock_main_page, wikipedia.exceptions.PageError("not found")],
     )
 
     title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
-    assert title is None
+    assert title == "Pilot"
 
 
 @pytest.mark.asyncio
@@ -129,6 +137,13 @@ async def test_fetch_episode_title_not_found(mocker):
 
     title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title is None
+
+
+@pytest.mark.asyncio
+async def test_parse_embedded_table_handles_numeric_title_cell():
+    soup = BeautifulSoup(FLEX_ROW_HTML, "lxml")
+    title = await scraping_service._parse_embedded_episode_table(soup, 1, 1)
+    assert title == "Pilot"
 
 
 @pytest.mark.asyncio
