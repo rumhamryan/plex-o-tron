@@ -68,6 +68,7 @@ SIMPLE_EMBEDDED_HTML = """
 </table>
 """
 
+
 WRONG_HEADER_HTML = """
 <h3>Overview</h3>
 <table class="wikitable">
