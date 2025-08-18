@@ -177,7 +177,10 @@ async def _parse_table_by_season_link(
     """
     logger.info(f"[WIKI] Trying Strategy 1: Find link for Season {season}")
     # Pattern to find "South Park season 27" or similar, case-insensitively.
-    season_pattern = re.compile(f"season {season}\\b", re.IGNORECASE)
+    # Allow for "Season 2" or "2 Season" style titles to avoid missing valid links.
+    season_pattern = re.compile(
+        rf"(season\s+{season}|{season}\s+season)\b", re.IGNORECASE
+    )
 
     # Find an 'a' tag whose 'title' attribute matches the season pattern.
     season_link = soup.find("a", title=season_pattern)
@@ -192,24 +195,15 @@ async def _parse_table_by_season_link(
 
     # The episode table is often the next 'wikitable' after the link's container.
     # We search from the link's parent to be robust against minor structural changes.
+    # Search forward in the document for the next table with class "wikitable".
+    # Using find_next keeps the logic resilient to extra wrapper tags between the
+    # season link and the table itself.
     search_node = season_link.parent
     if not isinstance(search_node, Tag):
         logger.warning("[WIKI] Strategy 1: Could not find parent of the season link.")
         return None
 
-    target_table = None
-    # Iterate through next siblings to find the first wikitable
-    for sibling in search_node.find_next_siblings():
-        if isinstance(sibling, Tag):
-            classes = sibling.get("class")
-            if classes and "wikitable" in classes:
-                target_table = sibling
-                break
-            # Also check within the sibling if it's a container
-            found = sibling.find("table", class_="wikitable")
-            if found:
-                target_table = found
-                break
+    target_table = search_node.find_next("table", class_="wikitable")
 
     if not isinstance(target_table, Tag):
         logger.warning(
@@ -228,8 +222,10 @@ async def _parse_table_after_season_header(
     (Strategy 2) Parses a 'wikitable' immediately following a season header (h2, h3).
     """
     logger.info(f"[WIKI] Trying Strategy 2: Find header for Season {season}")
-    # This regex is designed to be specific to avoid false positives.
-    season_pattern = re.compile(f"Season\\s+{season}", re.IGNORECASE)
+    # Match common header formats like "Season 2" or "2 Season" to cover most pages.
+    season_pattern = re.compile(
+        rf"(Season\s+{season}|{season}\s+Season)", re.IGNORECASE
+    )
     header_tag = soup.find(
         lambda tag: tag.name in ["h2", "h3"]
         and bool(season_pattern.search(tag.get_text()))
@@ -265,12 +261,20 @@ async def _parse_all_tables_flexibly(
     logger.info("[WIKI] Trying Fallback Strategy: Flexible search of all tables.")
     for table in soup.find_all("table", class_="wikitable"):
         if isinstance(table, Tag):
-            # Check if the table is for the correct season by checking the previous header
+            # Check the previous header to infer season relevance. Some pages omit
+            # season numbers in the header, so we allow a best-effort attempt even if
+            # the header doesn't explicitly reference the desired season.
             prev_header = table.find_previous(["h2", "h3"])
             if prev_header and isinstance(prev_header, Tag):
                 season_pattern = re.compile(f"Season\\s+{season}", re.IGNORECASE)
                 if not season_pattern.search(prev_header.get_text()):
-                    continue  # Not the right season, skip this table
+                    title = await _extract_title_from_table(table, season, episode)
+                    if title:
+                        logger.info(
+                            "[WIKI] Fallback Strategy: Found title despite header mismatch."
+                        )
+                        return title
+                    continue
 
             title = await _extract_title_from_table(table, season, episode)
             if title:
@@ -293,7 +297,7 @@ async def _parse_embedded_episode_table(
     for table in tables:
         if not isinstance(table, Tag):
             continue
-        for row in table.find_all("tr")[1:]:  # Skip header
+        for row in table.find_all("tr")[1:]:  # Skip header row
             if not isinstance(row, Tag):
                 continue
             cells = row.find_all(["td", "th"])
@@ -301,26 +305,37 @@ async def _parse_embedded_episode_table(
                 continue
 
             try:
-                # Heuristic: Check if the first cell contains the season and episode number
-                # in the format "S.E" or "S E"
                 cell_text = cells[0].get_text(strip=True)
                 match = re.match(r"(\d+)\s*(\d+)", cell_text)
-                if match:
-                    row_season, row_episode = map(int, match.groups())
-                    if row_season == season and row_episode == episode:
-                        title_cell = cells[1]
-                        if isinstance(title_cell, Tag):
-                            found_text = title_cell.find(
-                                string=re.compile(r'"([^"]+)"')
-                            )
-                            if found_text:
-                                cleaned_title = str(found_text).strip().strip('"')
-                            else:
-                                cleaned_title = title_cell.get_text(strip=True)
-                            logger.info(
-                                f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
-                            )
-                            return cleaned_title
+                if not match:
+                    continue
+
+                row_season, row_episode = map(int, match.groups())
+                if row_season != season or row_episode != episode:
+                    continue
+
+                title_cell = cells[1]
+                if not isinstance(title_cell, Tag):
+                    continue
+
+                # Prefer text within quotes, but gracefully handle titles wrapped in
+                # other tags (e.g., <i> or <a>). If the final text is numeric only,
+                # skip to avoid returning bogus data.
+                found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+                if found_text:
+                    cleaned_title = str(found_text).strip().strip('"')
+                else:
+                    cleaned_title = title_cell.get_text(
+                        separator=" ", strip=True
+                    ).strip('"')
+
+                if cleaned_title.isdigit():
+                    continue
+
+                logger.info(
+                    f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
+                )
+                return cleaned_title
             except (ValueError, IndexError):
                 continue
 
@@ -333,30 +348,70 @@ async def _extract_title_from_table(
 ) -> str | None:
     """
     Extracts an episode title from a given table based on season and episode number.
+
+    The function first determines the relevant column indices by inspecting the
+    header row. This approach is more maintainable than relying on fixed
+    positions and gracefully handles tables with unexpected column orders.
     """
+    header_row = table.find("tr")
+    if not isinstance(header_row, Tag):
+        return None
+
+    headers = [
+        h.get_text(strip=True).lower() for h in header_row.find_all(["th", "td"])
+    ]
+    season_col = None
+    episode_col = None
+    title_col = None
+
+    for idx, text in enumerate(headers):
+        if title_col is None and "title" in text:
+            title_col = idx
+        if episode_col is None and (
+            "no." in text and "season" in text or "episode" in text
+        ):
+            episode_col = idx
+        if season_col is None and text.strip() == "season":
+            season_col = idx
+
+    # Fallback to conventional positions if headers could not be identified.
+    if episode_col is None:
+        episode_col = 1
+    if title_col is None:
+        title_col = 2
+
     for row in table.find_all("tr")[1:]:
         if not isinstance(row, Tag):
             continue
 
         cells = row.find_all(["td", "th"])
-        if len(cells) < 3:  # Basic validation for required columns
+        if len(cells) <= max(title_col, episode_col, season_col or 0):
             continue
 
         try:
-            # Column 1: Episode number in season. This is a common convention.
-            episode_num_cell = cells[1].get_text(strip=True)
-            if extract_first_int(episode_num_cell) == episode:
-                title_cell = cells[2]
-                if isinstance(title_cell, Tag):
-                    # The title is often in quotes. Prioritize finding that.
-                    found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
-                    if found_text:
-                        # Cleanly extract the text within the quotes.
-                        return str(found_text).strip().strip('"')
-                    # Fallback to the full, stripped text of the cell.
-                    return title_cell.get_text(strip=True)
+            if season_col is not None:
+                season_cell = cells[season_col].get_text(strip=True)
+                if extract_first_int(season_cell) != season:
+                    continue
+
+            episode_cell = cells[episode_col].get_text(strip=True)
+            if extract_first_int(episode_cell) != episode:
+                continue
+
+            title_cell = cells[title_col]
+            if not isinstance(title_cell, Tag):
+                continue
+
+            found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+            if found_text:
+                return str(found_text).strip().strip('"')
+
+            italic_text = title_cell.find("i")
+            if italic_text:
+                return italic_text.get_text(strip=True)
+
+            return title_cell.get_text(strip=True).strip('"')
         except (ValueError, IndexError):
-            # This handles cases where a row doesn't match the expected format.
             continue
 
     return None
