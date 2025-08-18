@@ -190,26 +190,15 @@ async def _parse_table_by_season_link(
         f"[WIKI] Strategy 1: Found link for Season {season}: '{season_link.get_text(strip=True)}'"
     )
 
-    # The episode table is often the next 'wikitable' after the link's container.
-    # We search from the link's parent to be robust against minor structural changes.
+    # The episode table is typically the next 'wikitable' after the link's container.
+    # Using ``find_next`` makes the search resilient to unrelated elements between
+    # the link and the table (lists, paragraphs, etc.).
     search_node = season_link.parent
     if not isinstance(search_node, Tag):
         logger.warning("[WIKI] Strategy 1: Could not find parent of the season link.")
         return None
 
-    target_table = None
-    # Iterate through next siblings to find the first wikitable
-    for sibling in search_node.find_next_siblings():
-        if isinstance(sibling, Tag):
-            classes = sibling.get("class")
-            if classes and "wikitable" in classes:
-                target_table = sibling
-                break
-            # Also check within the sibling if it's a container
-            found = sibling.find("table", class_="wikitable")
-            if found:
-                target_table = found
-                break
+    target_table = search_node.find_next("table", class_="wikitable")
 
     if not isinstance(target_table, Tag):
         logger.warning(
@@ -331,32 +320,56 @@ async def _parse_embedded_episode_table(
 async def _extract_title_from_table(
     table: Tag, season: int, episode: int
 ) -> str | None:
+    """Extract an episode title from a given table.
+
+    Wikipedia episode tables often share headers but vary in their column order.
+    Instead of assuming fixed positions for the episode number and title columns,
+    this function reads the header row to locate them. This makes the scraper more
+    tolerant of layout changes and unusual table formats.
     """
-    Extracts an episode title from a given table based on season and episode number.
-    """
+
+    header_row = table.find("tr")
+    if not isinstance(header_row, Tag):
+        return None
+
+    headers = [
+        h.get_text(strip=True).lower() for h in header_row.find_all(["th", "td"])
+    ]
+
+    episode_col = None
+    for idx, text in enumerate(headers):
+        if re.search(r"no\.\s*in\s*season|episode", text):
+            episode_col = idx
+            break
+
+    title_col = None
+    for idx, text in enumerate(headers):
+        if "title" in text:
+            title_col = idx
+            break
+
+    if episode_col is None or title_col is None:
+        logger.debug("[WIKI] _extract_title_from_table: required columns missing")
+        return None
+
     for row in table.find_all("tr")[1:]:
         if not isinstance(row, Tag):
             continue
 
         cells = row.find_all(["td", "th"])
-        if len(cells) < 3:  # Basic validation for required columns
+        if len(cells) <= max(episode_col, title_col):
             continue
 
         try:
-            # Column 1: Episode number in season. This is a common convention.
-            episode_num_cell = cells[1].get_text(strip=True)
-            if extract_first_int(episode_num_cell) == episode:
-                title_cell = cells[2]
+            episode_cell = cells[episode_col].get_text(strip=True)
+            if extract_first_int(episode_cell) == episode:
+                title_cell = cells[title_col]
                 if isinstance(title_cell, Tag):
-                    # The title is often in quotes. Prioritize finding that.
                     found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
                     if found_text:
-                        # Cleanly extract the text within the quotes.
                         return str(found_text).strip().strip('"')
-                    # Fallback to the full, stripped text of the cell.
                     return title_cell.get_text(strip=True)
         except (ValueError, IndexError):
-            # This handles cases where a row doesn't match the expected format.
             continue
 
     return None
