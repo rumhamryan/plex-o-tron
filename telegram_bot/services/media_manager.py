@@ -208,7 +208,11 @@ async def handle_successful_download(
                 episode_num = parsed_info_for_file.get("episode")
 
                 # 2. Use isinstance to validate the types. This is what the IDE needs.
-                if not isinstance(show_title, str) or not isinstance(season_num, int) or not isinstance(episode_num, int):
+                if (
+                    not isinstance(show_title, str)
+                    or not isinstance(season_num, int)
+                    or not isinstance(episode_num, int)
+                ):
                     # If any crucial info is missing, skip this file entirely.
                     continue
 
