@@ -356,4 +356,3 @@ async def _trigger_plex_scan(
         reason = error_map.get(type(e), f"An unexpected error occurred: {e}")
         logger.error(f"Plex scan failed: {reason}")
         return "\n\n*Plex Error:* Could not trigger scan\\."
-

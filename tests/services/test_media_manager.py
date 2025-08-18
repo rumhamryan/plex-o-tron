@@ -76,7 +76,6 @@ async def test_handle_successful_download(mocker):
         "telegram_bot.services.media_manager._trigger_plex_scan",
         return_value="scan",
     )
-    mocker.patch("telegram_bot.services.media_manager._cleanup_source_directory")
 
     result = await handle_successful_download(
         ti,
@@ -88,7 +87,6 @@ async def test_handle_successful_download(mocker):
 
     makedirs_mock.assert_called_once_with("/final", exist_ok=True)
 
-    # FIX: Construct the expected paths using os.path.join
     expected_source_path = os.path.join("/downloads", "Movie.mkv")
     expected_dest_path = os.path.join("/final", "Sample (2023).mkv")
 
@@ -136,7 +134,6 @@ async def test_handle_successful_download_season_pack(mocker):
         "telegram_bot.services.media_manager._trigger_plex_scan",
         return_value="",
     )
-    mocker.patch("telegram_bot.services.media_manager._cleanup_source_directory")
 
     result = await handle_successful_download(
         ti,

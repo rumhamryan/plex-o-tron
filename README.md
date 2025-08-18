@@ -63,7 +63,7 @@ Using a virtual environment is highly recommended to isolate project dependencie
 With your virtual environment activated (and after completing Step 1), you can install all required Python packages with a single command.
 
 ```bash
-pip install -r requirements.txt
+pip install .
 ```
 
 ### Step 4: Configure the Bot
