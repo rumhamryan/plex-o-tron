@@ -136,308 +136,122 @@ async def _parse_episode_tables(
     """
     Orchestrates different strategies to parse episode titles from tables.
 
-    This function prioritizes readability by breaking down the parsing logic into
-    clear, sequential steps. It tries strategies in order of specificity.
+    This function now intelligently calls different, specialized parsing functions
+    based on the likely structure of the page (dedicated vs. embedded).
     """
     logger.info("[WIKI] Parsing HTML for episode tables.")
 
-    # Strategy 1: Find a link to a dedicated season page (e.g., "South Park season 27")
-    # This is common for shows with many seasons.
-    episode_title = await _parse_table_by_season_link(soup, season, episode)
-    if episode_title:
-        return episode_title
-
-    # Strategy 2: Find a season header (e.g., "<h3>Season 1</h3>") and parse the next table.
-    # This is a common pattern for dedicated episode list pages.
-    episode_title = await _parse_table_after_season_header(soup, season, episode)
-    if episode_title:
-        return episode_title
-
-    # Strategy 3: Flexibly search all tables if the other approaches fail.
-    # This is a robust fallback for pages with unpredictable structures.
-    logger.info("[WIKI] Specific strategies failed. Trying flexible table search.")
-    episode_title = await _parse_all_tables_flexibly(soup, season, episode)
-    if episode_title:
-        return episode_title
-
-    # Strategy 4: Search for embedded episode tables.
-    episode_title = await _parse_embedded_episode_table(soup, season, episode)
-    if episode_title:
-        return episode_title
-
-    return None
-
-
-async def _parse_table_by_season_link(
-    soup: BeautifulSoup, season: int, episode: int
-) -> str | None:
-    """
-    (Strategy 1) Parses a 'wikitable' by finding a link to the season's main article.
-    This is highly effective for series like South Park with dedicated season pages.
-    """
-    logger.info(f"[WIKI] Trying Strategy 1: Find link for Season {season}")
-    # Pattern to find "South Park season 27" or similar, case-insensitively.
-    # Allow for "Season 2" or "2 Season" style titles to avoid missing valid links.
-    season_pattern = re.compile(
-        rf"(season\s+{season}|{season}\s+season)\b", re.IGNORECASE
-    )
-
-    # Find an 'a' tag whose 'title' attribute matches the season pattern.
-    season_link = soup.find("a", title=season_pattern)
-
-    if not isinstance(season_link, Tag):
-        logger.info(f"[WIKI] Strategy 1: Could not find a link for Season {season}.")
-        return None
-
-    logger.info(
-        f"[WIKI] Strategy 1: Found link for Season {season}: '{season_link.get_text(strip=True)}'"
-    )
-
-    # The episode table is often the next 'wikitable' after the link's container.
-    # We search from the link's parent to be robust against minor structural changes.
-    # Search forward in the document for the next table with class "wikitable".
-    # Using find_next keeps the logic resilient to extra wrapper tags between the
-    # season link and the table itself.
-    search_node = season_link.parent
-    if not isinstance(search_node, Tag):
-        logger.warning("[WIKI] Strategy 1: Could not find parent of the season link.")
-        return None
-
-    target_table = search_node.find_next("table", class_="wikitable")
-
-    if not isinstance(target_table, Tag):
-        logger.warning(
-            f"[WIKI] Strategy 1: Found link for Season {season}, but no subsequent wikitable."
-        )
-        return None
-
-    logger.info("[WIKI] Strategy 1: Found table, extracting title.")
-    return await _extract_title_from_table(target_table, season, episode)
-
-
-async def _parse_table_after_season_header(
-    soup: BeautifulSoup, season: int, episode: int
-) -> str | None:
-    """
-    (Strategy 2) Parses a 'wikitable' immediately following a season header (h2, h3).
-    """
-    logger.info(f"[WIKI] Trying Strategy 2: Find header for Season {season}")
-    # Match common header formats like "Season 2" or "2 Season" to cover most pages.
-    season_pattern = re.compile(
-        rf"(Season\s+{season}|{season}\s+Season)", re.IGNORECASE
-    )
+    # --- Strategy for DEDICATED pages: Look for explicit Season headers/links ---
+    season_header_pattern = re.compile(rf"Season\s+{season}", re.IGNORECASE)
     header_tag = soup.find(
         lambda tag: tag.name in ["h2", "h3"]
-        and bool(season_pattern.search(tag.get_text()))
+        and bool(season_header_pattern.search(tag.get_text()))
     )
+    if isinstance(header_tag, Tag):
+        target_table = header_tag.find_next("table", class_="wikitable")
+        if isinstance(target_table, Tag):
+            logger.info("[WIKI] Found explicit season header. Using DEDICATED parser.")
+            return await _extract_title_from_dedicated_table(
+                target_table, season, episode
+            )
 
-    if not isinstance(header_tag, Tag):
-        logger.info(
-            f"[WIKI] Strategy 2: Could not find a dedicated header for Season {season}."
-        )
-        return None
-
-    logger.info(
-        f"[WIKI] Strategy 2: Found header for Season {season}: '{header_tag.get_text(strip=True)}'"
+    # --- Strategy for EMBEDDED lists: Look for a generic "Episodes" header ---
+    episodes_header_pattern = re.compile(r"Episodes", re.IGNORECASE)
+    episodes_header_tag = soup.find(
+        lambda tag: tag.name in ["h2", "h3"]
+        and bool(episodes_header_pattern.search(tag.get_text()))
     )
-    target_table = header_tag.find_next("table", class_="wikitable")
+    if isinstance(episodes_header_tag, Tag):
+        target_table = episodes_header_tag.find_next("table", class_="wikitable")
+        if isinstance(target_table, Tag):
+            logger.info("[WIKI] Found generic 'Episodes' header. Using EMBEDDED parser.")
+            return await _extract_title_from_embedded_table(
+                target_table, season, episode
+            )
 
-    if not isinstance(target_table, Tag):
-        logger.warning(
-            f"[WIKI] Strategy 2: Found header for Season {season}, but no subsequent wikitable."
-        )
-        return None
-
-    logger.info("[WIKI] Strategy 2: Found table, extracting title.")
-    return await _extract_title_from_table(target_table, season, episode)
-
-
-async def _parse_all_tables_flexibly(
-    soup: BeautifulSoup, season: int, episode: int
-) -> str | None:
-    """
-    (Fallback Strategy) Iterates through all wikitables to find the episode.
-    """
-    logger.info("[WIKI] Trying Fallback Strategy: Flexible search of all tables.")
-    for table in soup.find_all("table", class_="wikitable"):
-        if isinstance(table, Tag):
-            # Check the previous header to infer season relevance. Some pages omit
-            # season numbers in the header, so we allow a best-effort attempt even if
-            # the header doesn't explicitly reference the desired season.
-            prev_header = table.find_previous(["h2", "h3"])
-            if prev_header and isinstance(prev_header, Tag):
-                season_pattern = re.compile(f"Season\\s+{season}", re.IGNORECASE)
-                if not season_pattern.search(prev_header.get_text()):
-                    title = await _extract_title_from_table(table, season, episode)
-                    if title:
-                        logger.info(
-                            "[WIKI] Fallback Strategy: Found title despite header mismatch."
-                        )
-                        return title
-                    continue
-
-            title = await _extract_title_from_table(table, season, episode)
-            if title:
-                logger.info("[WIKI] Fallback Strategy: Found title.")
-                return title
-
-    logger.info("[WIKI] Fallback Strategy: Failed to find title in any table.")
+    logger.warning(
+        f"[WIKI] All parsing strategies failed to find S{season:02d}E{episode:02d}."
+    )
     return None
 
 
-async def _parse_embedded_episode_table(
-    soup: BeautifulSoup, season: int, episode: int
-) -> str | None:
-    """
-    (Strategy 4) Parses a page using flexible row searching for embedded episode lists.
-    """
-    logger.info("[WIKI] Trying Strategy 4: Flexible Row Search")
-    tables = soup.find_all("table", class_="wikitable")
-
-    for table in tables:
-        if not isinstance(table, Tag):
-            continue
-
-        # Capture an explicit season if a header precedes the table. This enables
-        # matching tables that only list episode numbers.
-        table_season = None
-        prev_header = table.find_previous(["h2", "h3"])
-        if isinstance(prev_header, Tag):
-            match = re.search(r"Season\s+(\d+)", prev_header.get_text(), re.IGNORECASE)
-            if match:
-                table_season = int(match.group(1))
-
-        for row in table.find_all("tr")[1:]:
-            if not isinstance(row, Tag):
-                continue
-
-            cells = row.find_all(["td", "th"])
-            if len(cells) < 2:
-                continue
-
-            try:
-                first_cell_text = cells[0].get_text(strip=True)
-
-                # Pattern A: both season and episode numbers appear in the first cell
-                match = re.match(r"(\d+)\s+(\d+)", first_cell_text)
-                if match:
-                    row_season, row_episode = map(int, match.groups())
-                    title_cell = (
-                        cells[1]
-                        if row_season == season and row_episode == episode
-                        else None
-                    )
-                else:
-                    # Pattern B: table season is inferred from a preceding header and
-                    # the first cell holds only the episode number.
-                    row_episode = extract_first_int(first_cell_text)
-                    title_cell = (
-                        cells[1]
-                        if table_season == season
-                        and row_episode == episode
-                        and len(cells) > 1
-                        else None
-                    )
-
-                if not isinstance(title_cell, Tag):
-                    continue
-
-                # Prefer text within quotes, but gracefully handle titles wrapped in
-                # other tags (e.g., <i> or <a>). If the final text is numeric only,
-                # skip to avoid returning bogus data.
-                found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
-                cleaned_title = (
-                    str(found_text).strip().strip('"')
-                    if found_text
-                    else title_cell.get_text(separator=" ", strip=True).strip('"')
-                )
-
-                if cleaned_title.isdigit():
-                    continue
-
-                logger.info(
-                    f"[SUCCESS] Found title via Flexible Row Search: '{cleaned_title}'"
-                )
-                return cleaned_title
-            except (ValueError, IndexError):
-                continue
-
-    logger.warning("[WIKI] Flexible Row Search failed.")
-    return None
-
-
-async def _extract_title_from_table(
+async def _extract_title_from_dedicated_table(
     table: Tag, season: int, episode: int
 ) -> str | None:
     """
-    Extracts an episode title from a given table based on season and episode number.
-
-    The function first determines the relevant column indices by inspecting the
-    header row. This approach is more maintainable than relying on fixed
-    positions and gracefully handles tables with unexpected column orders.
+    (FOR DEDICATED PAGES) Extracts a title from a complex wikitable, typically
+    found on "List of..." episode pages. It assumes a multi-column layout
+    that may include overall episode numbers.
     """
-    header_row = table.find("tr")
-    if not isinstance(header_row, Tag):
-        return None
+    # This logic is restored from the previously working version for dedicated pages
+    for row in table.find_all("tr")[1:]:  # Skip header row
+        if not isinstance(row, Tag):
+            continue
 
-    headers = [
-        h.get_text(strip=True).lower() for h in header_row.find_all(["th", "td"])
-    ]
-    season_col = None
-    episode_col = None
-    title_col = None
+        cells = row.find_all(["th", "td"])
+        if len(cells) < 3:
+            continue
 
-    for idx, text in enumerate(headers):
-        if title_col is None and "title" in text:
-            title_col = idx
-        if episode_col is None and (
-            "no." in text and "season" in text or "episode" in text
-        ):
-            episode_col = idx
-        if season_col is None and text.strip() == "season":
-            season_col = idx
+        try:
+            # Column 1 is "No. in season" on these pages
+            episode_cell_text = cells[1].get_text(strip=True)
+            if extract_first_int(episode_cell_text) != episode:
+                continue
 
-    # Fallback to conventional positions if headers could not be identified.
-    col_count = len(headers)
-    if episode_col is None:
-        episode_col = 0 if col_count < 3 else 1
-    if title_col is None:
-        title_col = 1 if col_count < 3 else 2
+            # Column 2 is the title
+            title_cell = cells[2]
+            if not isinstance(title_cell, Tag):
+                continue
 
-    for row in table.find_all("tr")[1:]:
+            # Find title (preferring text in quotes)
+            found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+            if found_text:
+                return str(found_text).strip().strip('"')
+            italic_text = title_cell.find("i")
+            if italic_text:
+                return italic_text.get_text(strip=True)
+            return title_cell.get_text(strip=True).strip('"')
+        except (ValueError, IndexError):
+            continue
+    return None
+
+
+async def _extract_title_from_embedded_table(
+    table: Tag, season: int, episode: int
+) -> str | None:
+    """
+    (FOR EMBEDDED PAGES) Extracts a title from a simpler table structure,
+    typically found on a show's main page under an "Episodes" header.
+    """
+    for row in table.find_all("tr")[1:]:  # Skip header
         if not isinstance(row, Tag):
             continue
 
         cells = row.find_all(["td", "th"])
-        if len(cells) <= max(title_col, episode_col, season_col or 0):
+        if len(cells) < 2:  # Embedded tables often have just "No." and "Title"
             continue
 
         try:
-            if season_col is not None:
-                season_cell = cells[season_col].get_text(strip=True)
-                if extract_first_int(season_cell) != season:
-                    continue
-
-            episode_cell = cells[episode_col].get_text(strip=True)
-            if extract_first_int(episode_cell) != episode:
+            # Column 0 is "No." in this simpler format
+            episode_cell_text = cells[0].get_text(strip=True)
+            if extract_first_int(episode_cell_text) != episode:
                 continue
 
-            title_cell = cells[title_col]
+            # Column 1 is the title
+            title_cell = cells[1]
             if not isinstance(title_cell, Tag):
                 continue
-
+            
+            # Same reliable title extraction logic
             found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
             if found_text:
                 return str(found_text).strip().strip('"')
-
             italic_text = title_cell.find("i")
             if italic_text:
                 return italic_text.get_text(strip=True)
-
             return title_cell.get_text(strip=True).strip('"')
         except (ValueError, IndexError):
             continue
-
     return None
 
 

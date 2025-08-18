@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import Mock
 import wikipedia
 from telegram_bot.services import scraping_service
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -106,50 +106,6 @@ SEASON_OVERVIEW_HTML = """
 <tr><td>2</td><td>8</td></tr>
 </table>
 """
-
-
-@pytest.mark.asyncio
-async def test_parse_table_by_season_link():
-    soup = BeautifulSoup(DEDICATED_HTML, "lxml")
-    title = await scraping_service._parse_table_by_season_link(soup, 1, 1)
-    assert title == "Pilot"
-
-
-@pytest.mark.asyncio
-async def test_parse_table_after_season_header():
-    soup = BeautifulSoup(DEDICATED_HTML, "lxml")
-    title = await scraping_service._parse_table_after_season_header(soup, 1, 1)
-    assert title == "Pilot"
-
-
-@pytest.mark.asyncio
-async def test_parse_all_tables_flexibly_handles_wrong_header():
-    soup = BeautifulSoup(WRONG_HEADER_HTML, "lxml")
-    title = await scraping_service._parse_all_tables_flexibly(soup, 1, 1)
-    assert title == "Pilot"
-
-
-@pytest.mark.asyncio
-async def test_parse_embedded_episode_table():
-    soup = BeautifulSoup(EMBEDDED_HTML, "lxml")
-    title = await scraping_service._parse_embedded_episode_table(soup, 1, 1)
-    assert title == "Pilot"
-
-
-@pytest.mark.asyncio
-async def test_extract_title_from_table_varied_columns():
-    soup = BeautifulSoup(VARIED_COLUMNS_HTML, "lxml")
-    table = soup.find("table", class_="wikitable")
-    title = await scraping_service._extract_title_from_table(table, 1, 1)
-    assert title == "Pilot"
-
-
-@pytest.mark.asyncio
-async def test_extract_title_from_table_two_columns():
-    soup = BeautifulSoup(TWO_COLUMN_HTML, "lxml")
-    table = soup.find("table", class_="wikitable")
-    title = await scraping_service._extract_title_from_table(table, 1, 1)
-    assert title == "Pilot"
 
 
 @pytest.mark.asyncio

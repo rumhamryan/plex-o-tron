@@ -11,7 +11,7 @@ import libtorrent as lt
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application
 from telegram.constants import ParseMode
-from telegram.error import BadRequest, NetworkError
+from telegram.error import BadRequest, NetworkError, TimedOut
 from telegram.helpers import escape_markdown
 
 from ..config import logger, PERSISTENCE_FILE
@@ -118,15 +118,22 @@ class ProgressReporter:
                         ]
                     ]
                 )
-
-            await safe_edit_message(
-                self.application.bot,
-                chat_id=self.chat_id,
-                message_id=self.message_id,
-                text=message_text,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=reply_markup,
-            )
+            
+            # --- FIX: Add a try/except block to prevent UI errors from crashing the download ---
+            try:
+                await safe_edit_message(
+                    self.application.bot,
+                    chat_id=self.chat_id,
+                    message_id=self.message_id,
+                    text=message_text,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup,
+                )
+            except (TimedOut, NetworkError) as e:
+                logger.warning(
+                    f"Failed to send progress update due to a network error: {e}. "
+                    "The download will continue in the background."
+                )
 
 
 async def download_with_progress(
