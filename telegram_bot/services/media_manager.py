@@ -198,24 +198,32 @@ async def handle_successful_download(
                 parsed_info_for_file = parse_torrent_name(
                     os.path.basename(path_in_torrent)
                 )
-                parsed_info_for_file.setdefault("title", parsed_info.get("title"))
-                parsed_info_for_file.setdefault("season", parsed_info.get("season"))
+                parsed_info_for_file["title"] = parsed_info.get("title")
+                parsed_info_for_file["season"] = parsed_info.get("season")
                 parsed_info_for_file["type"] = "tv"
 
-                if (
-                    parsed_info_for_file.get("season") is None
-                    or parsed_info_for_file.get("episode") is None
-                ):
+                # 1. Extract the values into local variables for type narrowing.
+                show_title = parsed_info_for_file.get("title")
+                season_num = parsed_info_for_file.get("season")
+                episode_num = parsed_info_for_file.get("episode")
+
+                # 2. Use isinstance to validate the types. This is what the IDE needs.
+                if not isinstance(show_title, str) or not isinstance(season_num, int) or not isinstance(episode_num, int):
+                    # If any crucial info is missing, skip this file entirely.
                     continue
 
+                # 3. Call the function with the validated local variables.
+                # The IDE now knows these variables cannot be None.
                 (
                     episode_title,
                     corrected_show_title,
                 ) = await fetch_episode_title_from_wikipedia(
-                    show_title=parsed_info_for_file["title"],
-                    season=parsed_info_for_file["season"],
-                    episode=parsed_info_for_file["episode"],
+                    show_title=show_title,
+                    season=season_num,
+                    episode=episode_num,
                 )
+
+                # 4. Safely update the dictionary with the results.
                 parsed_info_for_file["episode_title"] = episode_title
                 if corrected_show_title:
                     parsed_info_for_file["title"] = corrected_show_title

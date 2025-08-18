@@ -336,10 +336,26 @@ async def _handle_tv_scope_selection(
                 if not link:
                     continue
                 parsed_info = parse_torrent_name(best.get("title", ""))
-                parsed_info.setdefault("title", title)
-                parsed_info.setdefault("season", season)
-                parsed_info.setdefault("episode", ep)
+                # Use the title and season from the user's search for consistency.
+                parsed_info["title"] = title
+                parsed_info["season"] = season
+                parsed_info["episode"] = ep
                 parsed_info["type"] = "tv"
+
+                # Fetch the episode title from Wikipedia before queueing.
+                (
+                    episode_title,
+                    corrected_show_title,
+                ) = await scraping_service.fetch_episode_title_from_wikipedia(
+                    show_title=title, season=season, episode=ep
+                )
+
+                # Add the fetched title to the dictionary.
+                parsed_info["episode_title"] = episode_title
+                if corrected_show_title:
+                    # If Wikipedia found a better title (e.g., "It's" vs "Its"), use it.
+                    parsed_info["title"] = corrected_show_title
+
                 torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
 
         await _present_season_download_confirmation(
