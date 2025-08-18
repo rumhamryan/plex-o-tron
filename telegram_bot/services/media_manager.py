@@ -246,8 +246,6 @@ async def handle_successful_download(
                 await _trigger_plex_scan(parsed_info_for_file.get("type"), plex_config)
                 processed += 1
 
-            if processed:
-                _cleanup_source_directory(initial_download_path, files.file_path(0))
             return (
                 "✅ *Success\\!*\n"
                 f"Processed and moved {processed} episodes from the season pack."
@@ -282,8 +280,6 @@ async def handle_successful_download(
         scan_status_message = await _trigger_plex_scan(
             parsed_info.get("type"), plex_config
         )
-
-        _cleanup_source_directory(initial_download_path, target_file_in_torrent)
 
     except Exception as e:
         logger.error(f"Post-processing failed: {e}", exc_info=True)
@@ -361,17 +357,3 @@ async def _trigger_plex_scan(
         logger.error(f"Plex scan failed: {reason}")
         return "\n\n*Plex Error:* Could not trigger scan\\."
 
-
-def _cleanup_source_directory(initial_path: str, torrent_file_path: str):
-    """Deletes the original download directory if it's now empty."""
-    try:
-        # Get the top-level directory/file created by the torrent
-        top_level_item = torrent_file_path.split(os.path.sep)[0]
-        original_path = os.path.join(initial_path, top_level_item)
-
-        # If it was a directory and is now empty, remove it
-        if os.path.isdir(original_path) and not os.listdir(original_path):
-            logger.info(f"Cleaning up empty source directory: {original_path}")
-            shutil.rmtree(original_path)
-    except Exception as e:
-        logger.warning(f"Could not perform source directory cleanup: {e}")
