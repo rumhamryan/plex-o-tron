@@ -57,7 +57,9 @@ async def fetch_episode_title_from_wikipedia(
         )
         search_results = await asyncio.to_thread(wikipedia.search, show_title)
         if not search_results:
-            logger.error(f"[WIKI] No Wikipedia page found for '{show_title}'. Aborting.")
+            logger.error(
+                f"[WIKI] No Wikipedia page found for '{show_title}'. Aborting."
+            )
             return None, None
 
         main_page_title = search_results[0]
@@ -176,7 +178,7 @@ async def _parse_table_by_season_link(
     logger.info(f"[WIKI] Trying Strategy 1: Find link for Season {season}")
     # Pattern to find "South Park season 27" or similar, case-insensitively.
     season_pattern = re.compile(f"season {season}\\b", re.IGNORECASE)
-    
+
     # Find an 'a' tag whose 'title' attribute matches the season pattern.
     season_link = soup.find("a", title=season_pattern)
 
@@ -192,7 +194,7 @@ async def _parse_table_by_season_link(
     # We search from the link's parent to be robust against minor structural changes.
     search_node = season_link.parent
     if not isinstance(search_node, Tag):
-        logger.warning(f"[WIKI] Strategy 1: Could not find parent of the season link.")
+        logger.warning("[WIKI] Strategy 1: Could not find parent of the season link.")
         return None
 
     target_table = None
@@ -228,13 +230,20 @@ async def _parse_table_after_season_header(
     logger.info(f"[WIKI] Trying Strategy 2: Find header for Season {season}")
     # This regex is designed to be specific to avoid false positives.
     season_pattern = re.compile(f"Season\\s+{season}", re.IGNORECASE)
-    header_tag = soup.find(lambda tag: tag.name in ['h2', 'h3'] and bool(season_pattern.search(tag.get_text())))
+    header_tag = soup.find(
+        lambda tag: tag.name in ["h2", "h3"]
+        and bool(season_pattern.search(tag.get_text()))
+    )
 
     if not isinstance(header_tag, Tag):
-        logger.info(f"[WIKI] Strategy 2: Could not find a dedicated header for Season {season}.")
+        logger.info(
+            f"[WIKI] Strategy 2: Could not find a dedicated header for Season {season}."
+        )
         return None
 
-    logger.info(f"[WIKI] Strategy 2: Found header for Season {season}: '{header_tag.get_text(strip=True)}'")
+    logger.info(
+        f"[WIKI] Strategy 2: Found header for Season {season}: '{header_tag.get_text(strip=True)}'"
+    )
     target_table = header_tag.find_next("table", class_="wikitable")
 
     if not isinstance(target_table, Tag):
@@ -242,7 +251,7 @@ async def _parse_table_after_season_header(
             f"[WIKI] Strategy 2: Found header for Season {season}, but no subsequent wikitable."
         )
         return None
-    
+
     logger.info("[WIKI] Strategy 2: Found table, extracting title.")
     return await _extract_title_from_table(target_table, season, episode)
 
@@ -261,13 +270,13 @@ async def _parse_all_tables_flexibly(
             if prev_header and isinstance(prev_header, Tag):
                 season_pattern = re.compile(f"Season\\s+{season}", re.IGNORECASE)
                 if not season_pattern.search(prev_header.get_text()):
-                    continue # Not the right season, skip this table
+                    continue  # Not the right season, skip this table
 
             title = await _extract_title_from_table(table, season, episode)
             if title:
                 logger.info("[WIKI] Fallback Strategy: Found title.")
                 return title
-    
+
     logger.info("[WIKI] Fallback Strategy: Failed to find title in any table.")
     return None
 
@@ -301,7 +310,9 @@ async def _parse_embedded_episode_table(
                     if row_season == season and row_episode == episode:
                         title_cell = cells[1]
                         if isinstance(title_cell, Tag):
-                            found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+                            found_text = title_cell.find(
+                                string=re.compile(r'"([^"]+)"')
+                            )
                             if found_text:
                                 cleaned_title = str(found_text).strip().strip('"')
                             else:
@@ -551,9 +562,9 @@ async def scrape_1337x(
                         continue
 
                     name_cell, seeds_cell, size_cell, uploader_cell = (
-                        cells[0], 
-                        cells[1], 
-                        cells[4], 
+                        cells[0],
+                        cells[1],
+                        cells[4],
                         cells[5],
                     )
                     page_url_relative = name_cell.find_all("a")[1].get("href")

@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 import wikipedia
 from telegram_bot.services import scraping_service
 
@@ -113,7 +113,7 @@ async def test_fetch_episode_title_embedded_page(mocker):
     )
 
     title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
-    assert title is None    
+    assert title is None
 
 
 @pytest.mark.asyncio
