@@ -6,7 +6,6 @@ import pytest
 from unittest.mock import Mock
 import wikipedia
 from telegram_bot.services import scraping_service
-from bs4 import BeautifulSoup, Tag
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 

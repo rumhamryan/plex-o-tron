@@ -118,7 +118,7 @@ class ProgressReporter:
                         ]
                     ]
                 )
-            
+
             # --- FIX: Add a try/except block to prevent UI errors from crashing the download ---
             try:
                 await safe_edit_message(

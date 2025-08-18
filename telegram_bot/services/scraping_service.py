@@ -164,7 +164,9 @@ async def _parse_episode_tables(
     if isinstance(episodes_header_tag, Tag):
         target_table = episodes_header_tag.find_next("table", class_="wikitable")
         if isinstance(target_table, Tag):
-            logger.info("[WIKI] Found generic 'Episodes' header. Using EMBEDDED parser.")
+            logger.info(
+                "[WIKI] Found generic 'Episodes' header. Using EMBEDDED parser."
+            )
             return await _extract_title_from_embedded_table(
                 target_table, season, episode
             )
@@ -241,7 +243,7 @@ async def _extract_title_from_embedded_table(
             title_cell = cells[1]
             if not isinstance(title_cell, Tag):
                 continue
-            
+
             # Same reliable title extraction logic
             found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
             if found_text:
