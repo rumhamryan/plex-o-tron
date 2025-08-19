@@ -740,14 +740,15 @@ def _strategy_find_direct_links(soup: BeautifulSoup) -> set[str]:
     found_links: set[str] = set()
     # Anchor tags are the most reliable indicators of downloadable content.
     for tag in soup.find_all("a", href=True):
-        href = tag["href"]
-        if not isinstance(href, str):
-            continue
-        if href.startswith("magnet:"):
-            found_links.add(href)
-        elif href.endswith(".torrent"):
-            # Relative ``.torrent`` paths are returned as-is; the caller may resolve them.
-            found_links.add(href)
+        if isinstance(tag, Tag):  # Add this check
+            href = tag.get("href")
+            if not isinstance(href, str):
+                continue
+            if href.startswith("magnet:"):
+                found_links.add(href)
+            elif href.endswith(".torrent"):
+                # Relative ``.torrent`` paths are returned as-is; the caller may resolve them.
+                found_links.add(href)
     return found_links
 
 
@@ -762,7 +763,10 @@ def _strategy_contextual_search(soup: BeautifulSoup, query: str) -> set[str]:
     query_lc = query.lower()
 
     for tag in soup.find_all("a", href=True):
-        href = tag["href"]
+        if not isinstance(tag, Tag):
+            continue
+
+        href = tag.get("href")
         if not isinstance(href, str):
             continue
 
@@ -798,14 +802,22 @@ def _strategy_find_in_tables(soup: BeautifulSoup, query: str) -> dict[str, float
     query_lc = query.lower()
 
     for table in soup.find_all("table"):
+        if not isinstance(table, Tag):
+            continue
+
         for row in table.find_all("tr"):
+            if not isinstance(row, Tag):
+                continue
+
             row_text = row.get_text(" ", strip=True)
             match_score = fuzz.partial_ratio(query_lc, row_text.lower())
             if match_score <= 75:
                 continue
             first_link = row.find("a", href=True)
-            if first_link and isinstance(first_link["href"], str):
-                scored_links[first_link["href"]] = float(match_score)
+            if first_link and isinstance(first_link, Tag):
+                href = first_link.get("href")
+                if isinstance(href, str):
+                    scored_links[href] = float(match_score)
 
     return scored_links
 
@@ -843,8 +855,8 @@ def _score_candidate_links(
             # Penalise links that live inside obvious ad/comment containers.
             parent = anchor.parent
             while isinstance(parent, Tag):
-                classes = " ".join(parent.get("class", [])).lower()
-                element_id = (parent.get("id") or "").lower()
+                classes = " ".join(parent.get("class") or []).lower()
+                element_id = str(parent.get("id") or "").lower()
                 if "ad" in classes or "ads" in classes or "comment" in element_id:
                     score -= 50
                     break
