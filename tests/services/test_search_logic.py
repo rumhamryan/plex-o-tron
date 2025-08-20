@@ -1,10 +1,12 @@
 import sys
 from pathlib import Path
 import pytest
+from unittest.mock import Mock
 from telegram_bot.services.search_logic import (
     _parse_codec,
     _parse_size_to_gb,
     score_torrent_result,
+    orchestrate_searches,
 )
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -47,3 +49,48 @@ def test_score_torrent_result():
 
     no_match = score_torrent_result("Another 720p x264", "unknown", prefs, seeders=3)
     assert no_match == 3
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_uses_generic_scraper(mocker):
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "websites": {
+                "movies": [
+                    {
+                        "name": "Example",
+                        "search_url": "https://example.com/?q={query}",
+                        "enabled": True,
+                    }
+                ]
+            },
+            "preferences": {"movies": {}},
+        }
+    }
+
+    async def fake_generic(
+        query, media_type, search_url, *, preferences=None, source_name=None
+    ):
+        return [
+            {
+                "title": "Sample",
+                "page_url": "url",
+                "score": 1,
+                "source": source_name,
+                "uploader": "uploader",
+                "size_gb": 0,
+                "codec": None,
+                "seeders": 0,
+                "leechers": 0,
+                "year": None,
+            }
+        ]
+
+    mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_generic_page",
+        side_effect=fake_generic,
+    )
+
+    results = await orchestrate_searches("query", "movie", context)
+    assert results[0]["source"] == "Example"
