@@ -2,7 +2,10 @@ import sys
 from pathlib import Path
 import asyncio
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, Mock, ANY
+
+import libtorrent as lt
 import pytest
 from telegram_bot.services.download_manager import (
     ProgressReporter,
@@ -19,11 +22,14 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 @pytest.mark.asyncio
 async def test_progress_reporter_movie(mocker):
-    status = SimpleNamespace(
-        progress=0.5,
-        download_rate=1024 * 1024,
-        state=SimpleNamespace(name="downloading"),
-        num_peers=5,
+    status = cast(
+        lt.torrent_status,
+        SimpleNamespace(
+            progress=0.5,
+            download_rate=1024 * 1024,
+            state=SimpleNamespace(name="downloading"),
+            num_peers=5,
+        ),
     )
     application = Mock()
     download_data = {"lock": asyncio.Lock(), "is_paused": False}
@@ -50,11 +56,14 @@ async def test_progress_reporter_movie(mocker):
 
 @pytest.mark.asyncio
 async def test_progress_reporter_tv_paused(mocker):
-    status = SimpleNamespace(
-        progress=0.25,
-        download_rate=512 * 1024,
-        state=SimpleNamespace(name="downloading"),
-        num_peers=3,
+    status = cast(
+        lt.torrent_status,
+        SimpleNamespace(
+            progress=0.25,
+            download_rate=512 * 1024,
+            state=SimpleNamespace(name="downloading"),
+            num_peers=3,
+        ),
     )
     application = Mock()
     download_data = {"lock": asyncio.Lock(), "is_paused": True}

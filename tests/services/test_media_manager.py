@@ -2,6 +2,9 @@ import sys
 import os
 from pathlib import Path
 from unittest.mock import AsyncMock
+from typing import cast
+
+import libtorrent as lt
 import pytest
 from telegram_bot.services.media_manager import (
     generate_plex_filename,
@@ -62,7 +65,7 @@ class DummyTorrent:
 
 @pytest.mark.asyncio
 async def test_handle_successful_download(mocker):
-    ti = DummyTorrent()
+    ti = cast(lt.torrent_info, DummyTorrent())
     parsed = {"type": "movie", "title": "Sample", "year": "2023"}
     save_paths = {"movies": "/movies", "default": "/default"}
 
@@ -111,7 +114,7 @@ class SeasonTorrent:
 
 @pytest.mark.asyncio
 async def test_handle_successful_download_season_pack(mocker):
-    ti = SeasonTorrent()
+    ti = cast(lt.torrent_info, SeasonTorrent())
     parsed = {
         "type": "tv",
         "title": "Show",
