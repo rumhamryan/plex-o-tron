@@ -1,9 +1,11 @@
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 import pytest
 from telegram_bot.services.search_logic import (
     _parse_codec,
     _parse_size_to_gb,
+    orchestrate_searches,
     score_torrent_result,
 )
 
@@ -47,3 +49,44 @@ def test_score_torrent_result():
 
     no_match = score_torrent_result("Another 720p x264", "unknown", prefs, seeders=3)
     assert no_match == 3
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_generic_fallback(mocker):
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "websites": {
+                "tv": [
+                    {
+                        "name": "EZTVx.to",
+                        "search_url": "https://eztvx.to/search/{query}",
+                        "enabled": True,
+                    }
+                ]
+            },
+            "preferences": {"tv": {}},
+        }
+    }
+
+    expected = [
+        {
+            "title": "Example Show",
+            "page_url": "magnet:?xt=urn:btih:1",
+            "score": 1,
+            "source": "eztvx.to",
+            "uploader": "u",
+            "size_gb": 1.0,
+            "codec": None,
+            "seeders": 1,
+            "year": None,
+        }
+    ]
+
+    mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_generic_page",
+        return_value=expected,
+    )
+
+    results = await orchestrate_searches("Example Show", "tv", context)
+    assert results == expected
