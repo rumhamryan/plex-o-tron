@@ -1,7 +1,6 @@
 # telegram_bot/services/scraping_service.py
 
 import asyncio
-from collections import Counter
 import re
 import urllib.parse
 from typing import Any
@@ -347,186 +346,6 @@ async def fetch_season_episode_count_from_wikipedia(
 # --- Torrent Site Scraping ---
 
 
-async def scrape_1337x(
-    query: str,
-    media_type: str,
-    search_url_template: str,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    base_query_for_filter: str | None = None,
-    **kwargs,
-) -> list[dict[str, Any]]:
-    """
-    Scrapes 1337x.to for torrents. It now correctly performs all network
-    requests within a single client session to prevent closure errors.
-    """
-    search_config = context.bot_data.get("SEARCH_CONFIG", {})
-    prefs_key = "movies" if "movie" in media_type else "tv"
-    preferences = search_config.get("preferences", {}).get(prefs_key, {})
-
-    if not preferences:
-        logger.warning(
-            f"[SCRAPER] No preferences found for '{prefs_key}'. Cannot score 1337x results."
-        )
-        return []
-
-    formatted_query = urllib.parse.quote_plus(query)
-    search_url = search_url_template.replace("{query}", formatted_query)
-    headers = {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-    }
-
-    results = []
-    best_match_base_name = "N/A"
-
-    try:
-        # CORRECTED: The 'async with' block now wraps ALL network activity.
-        async with httpx.AsyncClient(
-            headers=headers, timeout=30, follow_redirects=True
-        ) as client:
-            # --- Initial Search Request ---
-            logger.info(
-                f"[SCRAPER] 1337x Stage 1: Scraping candidates from {search_url}"
-            )
-            response = await client.get(search_url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "lxml")
-
-            # --- Stage 1: Scrape candidates ---
-            candidates = []
-            table_body = soup.find("tbody")
-            if not isinstance(table_body, Tag):
-                return []
-
-            for row in table_body.find_all("tr"):
-                if not isinstance(row, Tag) or len(row.find_all("td")) < 2:
-                    continue
-                name_cell = row.find_all("td")[0]
-                if (
-                    not isinstance(name_cell, Tag)
-                    or len(links := name_cell.find_all("a")) < 2
-                ):
-                    continue
-                title = links[1].get_text(strip=True)
-                parsed_info = parse_torrent_name(title)
-                base_name = parsed_info.get("title")
-                if title and base_name:
-                    candidates.append(
-                        {
-                            "title": title,
-                            "base_name": base_name,
-                            "row_element": row,
-                            "parsed_info": parsed_info,
-                        }
-                    )
-
-            if not candidates:
-                logger.warning("[SCRAPER] 1337x: Found no candidates on page.")
-                return []
-
-            # --- Stage 2: Identify best match ---
-            filter_query = base_query_for_filter or query
-            candidates = [
-                c
-                for c in candidates
-                if fuzz.ratio(filter_query.lower(), c["base_name"].lower()) > 85
-            ]
-
-            if not candidates:
-                logger.warning(
-                    f"[SCRAPER] 1337x: No candidates survived fuzzy filter for query '{query}'."
-                )
-                return []
-
-            base_name_counts = Counter(c["base_name"] for c in candidates)
-            if not base_name_counts:
-                return []
-
-            best_match_base_name, _ = base_name_counts.most_common(1)[0]
-            logger.info(
-                f"[SCRAPER] 1337x Stage 2: Identified most common media name: '{best_match_base_name}'"
-            )
-
-            # --- Stage 3: Fetch detail pages and process torrents ---
-            base_url = "https://1337x.to"
-            for candidate in candidates:
-                if candidate["base_name"] == best_match_base_name:
-                    row = candidate["row_element"]
-                    cells = row.find_all("td")
-                    if len(cells) < 6:
-                        continue
-
-                    name_cell, seeds_cell, size_cell, uploader_cell = (
-                        cells[0],
-                        cells[1],
-                        cells[4],
-                        cells[5],
-                    )
-                    page_url_relative = name_cell.find_all("a")[1].get("href")
-                    if not isinstance(page_url_relative, str):
-                        continue
-
-                    detail_page_url = f"{base_url}{page_url_relative}"
-
-                    # This request now happens inside the active client session.
-                    detail_response = await client.get(detail_page_url)
-                    if detail_response.status_code != 200:
-                        logger.warning(
-                            f"Failed to fetch 1337x detail page {detail_page_url}, status: {detail_response.status_code}"
-                        )
-                        continue
-
-                    detail_soup = BeautifulSoup(detail_response.text, "lxml")
-                    magnet_tag = detail_soup.find("a", href=re.compile(r"^magnet:"))
-                    if (
-                        not magnet_tag
-                        or not isinstance(magnet_tag, Tag)
-                        or not (magnet_link := magnet_tag.get("href"))
-                    ):
-                        logger.warning(
-                            f"Could not find magnet link on page: {detail_page_url}"
-                        )
-                        continue
-
-                    # Process the rest of the data
-                    size_str = size_cell.get_text(strip=True)
-                    seeds_str = seeds_cell.get_text(strip=True)
-                    parsed_size_gb = _parse_size_to_gb(size_str)
-                    uploader = (
-                        uploader_cell.find("a").get_text(strip=True)
-                        if uploader_cell.find("a")
-                        else "Anonymous"
-                    )
-                    seeders_int = int(seeds_str) if seeds_str.isdigit() else 0
-                    score = score_torrent_result(
-                        candidate["title"], uploader, preferences, seeders=seeders_int
-                    )
-
-                    if score > 0 and isinstance(magnet_link, str):
-                        results.append(
-                            {
-                                "title": candidate["title"],
-                                "page_url": magnet_link,
-                                "score": score,
-                                "source": "1337x",
-                                "uploader": uploader,
-                                "size_gb": parsed_size_gb,
-                                "codec": _parse_codec(candidate["title"]),
-                                "seeders": seeders_int,
-                                "year": candidate["parsed_info"].get("year"),
-                            }
-                        )
-
-    except Exception as e:
-        logger.error(f"[SCRAPER ERROR] 1337x scrape failed: {e}", exc_info=True)
-        return []
-
-    logger.info(
-        f"[SCRAPER] 1337x Stage 3: Found {len(results)} relevant torrents for '{best_match_base_name}'."
-    )
-    return results
-
-
 async def scrape_yts(
     query: str,
     media_type: str,
@@ -752,13 +571,38 @@ def _strategy_find_direct_links(soup: BeautifulSoup) -> set[str]:
     return found_links
 
 
-def _strategy_contextual_search(soup: BeautifulSoup, query: str) -> set[str]:
+def _extract_row_data(row: Tag) -> dict[str, str]:
+    """Extract raw torrent data from a table row."""
+
+    cells = row.find_all("td")
+    link_tag = row.find("a", href=True)
+
+    title = link_tag.get_text(strip=True) if isinstance(link_tag, Tag) else ""
+    page_url = link_tag.get("href") if isinstance(link_tag, Tag) else ""
+    seeders = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+    leechers = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+    size = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+    uploader = cells[4].get_text(strip=True) if len(cells) > 4 else ""
+
+    return {
+        "title": title,
+        "page_url": page_url,
+        "seeders": seeders,
+        "leechers": leechers,
+        "size": size,
+        "uploader": uploader,
+    }
+
+
+def _strategy_contextual_search(
+    soup: BeautifulSoup, query: str
+) -> list[dict[str, str]]:
     """Find links whose surrounding text hints at a torrent download."""
 
     if not isinstance(query, str) or not query.strip():
-        return set()
+        return []
 
-    potential_links: set[str] = set()
+    results: list[dict[str, str]] = []
     keywords = {"magnet", "torrent", "download", "1080p", "720p", "x265"}
     query_lc = query.lower()
 
@@ -787,18 +631,31 @@ def _strategy_contextual_search(soup: BeautifulSoup, query: str) -> set[str]:
         )
 
         if keyword_match or query_match > 80:
-            potential_links.add(href)
+            parent_row = tag.find_parent("tr")
+            if isinstance(parent_row, Tag):
+                results.append(_extract_row_data(parent_row))
+            else:
+                results.append(
+                    {
+                        "title": tag.get_text(strip=True),
+                        "page_url": href,
+                        "seeders": "",
+                        "leechers": "",
+                        "size": "",
+                        "uploader": "",
+                    }
+                )
 
-    return potential_links
+    return results
 
 
-def _strategy_find_in_tables(soup: BeautifulSoup, query: str) -> dict[str, float]:
-    """Inspect tables for rows relevant to ``query`` and score their links."""
+def _strategy_find_in_tables(soup: BeautifulSoup, query: str) -> list[dict[str, str]]:
+    """Inspect tables for rows relevant to ``query``."""
 
     if not isinstance(query, str) or not query.strip():
-        return {}
+        return []
 
-    scored_links: dict[str, float] = {}
+    results: list[dict[str, str]] = []
     query_lc = query.lower()
 
     for table in soup.find_all("table"):
@@ -813,66 +670,21 @@ def _strategy_find_in_tables(soup: BeautifulSoup, query: str) -> dict[str, float
             match_score = fuzz.partial_ratio(query_lc, row_text.lower())
             if match_score <= 75:
                 continue
-            first_link = row.find("a", href=True)
-            if first_link and isinstance(first_link, Tag):
-                href = first_link.get("href")
-                if isinstance(href, str):
-                    scored_links[href] = float(match_score)
 
-    return scored_links
+            row_data = _extract_row_data(row)
+            if row_data.get("page_url"):
+                results.append(row_data)
 
-
-def _score_candidate_links(
-    links: set[str],
-    query: str,
-    table_links_scored: dict[str, float],
-    soup: BeautifulSoup,
-) -> str | None:
-    """Score candidate links and return the highest scoring URL."""
-
-    if not links or not isinstance(query, str) or not query.strip():
-        return None
-
-    query_lc = query.lower()
-    best_link: str | None = None
-    best_score = -1.0
-
-    for link in links:
-        score = 0.0
-
-        if link.startswith("magnet:"):
-            score += 100
-        elif link.endswith(".torrent"):
-            score += 50
-
-        score += table_links_scored.get(link, 0)
-
-        anchor = soup.find("a", href=link)
-        if anchor:
-            link_text_lc = anchor.get_text(strip=True).lower()
-            score += fuzz.partial_ratio(query_lc, link_text_lc)
-
-            # Penalise links that live inside obvious ad/comment containers.
-            parent = anchor.parent
-            while isinstance(parent, Tag):
-                classes = " ".join(parent.get("class") or []).lower()
-                element_id = str(parent.get("id") or "").lower()
-                if "ad" in classes or "ads" in classes or "comment" in element_id:
-                    score -= 50
-                    break
-                parent = parent.parent
-
-        if score > best_score:
-            best_score = score
-            best_link = link
-
-    return best_link
+    return results
 
 
 async def scrape_generic_page(
-    query: str, media_type: str, search_url: str
+    query: str,
+    media_type: str,
+    search_url: str,
+    preferences: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """High-level orchestrator that runs all strategies and selects the best link."""
+    """Scrape an arbitrary HTML page for torrent information."""
 
     if not query.strip() or not search_url.strip():
         return []
@@ -882,13 +694,48 @@ async def scrape_generic_page(
         return []
 
     soup = BeautifulSoup(html, "lxml")
-    direct_links = _strategy_find_direct_links(soup)
-    context_links = _strategy_contextual_search(soup, query)
-    table_links_scored = _strategy_find_in_tables(soup, query)
+    _ = media_type  # Media type kept for future use.
+    candidates: list[dict[str, str]] = []
+    candidates.extend(_strategy_find_in_tables(soup, query))
+    candidates.extend(_strategy_contextual_search(soup, query))
 
-    all_candidates = direct_links | context_links | set(table_links_scored)
-    best_link = _score_candidate_links(all_candidates, query, table_links_scored, soup)
+    deduped: dict[str, dict[str, str]] = {}
+    for item in candidates:
+        key = item.get("page_url") or item.get("title")
+        if key and key not in deduped:
+            deduped[key] = item
 
-    if best_link:
-        return [{"page_url": best_link, "source": "generic"}]
-    return []
+    results: list[dict[str, Any]] = []
+    for item in deduped.values():
+        title = item.get("title", "")
+        if not title:
+            continue
+
+        uploader = item.get("uploader", "")
+        seeders_str = item.get("seeders", "0")
+        leechers_str = item.get("leechers", "0")
+        size_str = item.get("size", "0")
+
+        seeders = int(seeders_str) if seeders_str.isdigit() else 0
+        leechers = int(leechers_str) if leechers_str.isdigit() else 0
+        size_gb = _parse_size_to_gb(size_str)
+        codec = _parse_codec(title)
+        parsed_name = parse_torrent_name(title)
+        score = score_torrent_result(title, uploader, preferences, seeders)
+
+        results.append(
+            {
+                "title": title,
+                "page_url": item.get("page_url", ""),
+                "score": score,
+                "source": "generic",
+                "uploader": uploader,
+                "size_gb": size_gb,
+                "codec": codec,
+                "seeders": seeders,
+                "leechers": leechers,
+                "year": parsed_name.get("year"),
+            }
+        )
+
+    return results
