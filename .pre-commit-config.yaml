@@ -17,14 +17,23 @@ repos:
     - id: ruff
       args: [--fix, --exit-non-zero-on-fix]
 
-- repo: local
+- repo: https://github.com/RobertCraigie/pyright-python
+  rev: v1.1.403
   hooks:
-    - id: pyright
-      name: pyright
-      entry: pyright
-      language: system
-      types: [python]
-      pass_filenames: false
+  - id: pyright
+    additional_dependencies: [
+        "libtorrent",
+        "python-telegram-bot", # Note: the package name for 'telegram'
+        "flask",
+        "httpx",
+        "plexapi",
+        "wikipedia",
+        "beautifulsoup4",      # Note: the package name for 'bs4'
+        "thefuzz",
+        "requests",
+        "pytest",
+        "pyright[nodejs]"
+    ]
 
 - repo: local
   hooks:
