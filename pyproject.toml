@@ -25,7 +25,7 @@ dependencies = [
     "libtorrent",
     "plexapi",
     "thefuzz",
-    "python-Levenshtein", # Required by thefuzz for better performance
+    "python-Levenshtein",
     "httpx[http2]",
 ]
 
@@ -36,7 +36,7 @@ dev = [
     "pytest-asyncio",
     "pytest-mock",
     "pre-commit",
-    "basedpyright==1.1.403"
+    "basedpyright"
 ]
 
 # --- Tool Configurations ---
