@@ -31,6 +31,6 @@ repos:
     - id: pytest
       name: pytest
       entry: pytest tests
-      language: system
+      language: python
       types: [python]
-      pass_filenames: false
+      additional_dependencies: [".[dev]"]
