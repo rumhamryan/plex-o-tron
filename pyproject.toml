@@ -47,3 +47,6 @@ line-length = 88
 [tool.ruff]
 line-length = 88
 ignore = ["E501"]
+
+[tool.pyright]
+typeCheckingMode = "basic"
