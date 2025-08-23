@@ -22,9 +22,10 @@ repos:
     - id: basedpyright
       name: basedpyright
       entry: basedpyright
-      language: system
+      language: python
       types: [python]
       require_serial: true
+      additional_dependencies: ["basedpyright", ".[dev]"]
 
 - repo: local
   hooks:
@@ -34,3 +35,4 @@ repos:
       language: python
       types: [python]
       additional_dependencies: [".[dev]"]
+      pass_filenames: false

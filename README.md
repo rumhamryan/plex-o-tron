@@ -100,6 +100,20 @@ python __main__.py
 
 To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment (`source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.
 
+## Development Setup
+
+Prepare your local environment before contributing by installing development dependencies and setting up pre-commit hooks:
+
+```bash
+pip install -e .[dev]
+pre-commit install
+```
+
+Run the commands above prior to executing `pre-commit run --all-files` to ensure your changes meet the project's linting standards.
+
+
+
+
 ### Bot Commands
 
     start - Displays a welcome message and links to torrent sites.

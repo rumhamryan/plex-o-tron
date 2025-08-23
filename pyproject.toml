@@ -50,3 +50,5 @@ ignore = ["E501"]
 
 [tool.pyright]
 typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
