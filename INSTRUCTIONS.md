@@ -1,151 +1,171 @@
-# Plan to Generalize the Torrent Scraper
+### Revised Plan: Creating a Media-Type-Aware Generic Scraper
 
-## Objective
+Here is the revised, multi-phase plan to fix the `generic_scraper` branch. This plan ensures that the scraper can handle different media types (like movies and TV shows) by using a more powerful YAML configuration, and it implements the necessary multi-step logic required for complex sites like 1337x.to.
 
-The goal is to refactor the existing 1337x-specific scraper into a generic, configuration-driven framework. This will allow the bot to easily support scraping various torrent index websites with minimal code changes, primarily by adding a new configuration file for each new site.
+---
 
-## 1. Configuration Strategy: `config.ini` and Site-Specific YAMLs
+#### Phase 1: Implement Dynamic, Category-Aware URL Construction
 
-While the project already uses a `config.ini` file, creating separate configuration files for each scraper is the recommended approach.
+**Goal:** Fix the immediate `403 Forbidden` error by correctly building the category-specific search URL for any given media type.
 
-*   **Why not just use `config.ini`?**
-    *   **Structure:** Scraper configurations involve nested data (e.g., selectors for a results page vs. a details page). YAML handles this naturally, whereas `ini` files are flat and would require clunky key names (e.g., `details_page_selector_magnet_link`).
-    *   **Modularity:** Adding a new site becomes as simple as adding a new file. This is much cleaner than editing one large, central `config.ini` file, which can become unwieldy and prone to errors.
+1.  **Upgrade `1337x.yaml` to be Media-Type Aware:**
+    Modify your YAML configuration to map your internal media types to the specific URL paths the website requires. The `search_path` will be updated to use a new `{category}` placeholder.
 
-*   **How they work together:**
-    The central `config.ini` will control the scrapers at a high level, while the individual YAML files will contain the site-specific details.
-
-    **Example `config.ini`:**
-    ```ini
-    [Scrapers]
-    # A comma-separated list of scrapers to enable
-    enabled_scrapers = 1337x, thepiratebay
-
-    # The directory where scraper YAML configs are stored
-    scraper_config_path = telegram_bot/scrapers/configs/
-    ```
-
-    The application will read `config.ini` to determine which scrapers to load and where to find their respective `.yaml` configuration files. This gives us the best of both worlds: centralized control and modular, readable scraper definitions.
-
-## 2. Analyze the Current 1337x Scraper
-
-Before refactoring, we need a clear understanding of the current implementation.
-
--   **Identify Hardcoded Values**: Locate all values specific to 1337x. This includes:
-    -   Base URL (e.g., `https://1337x.to`).
-    -   Search URL patterns and query parameters.
-    -   CSS selectors used to find search results, torrent titles, magnet links, seeder/leecher counts, and file sizes.
--   **Map Data Extraction Logic**: Document the exact data points being extracted and any transformations applied to them (e.g., converting "1.4 GB" into bytes).
--   **Trace the Control Flow**: Understand the sequence of operations:
-    1. Building the search URL.
-    2. Making the HTTP request.
-    3. Parsing the HTML response.
-    4. Iterating over search result elements.
-    5. Extracting data from each element.
-    6. Potentially visiting a details page to get the magnet link.
-
-## 3. Design a Generic, Config-Driven Architecture
-
-We will create a system where each supported website is defined by a configuration file.
-
-### A. Site Configuration File
-
-For each site, we'll have a configuration file (e.g., in YAML format for readability) that defines its unique properties.
-
-**Example `1337x.yaml`:**
-
-```yaml
-site_name: "1337x"
-base_url: "https://1337x.to"
-search_path: "/search/{query}/1/" # {query} is a placeholder for the search term
-
-# CSS Selectors for the search results page
-selectors:
-  results_container: "table.table-list tbody tr"
-  title: "td.name a:nth-of-type(2)"
-  # If the link is relative, it will be joined with base_url
-  details_page_link: "td.name a:nth-of-type(2)"
-  seeders: "td.seeds"
-  leechers: "td.leeches"
-  size: "td.size"
-  # Magnet link is on the details page for 1337x
-  magnet_link: null
-
-# CSS Selectors for the torrent details page (if needed)
-details_page_selectors:
-  magnet_link: "a.btn-magnet"
-```
-
-### B. Core Scraper Class
-
-Create a `GenericTorrentScraper` class that is initialized with a site configuration.
-
--   **`__init__(self, site_config)`**: Loads and validates the configuration for a specific site.
--   **`async search(self, query: str) -> list[TorrentData]`**:
-    -   Constructs the search URL from `base_url` and `search_path`, replacing `{query}`.
-    -   Fetches the page content using `httpx`.
-    -   Parses the HTML with `BeautifulSoup`.
-    -   Finds all result elements using `selectors['results_container']`.
-    -   For each result, it calls a helper method to parse the element.
--   **`async _parse_result(self, result_element) -> TorrentData`**:
-    -   Extracts basic data (title, seeders, etc.) from the search result row using the provided selectors.
-    -   If `selectors['magnet_link']` is `null` but `selectors['details_page_link']` is present, it will:
-        1. Construct the full details page URL.
-        2. Fetch and parse the details page.
-        3. Extract the magnet link using `details_page_selectors['magnet_link']`.
-    -   Cleans and standardizes the extracted data (e.g., parse size string into bytes, ensure seeders are integers).
-    -   Returns a structured `TorrentData` object (a `dataclass` or `TypedDict` would be ideal).
-
-## 4. Step-by-Step Refactoring Plan
-
-1.  **Create the `TorrentData` Structure**: Define a `dataclass` or `TypedDict` to hold the scraped torrent information consistently (e.g., `name`, `magnet_url`, `seeders`, `leechers`, `size_bytes`, `source_site`).
-
-2.  **Implement the Site Configuration Loader**: Create a function that can load and validate a YAML file for a given site.
-
-3.  **Build `GenericTorrentScraper`**: Implement the class as designed above. Focus on making the parsing logic robust and resilient to missing elements on a page. Use helper methods to keep the `search` method clean.
-
-4.  **Create `1337x.yaml`**: Populate the first configuration file using the information gathered in the analysis phase.
-
-5.  **Replace Old Scraper**: Modify the part of the application that calls the 1337x scraper. Instead of instantiating the old scraper, it should now:
-    1.  Load the `1337x.yaml` config.
-    2.  Instantiate `GenericTorrentScraper` with that config.
-    3.  Call the `search` method.
-    4.  Verify that the output is identical to the old scraper's output to ensure no functionality is lost.
-
-## 5. Adding a New Site (Example Workflow)
-
-Once the framework is in place, adding a new site like "The Pirate Bay" becomes a data-entry task, not a coding one.
-
-1.  **Investigate the Target Site**:
-    -   Perform a search on the site (e.g., The Pirate Bay).
-    -   Use browser developer tools to inspect the search results page.
-    -   Identify the CSS selectors for the results container and each piece of data (title, magnet link, size, seeders, leechers). Note that TPB has the magnet link directly on the search results page.
-2.  **Create `thepiratebay.yaml`**:
+    **File: `scrapers/configs/1337x.yaml`**
     ```yaml
-    site_name: "The Pirate Bay"
-    base_url: "https://thepiratebay.org" # Or a proxy
-    search_path: "/search.php?q={query}"
+    name: 1337x
+    base_url: https://1337x.to
 
-    selectors:
-      results_container: "table#searchResult tr:not(.header)"
-      title: "a.detLink"
-      # Magnet link is directly on the search page
-      magnet_link: 'a[title="Download this torrent using magnet"]'
-      details_page_link: null # Not needed
-      # Size, seeders, leechers are in a single string, requires more advanced parsing
-      # This is a good place for a custom parsing function or regex
-      size: "font.detDesc"
-      seeders: "td[align='right']"
-      leechers: "td[align='right']:nth-of-type(2)"
+    # NEW: A mapping from your internal media types to the site's URL paths
+    category_mapping:
+      movie: Movies
+      tv: TV-shows # Note: Verify the exact path name on the site, e.g., "TV" or "TV-shows"
 
-    details_page_selectors: null
+    # UPDATED: The search path now includes a {category} placeholder
+    search_path: /category-search/{query}/{category}/{page}/
+
+    # ... other selectors will be added in Phase 2 ...
     ```
-3.  **Test**: The application logic can now be pointed to use the `thepiratebay.yaml` config to test scraping from the new source.
 
-## 6. Handling Advanced Scenarios
+2.  **Update the `scrape_1337x` Wrapper Function:**
+    Modify the wrapper in `scraping_service.py` to pass the `media_type` variable into the generic scraper's `search` method.
 
-The design should be extensible to handle common complexities.
+    **File: `scraping_service.py`**
+    ```python
+    async def scrape_1337x(
+        query: str,
+        media_type: str, # This variable is the key
+        # ... other args
+    ) -> list[dict[str, Any]]:
+        # ... (load config and preferences)
+        scraper = GenericTorrentScraper(site_config)
 
--   **Complex Data Parsing**: For sites where data is not cleanly separated (like TPB's size/uploader string), the scraper could support optional, site-specific "parser functions" or regex patterns defined in the config to extract and clean the data.
--   **Pagination**: The config could include a selector for the "next page" link. The `search` method could have an optional `limit` parameter and follow "next page" links until the limit is reached.
--   **JavaScript-Rendered Content**: If a site relies heavily on JavaScript, `httpx` will only get the initial HTML. The framework could be designed to optionally use a browser automation tool like `Playwright` or `Selenium` instead of `httpx` for fetching page content, perhaps controlled by a `fetch_method: "javascript"` flag in the config.
+        # MODIFIED: Pass the media_type to the search method
+        raw_results = await scraper.search(query, media_type)
+
+        # ... (the rest of the function remains the same)
+    ```
+
+3.  **Enhance the `GenericTorrentScraper.search()` Method:**
+    Update the core search logic in `generic_torrent_scraper.py` to use the `media_type` to look up the correct category from the YAML and build the final URL.
+
+    **File: `generic_torrent_scraper.py` (Conceptual Logic)**
+    ```python
+    # The search method now accepts media_type
+    async def search(self, query: str, media_type: str):
+        # 1. Look up the category from the config mapping
+        category_path = self.config.category_mapping.get(media_type)
+        if not category_path:
+            logger.error(f"Media type '{media_type}' not found in category_mapping for {self.config.name}")
+            return []
+
+        # 2. Build the final, correct search URL
+        formatted_query = urllib.parse.quote_plus(query)
+        search_path = self.config.search_path.format(
+            query=formatted_query,
+            category=category_path,
+            page=1 # Or handle pagination later
+        )
+        search_url = self.base_url + search_path
+
+        logger.info(f"Constructed search URL: {search_url}")
+
+        # ... continue with fetching the page and scraping results ...
+    ```
+**Result of Phase 1:** The `403 Forbidden` error will be resolved for all media types. The scraper will now successfully request the correct search results page but will not yet find torrents.
+
+---
+
+#### Phase 2: Evolve the Generic Scraper to Support Detail Pages
+
+**Goal:** Teach the scraper to handle sites where the magnet link is on a secondary "detail page," not on the search results list.
+
+1.  **Expand the YAML Specification:**
+    Structure the YAML to differentiate between selectors for the search results page and the detail page. Add a selector to find the link *to* the detail page.
+
+    **File: `scrapers/configs/1337x.yaml` (Continued)**
+    ```yaml
+    # ... (name, base_url, category_mapping, search_path from Phase 1) ...
+
+    # Selectors for the INITIAL search results page
+    results_page_selectors:
+      rows: "tbody > tr"
+      name: "td.name a:nth-of-type(2)"
+      seeds: "td.seeds"
+      size: "td.size"
+      uploader: "td.coll-uploader a"
+      # NEW: Selector for the link to the detail page
+      details_page_link: "td.name a:nth-of-type(2)"
+
+    # Selectors for the SECONDARY torrent detail page
+    details_page_selectors:
+      magnet_url: "a[href^='magnet:']"
+    ```
+
+2.  **Upgrade `GenericTorrentScraper.search()` Logic:**
+    Implement the full multi-step scraping process inside the `search` method.
+
+    **File: `generic_torrent_scraper.py` (Conceptual Logic)**
+    ```python
+    async def search(self, query: str, media_type: str):
+        # ... (URL construction logic from Phase 1)
+        search_page_html = await self._fetch_page(search_url)
+        if not search_page_html:
+            return []
+
+        soup = BeautifulSoup(search_page_html, "lxml")
+        results = []
+        result_rows = soup.select(self.config.results_page_selectors.rows)
+
+        for row in result_rows:
+            # Step 1: Extract data from the search results row
+            name = self._extract_text(row, self.config.results_page_selectors.name)
+            # ... extract seeds, size, uploader etc. from the row
+
+            # Step 2: Get the link to the detail page
+            details_link_href = self._extract_href(row, self.config.results_page_selectors.details_page_link)
+            if not details_link_href:
+                continue
+
+            # Step 3: Visit the detail page
+            detail_page_url = self.base_url + details_link_href
+            detail_page_html = await self._fetch_page(detail_page_url)
+            if not detail_page_html:
+                continue
+
+            detail_soup = BeautifulSoup(detail_page_html, "lxml")
+
+            # Step 4: Extract the magnet link from the detail page
+            magnet_link = self._extract_href(detail_soup, self.config.details_page_selectors.magnet_url)
+            if not magnet_link:
+                continue
+
+            # Step 5: Assemble and append the final result object
+            results.append(TorrentResult(name=name, magnet_url=magnet_link, ...))
+
+        return results
+    ```
+**Result of Phase 2:** The scraper will now successfully find and extract magnet links from 1337x.to for both movies and TV shows.
+
+---
+
+#### Phase 3: Refine and Re-integrate Advanced Features
+
+**Goal:** Improve the quality of results by adding back the intelligent filtering from the `master` branch and making the scraper more resilient.
+
+1.  **Re-implement Fuzzy Filtering as a Generic Feature:**
+    Move the logic that identifies the "most common base name" into the `GenericTorrentScraper`. Make it an optional feature that can be enabled and configured in the YAML.
+
+    **File: `scrapers/configs/1337x.yaml` (Additions)**
+    ```yaml
+    # ...
+    # NEW: Optional advanced features
+    advanced_features:
+      enable_fuzzy_filter: true
+      fuzzy_filter_ratio: 85 # Configurable threshold
+    ```
+
+2.  **Add Robustness and Error Handling:**
+    Wrap network requests and parsing steps in the `GenericTorrentScraper`'s loop with `try...except` blocks. This ensures that a single malformed row or a failed detail page request doesn't terminate the entire scraping process.
+
+**Final Result:** You will have a single, robust `GenericTorrentScraper` class that can be configured via YAML files to handle both simple sites and complex, multi-step sites like 1337x.to, while correctly processing different media categories.
