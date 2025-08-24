@@ -7,6 +7,7 @@ from unittest.mock import Mock
 import wikipedia
 from bs4 import BeautifulSoup
 from telegram_bot.services import scraping_service
+from telegram_bot.services.torrent_data import TorrentData
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -224,9 +225,11 @@ async def test_scrape_1337x_parses_results(mocker):
     )
 
     assert len(results) == 1
-    assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
-    assert results[0]["page_url"].startswith("magnet:")
-    assert results[0]["source"] == "1337x"
+    result = results[0]
+    assert isinstance(result, TorrentData)
+    assert result.title == "Sample.Movie.2023.1080p.x265"
+    assert result.magnet_url.startswith("magnet:")
+    assert result.source == "1337x"
 
 
 @pytest.mark.asyncio

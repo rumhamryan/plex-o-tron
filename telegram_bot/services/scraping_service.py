@@ -15,6 +15,7 @@ from thefuzz import fuzz, process
 from ..config import logger
 from .search_logic import _parse_codec, _parse_size_to_gb, score_torrent_result
 from ..utils import extract_first_int, parse_torrent_name
+from .torrent_data import TorrentData
 
 
 # --- Helper Functions ---
@@ -70,7 +71,7 @@ async def fetch_episode_title_from_wikipedia(
 
         if main_page.title != show_title:
             corrected_show_title = main_page.title
-            canonical_title = corrected_show_title
+            canonical_title = corrected_show_title or show_title
             logger.info(
                 f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'"
             )
@@ -355,10 +356,12 @@ async def scrape_1337x(
     *,
     base_query_for_filter: str | None = None,
     **kwargs,
-) -> list[dict[str, Any]]:
+) -> list[TorrentData]:
     """
-    Scrapes 1337x.to for torrents. It now correctly performs all network
-    requests within a single client session to prevent closure errors.
+    Scrapes 1337x.to for torrents, returning structured ``TorrentData`` records.
+
+    All HTTP requests are performed within a single client session to prevent
+    premature connection closures.
     """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     prefs_key = "movies" if "movie" in media_type else "tv"
@@ -376,7 +379,7 @@ async def scrape_1337x(
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
     }
 
-    results = []
+    results: list[TorrentData] = []
     best_match_base_name = "N/A"
 
     try:
@@ -456,12 +459,11 @@ async def scrape_1337x(
                     if len(cells) < 6:
                         continue
 
-                    name_cell, seeds_cell, size_cell, uploader_cell = (
-                        cells[0],
-                        cells[1],
-                        cells[4],
-                        cells[5],
-                    )
+                    name_cell = cells[0]
+                    seeds_cell = cells[1]
+                    leechers_cell = cells[2]
+                    size_cell = cells[4]
+                    uploader_cell = cells[5]
                     page_url_relative = name_cell.find_all("a")[1].get("href")
                     if not isinstance(page_url_relative, str):
                         continue
@@ -491,6 +493,7 @@ async def scrape_1337x(
                     # Process the rest of the data
                     size_str = size_cell.get_text(strip=True)
                     seeds_str = seeds_cell.get_text(strip=True)
+                    leechers_str = leechers_cell.get_text(strip=True)
                     parsed_size_gb = _parse_size_to_gb(size_str)
                     uploader = (
                         uploader_cell.find("a").get_text(strip=True)
@@ -498,23 +501,26 @@ async def scrape_1337x(
                         else "Anonymous"
                     )
                     seeders_int = int(seeds_str) if seeds_str.isdigit() else 0
+                    leechers_int = int(leechers_str) if leechers_str.isdigit() else 0
                     score = score_torrent_result(
                         candidate["title"], uploader, preferences, seeders=seeders_int
                     )
 
                     if score > 0 and isinstance(magnet_link, str):
+                        size_bytes = int(parsed_size_gb * 1024**3)
                         results.append(
-                            {
-                                "title": candidate["title"],
-                                "page_url": magnet_link,
-                                "score": score,
-                                "source": "1337x",
-                                "uploader": uploader,
-                                "size_gb": parsed_size_gb,
-                                "codec": _parse_codec(candidate["title"]),
-                                "seeders": seeders_int,
-                                "year": candidate["parsed_info"].get("year"),
-                            }
+                            TorrentData(
+                                title=candidate["title"],
+                                magnet_url=magnet_link,
+                                seeders=seeders_int,
+                                leechers=leechers_int,
+                                size_bytes=size_bytes,
+                                source="1337x",
+                                score=score,
+                                uploader=uploader,
+                                codec=_parse_codec(candidate["title"]),
+                                year=candidate["parsed_info"].get("year"),
+                            )
                         )
 
     except Exception as e:

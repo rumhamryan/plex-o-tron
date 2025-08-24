@@ -5,6 +5,7 @@ import os
 import re
 from typing import Any
 from collections.abc import Callable, Coroutine
+from dataclasses import asdict, is_dataclass
 
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
@@ -13,7 +14,7 @@ from ..config import logger
 from . import scraping_service
 
 # --- Type Aliases for Readability ---
-ScraperCoroutine = Coroutine[Any, Any, list[dict[str, Any]]]
+ScraperCoroutine = Coroutine[Any, Any, list[Any]]
 ScraperFunction = Callable[..., ScraperCoroutine]
 
 
@@ -122,7 +123,13 @@ async def orchestrate_searches(
         return []
 
     results_from_all_sites = await asyncio.gather(*tasks)
-    all_results = [result for sublist in results_from_all_sites for result in sublist]
+    all_results: list[dict[str, Any]] = []
+    for sublist in results_from_all_sites:
+        for item in sublist:
+            if is_dataclass(item):
+                all_results.append(asdict(item))
+            else:
+                all_results.append(item)
     all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     logger.info(
