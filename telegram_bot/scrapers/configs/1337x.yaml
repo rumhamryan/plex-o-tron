@@ -1,14 +1,29 @@
 site_name: "1337x"
 base_url: "https://1337x.to"
-search_path: "/search/{query}/1/"
-selectors:
-  results_container: "table.table-list tbody tr"
-  title: "td.name a:nth-of-type(2)"
+
+# Map internal media types to site categories
+category_mapping:
+  movie: Movies
+  tv: TV
+
+# Search path expects query, category, and page number
+search_path: "/category-search/{query}/{category}/{page}/"
+
+# CSS selectors for parsing the initial results page
+results_page_selectors:
+  rows: "table.table-list tbody tr"
+  name: "td.name a:nth-of-type(2)"
   details_page_link: "td.name a:nth-of-type(2)"
-  seeders: "td.seeds"
+  seeds: "td.seeds"
   leechers: "td.leeches"
   size: "td.size"
   uploader: "td.uploader a"
-  magnet_link: null
+
+# Selectors for elements on the torrent detail page
 details_page_selectors:
-  magnet_link: "a.btn-magnet"
+  magnet_url: "a.btn-magnet"
+
+# Optional features to refine results
+advanced_features:
+  enable_fuzzy_filter: true
+  fuzzy_filter_ratio: 85

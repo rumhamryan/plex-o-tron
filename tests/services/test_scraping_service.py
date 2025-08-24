@@ -263,6 +263,74 @@ async def test_scrape_1337x_no_results(mocker):
 
 
 @pytest.mark.asyncio
+async def test_scrape_1337x_fuzzy_filter(mocker):
+    """Non-matching titles should be filtered out when fuzzy filter is enabled."""
+
+    search_html = """
+    <table class="table-list"><tbody>
+    <tr>
+      <td class="name">
+        <a href="/cat">Movies</a>
+        <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
+      </td>
+      <td class="seeds">10</td>
+      <td class="leeches">0</td>
+      <td class="size">1.5 GB</td>
+      <td class="uploader"><a>Anonymous</a></td>
+    </tr>
+    <tr>
+      <td class="name">
+        <a href="/cat">Movies</a>
+        <a href="/torrent/2/Unrelated.File.2023.1080p.x265/">Unrelated.File.2023.1080p.x265</a>
+      </td>
+      <td class="seeds">5</td>
+      <td class="leeches">0</td>
+      <td class="size">1.0 GB</td>
+      <td class="uploader"><a>Anonymous</a></td>
+    </tr>
+    </tbody></table>
+    """
+
+    detail_good = """
+    <div><a class="btn-magnet" href="magnet:?xt=urn:btih:GOOD">Magnet</a></div>
+    """
+    detail_bad = """
+    <div><a class="btn-magnet" href="magnet:?xt=urn:btih:BAD">Magnet</a></div>
+    """
+
+    responses = [
+        DummyResponse(text=search_html),
+        DummyResponse(text=detail_good),
+        DummyResponse(text=detail_bad),
+    ]
+    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x265": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"Anonymous": 2},
+                }
+            }
+        }
+    }
+
+    results = await scraping_service.scrape_1337x(
+        "Sample Movie 2023",
+        "movie",
+        "https://1337x.to/search/{query}/1/",
+        context,
+        base_query_for_filter="Sample Movie",
+    )
+
+    assert len(results) == 1
+    assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
+
+
+@pytest.mark.asyncio
 async def test_scrape_yts_parses_results(mocker):
     search_html = """
     <div class="browse-movie-wrap">

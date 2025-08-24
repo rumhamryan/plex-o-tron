@@ -382,7 +382,10 @@ async def scrape_1337x(
         return []
 
     scraper = GenericTorrentScraper(site_config)
-    raw_results = await scraper.search(query)
+    base_filter = kwargs.get("base_query_for_filter")
+    raw_results = await scraper.search(
+        query, media_type, base_query_for_filter=base_filter
+    )
 
     results: list[dict[str, Any]] = []
     for item in raw_results:
