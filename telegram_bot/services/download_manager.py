@@ -220,7 +220,10 @@ async def download_with_progress(
         await status_callback(status)
 
         # Timeout logic for stalled torrents
-        if status.state == lt.torrent_status.downloading_metadata and time.monotonic() - start_time > 60:  # type: ignore
+        if (
+            status.state == lt.torrent_status.downloading_metadata
+            and time.monotonic() - start_time > 60
+        ):  # type: ignore
             logger.warning(f"Metadata download timed out for {handle.name()}")
             return False, None
 

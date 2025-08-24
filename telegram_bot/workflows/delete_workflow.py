@@ -551,7 +551,9 @@ async def _handle_confirm_delete_button(query, context):
     message_text = ""
 
     if not path_to_delete:
-        message_text = "❌ Error: Path to delete not found. The action may have expired."
+        message_text = (
+            "❌ Error: Path to delete not found. The action may have expired."
+        )
     elif not DELETION_ENABLED:
         logger.warning(
             f"Deletion attempted for '{path_to_delete}' but DELETION_ENABLED is False."

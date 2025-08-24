@@ -109,7 +109,8 @@ def validate_torrent_files(ti: lt.torrent_info) -> str | None:  # type: ignore
 
 
 async def validate_and_enrich_torrent(
-    ti: lt.torrent_info, progress_message: Message  # type: ignore
+    ti: lt.torrent_info,
+    progress_message: Message,  # type: ignore
 ) -> tuple[str | None, dict[str, Any] | None]:
     """
     Validates a torrent_info object against size and file type rules,

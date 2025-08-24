@@ -12,7 +12,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [
-  { name = "Ryan", email = "your_email@example.com" },
+  { name = "Ryan", email = "roswalt@pm.me" },
 ]
 
 # Core runtime dependencies for the bot to function
@@ -25,8 +25,7 @@ dependencies = [
     "libtorrent",
     "plexapi",
     "thefuzz",
-    "python-Levenshtein",
-    "httpx[http2]",
+    "httpx[http2]"
 ]
 
 [project.optional-dependencies]
@@ -35,8 +34,14 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-mock",
+    "pytest-cov",
     "pre-commit",
-    "basedpyright"
+    "black",
+    "ruff",
+    "pyright",
+    "mypy",
+    "types-requests",
+    "types-beautifulsoup4",
 ]
 
 # --- Tool Configurations ---
@@ -48,7 +53,10 @@ line-length = 88
 line-length = 88
 ignore = ["E501"]
 
-[tool.pyright]
-typeCheckingMode = "basic"
-venvPath = "."
-venv = ".venv"
+[tool.mypy]
+python_version = "3.12"
+packages = ["telegram_bot"]
+
+# Ignore third-party libraries that don't have type hints
+ignore_missing_imports = true
+explicit_package_bases = true
