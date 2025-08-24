@@ -20,15 +20,29 @@ from ..utils import extract_first_int
 
 
 async def _get_page_html(url: str) -> str | None:
-    """Fetches the HTML content of a URL."""
+    """Fetch the HTML for a URL with basic headers and logging."""
+
+    # Some sites (e.g. 1337x) block requests without a User-Agent. Use a
+    # generic header and emit debug logs to help diagnose fetch issues.
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; plex-o-tron-bot)"}
+
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
             response = await client.get(url)
             response.raise_for_status()
+            logger.debug(
+                "[SCRAPER] Fetched %s with status %s", url, response.status_code
+            )
             return response.text
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "[SCRAPER] Non-success status %s when fetching %s",
+            e.response.status_code,
+            url,
+        )
     except httpx.RequestError as e:
-        logger.error(f"Error fetching URL {url}: {e}")
-        return None
+        logger.error("Error fetching URL %s: %s", url, e)
+    return None
 
 
 # --- Wikipedia Scraping ---
@@ -689,6 +703,111 @@ def _strategy_find_in_tables(soup: BeautifulSoup, query: str) -> list[dict[str, 
             if href.startswith("magnet:") or href.endswith(".torrent"):
                 results.append(_extract_torrent_info(row, link_tag))
 
+    return results
+
+
+async def scrape_1337x(
+    query: str,
+    media_type: str,
+    search_url_template: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    **_kwargs: Any,
+) -> list[dict[str, Any]]:
+    """
+    Scrape torrent results from 1337x.
+
+    The 1337x search page lists torrent entries without magnet links. This
+    scraper fetches the search results page, then follows each result's detail
+    page to extract the magnet URL and related metadata.
+    """
+
+    if not query.strip() or not search_url_template.strip():
+        return []
+
+    formatted_query = urllib.parse.quote_plus(query)
+    search_url = search_url_template.replace("{query}", formatted_query)
+
+    logger.info(f"[SCRAPER] 1337x: Searching '{query}'")
+
+    search_html = await _get_page_html(search_url)
+    if not search_html:
+        logger.debug("[SCRAPER] 1337x: No HTML returned for %s", search_url)
+        return []
+
+    soup = BeautifulSoup(search_html, "lxml")
+    table = soup.find("table", class_="table-list")
+    if not isinstance(table, Tag):
+        logger.debug("[SCRAPER] 1337x: Result table not found for %s", search_url)
+        return []
+
+    preferences = (
+        context.bot_data.get("SEARCH_CONFIG", {})
+        .get("preferences", {})
+        .get("movies" if media_type == "movie" else "tv", {})
+    )
+
+    results: list[dict[str, Any]] = []
+    base_url = urllib.parse.urljoin(search_url, "/")
+
+    for row in table.find_all("tr")[1:]:  # skip header row
+        if not isinstance(row, Tag):
+            logger.debug("[SCRAPER] 1337x: Skipping non-tag row")
+            continue
+
+        link_tag = row.find("a", href=True)
+        if not isinstance(link_tag, Tag):
+            logger.debug("[SCRAPER] 1337x: Row missing link tag")
+            continue
+        href = link_tag.get("href")
+        if not isinstance(href, str):
+            logger.debug("[SCRAPER] 1337x: Link tag missing href")
+            continue
+
+        title = link_tag.get_text(strip=True)
+        detail_url = urllib.parse.urljoin(base_url, href)
+
+        detail_html = await _get_page_html(detail_url)
+        if not detail_html:
+            logger.debug("[SCRAPER] 1337x: No HTML for detail page %s", detail_url)
+            continue
+        detail_soup = BeautifulSoup(detail_html, "lxml")
+        magnet_tag = detail_soup.find(
+            "a", href=lambda h: isinstance(h, str) and h.startswith("magnet:")
+        )
+        if not isinstance(magnet_tag, Tag):
+            logger.debug("[SCRAPER] 1337x: No magnet link on %s", detail_url)
+            continue
+
+        cells = row.find_all("td")
+        seeders = (
+            extract_first_int(cells[1].get_text(strip=True)) if len(cells) > 1 else 0
+        )
+        seeders = seeders or 0
+        size_text = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+        uploader_tag = cells[5].find("a") if len(cells) > 5 else None
+        uploader = (
+            uploader_tag.get_text(strip=True)
+            if isinstance(uploader_tag, Tag)
+            else "Unknown"
+        )
+
+        size_gb = _parse_size_to_gb(size_text)
+        score = score_torrent_result(title, uploader, preferences, seeders=seeders)
+
+        results.append(
+            {
+                "title": title,
+                "page_url": magnet_tag["href"],
+                "score": score,
+                "source": "1337x",
+                "uploader": uploader,
+                "size_gb": size_gb,
+                "codec": _parse_codec(title),
+                "seeders": seeders,
+            }
+        )
+
+    logger.debug("[SCRAPER] 1337x: Parsed %d results for '%s'", len(results), query)
     return results
 
 
