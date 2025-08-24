@@ -21,7 +21,8 @@ results_page_selectors:
 
 # Selectors for elements on the torrent detail page
 details_page_selectors:
-  magnet_url: "a.btn-magnet"
+  # Use a robust selector that targets any link beginning with 'magnet:'
+  magnet_url: "a[href^='magnet:']"
 
 # Optional features to refine results
 advanced_features:
