@@ -20,15 +20,45 @@ from ..utils import extract_first_int
 
 
 async def _get_page_html(url: str) -> str | None:
-    """Fetches the HTML content of a URL."""
+    """
+    Fetch the raw HTML for ``url``.
+
+    A custom User‑Agent and detailed logging are used to help diagnose
+    scraping issues with sites that block unknown clients (e.g., 1337x).
+    """
+    logger.debug(f"[SCRAPER] Fetching URL: {url}")
+
+    headers = {
+        # Many torrent sites employ basic User-Agent filtering. Using a
+        # common browser string avoids immediate blocks and aids debugging.
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/115.0 Safari/537.36"
+        )
+    }
+
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(
+            timeout=30, headers=headers, follow_redirects=True
+        ) as client:
             response = await client.get(url)
+            logger.debug(
+                f"[SCRAPER] Received response {response.status_code} from {url}"
+            )
             response.raise_for_status()
             return response.text
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            f"[SCRAPER ERROR] HTTP {e.response.status_code} while fetching {url}",
+            exc_info=True,
+        )
     except httpx.RequestError as e:
-        logger.error(f"Error fetching URL {url}: {e}")
-        return None
+        logger.error(
+            f"[SCRAPER ERROR] Network error while fetching {url}: {e}",
+            exc_info=True,
+        )
+    return None
 
 
 # --- Wikipedia Scraping ---
@@ -717,11 +747,14 @@ async def scrape_1337x(
 
     search_html = await _get_page_html(search_url)
     if not search_html:
+        logger.debug("[SCRAPER] 1337x: No HTML returned for search page.")
         return []
 
+    logger.debug(f"[SCRAPER] 1337x: Retrieved search page ({len(search_html)} bytes).")
     soup = BeautifulSoup(search_html, "lxml")
     table = soup.find("table", class_="table-list")
     if not isinstance(table, Tag):
+        logger.debug("[SCRAPER] 1337x: Results table not found on search page.")
         return []
 
     preferences = (
@@ -749,12 +782,14 @@ async def scrape_1337x(
 
         detail_html = await _get_page_html(detail_url)
         if not detail_html:
+            logger.debug(f"[SCRAPER] 1337x: Failed to fetch detail page {detail_url}")
             continue
         detail_soup = BeautifulSoup(detail_html, "lxml")
         magnet_tag = detail_soup.find(
             "a", href=lambda h: isinstance(h, str) and h.startswith("magnet:")
         )
         if not isinstance(magnet_tag, Tag):
+            logger.debug(f"[SCRAPER] 1337x: Magnet link not found for {detail_url}")
             continue
 
         cells = row.find_all("td")
@@ -786,6 +821,9 @@ async def scrape_1337x(
             }
         )
 
+    logger.info(
+        f"[SCRAPER] 1337x scrape finished. Found {len(results)} matching torrents."
+    )
     return results
 
 
