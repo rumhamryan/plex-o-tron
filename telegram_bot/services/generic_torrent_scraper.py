@@ -110,8 +110,14 @@ class GenericTorrentScraper:
         )
         search_url = urllib.parse.urljoin(self.base_url, search_path)
 
+        logger.info(
+            f"[SCRAPER] {self.site_name}: Fetching search results from {search_url}"
+        )
         search_html = await self._fetch_page(search_url)
         if not search_html:
+            logger.error(
+                f"[SCRAPER] {self.site_name}: Failed to retrieve search results from {search_url}"
+            )
             return []
 
         soup = BeautifulSoup(search_html, "lxml")
@@ -140,7 +146,9 @@ class GenericTorrentScraper:
                 for r in results
                 if fuzz.partial_ratio(base, r.name.lower()) >= threshold
             ]
-
+        logger.info(
+            f"[SCRAPER] {self.site_name}: Parsed {len(results)} torrents for '{query}'"
+        )
         return results
 
     async def _parse_row(self, row: Tag) -> Optional[TorrentData]:
@@ -183,19 +191,34 @@ class GenericTorrentScraper:
 
     async def _fetch_page(self, url: str) -> str | None:
         """Fetch ``url`` and return the response text, handling errors."""
+
         headers = {
+            # Some torrent sites (e.g. 1337x) return HTTP 403 unless common
+            # browser headers are supplied. These values mimic a typical
+            # desktop browser and keep scraping behaviour consistent.
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/115.0 Safari/537.36"
-            )
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,"
+                "image/webp,*/*;q=0.8"
+            ),
+            "Referer": f"{self.base_url}/",
         }
+
         try:
             async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                return resp.text
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                return response.text
+        except httpx.HTTPStatusError as exc:  # noqa: BLE001
+            logger.error(
+                f"[SCRAPER] HTTP error fetching {url}: {exc}",
+            )
         except httpx.HTTPError as exc:  # noqa: BLE001
-            logger.warning(f"[SCRAPER] HTTP error fetching {url}: {exc}")
+            logger.error(f"[SCRAPER] Request error fetching {url}: {exc}")
         return None
 
     def _extract_text(self, root: Tag, selector: Any) -> str:
