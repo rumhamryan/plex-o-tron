@@ -25,7 +25,7 @@ dependencies = [
     "libtorrent",
     "plexapi",
     "thefuzz",
-    "httpx[http2]"
+    "httpx[http2]",
 ]
 
 [project.optional-dependencies]
