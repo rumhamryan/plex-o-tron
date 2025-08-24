@@ -177,83 +177,43 @@ async def test_fetch_season_episode_count(mocker):
 
 
 @pytest.mark.asyncio
-async def test_scrape_1337x_parses_results(mocker):
-    # This is the response for the initial search results page
-    search_html = """
-    <table><tbody>
-    <tr>
-      <td>
-        <a href="/cat">Movies</a>
-        <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
-      </td>
-      <td>10</td><td>0</td><td>0</td><td>1.5 GB</td><td><a>Anonymous</a></td>
-    </tr>
-    </tbody></table>
+async def test_scrape_generic_page_parses_results(mocker):
+    html = """
+    <table>
+      <tr>
+        <td><a href="magnet:?xt=urn:btih:HASH">Sample.Show.S01E01.720p.x264</a></td>
+        <td>10</td>
+        <td>0</td>
+        <td>500 MB</td>
+        <td><a>Uploader</a></td>
+      </tr>
+    </table>
     """
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=html,
+    )
 
-    # This is the required second response for the torrent detail page
-    detail_html = """
-    <div>
-      <a href="magnet:?xt=urn:btih:FAKEHASH">Magnet Download</a>
-    </div>
-    """
-
-    # The mock client now has TWO responses to give, and they will have a default status_code of 200
-    responses = [DummyResponse(text=search_html), DummyResponse(text=detail_html)]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
-
-    context = Mock()
-    context.bot_data = {
-        "SEARCH_CONFIG": {
-            "preferences": {
-                "movies": {
-                    "codecs": {"x265": 5},
-                    "resolutions": {"1080p": 3},
-                    "uploaders": {"Anonymous": 2},
-                }
-            }
-        }
-    }
-
-    results = await scraping_service.scrape_1337x(
-        "Sample Movie 2023",
-        "movie",
-        "https://1337x.to/search/{query}/1/",
-        context,
-        base_query_for_filter="Sample Movie",
+    results = await scraping_service.scrape_generic_page(
+        "Sample Show", "tv", "http://example.com/search"
     )
 
     assert len(results) == 1
-    assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
+    assert results[0]["title"] == "Sample.Show.S01E01.720p.x264"
     assert results[0]["page_url"].startswith("magnet:")
-    assert results[0]["source"] == "1337x"
+    assert results[0]["source"] == "generic"
 
 
 @pytest.mark.asyncio
-async def test_scrape_1337x_no_results(mocker):
+async def test_scrape_generic_page_no_results(mocker):
     html = "<html><body>No results</body></html>"
-    responses = [DummyResponse(text=html)]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=html,
+    )
 
-    context = Mock()
-    context.bot_data = {
-        "SEARCH_CONFIG": {
-            "preferences": {
-                "movies": {
-                    "codecs": {},
-                    "resolutions": {},
-                    "uploaders": {},
-                }
-            }
-        }
-    }
-
-    results = await scraping_service.scrape_1337x(
-        "Sample",
-        "movie",
-        "https://1337x.to/search/{query}/1/",
-        context,  # Pass the mock object here
-        base_query_for_filter="Sample Movie",
+    results = await scraping_service.scrape_generic_page(
+        "Sample", "movie", "http://example.com/search"
     )
 
     assert results == []
@@ -323,104 +283,64 @@ async def test_scrape_yts_parses_results(mocker):
 def test_strategy_find_direct_links_magnet():
     html = '<a href="magnet:?xt=urn:btih:123">Magnet</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_find_direct_links(soup)
-    assert links == {"magnet:?xt=urn:btih:123"}
+    links = scraping_service._strategy_find_direct_links(soup, "Query")
+    assert links and links[0]["href"] == "magnet:?xt=urn:btih:123"
 
 
 def test_strategy_find_direct_links_torrent():
     html = '<a href="https://example.com/file.torrent">Download</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_find_direct_links(soup)
-    assert links == {"https://example.com/file.torrent"}
+    links = scraping_service._strategy_find_direct_links(soup, "Query")
+    assert links and links[0]["href"] == "https://example.com/file.torrent"
 
 
 def test_strategy_find_direct_links_none():
     html = '<a href="/other">Link</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_find_direct_links(soup)
-    assert links == set()
+    links = scraping_service._strategy_find_direct_links(soup, "Query")
+    assert links == []
 
 
 def test_strategy_contextual_search_keyword():
-    html = '<a href="/download/123">Download Torrent</a>'
+    html = '<a href="magnet:?xt=urn:btih:123">Download Torrent</a>'
     soup = BeautifulSoup(html, "lxml")
     links = scraping_service._strategy_contextual_search(soup, "Query")
-    assert "/download/123" in links
+    assert links and links[0]["href"].startswith("magnet:")
 
 
 def test_strategy_contextual_search_query_match():
-    html = '<a href="/details.php?id=456">My Show S01E01 1080p</a>'
+    html = '<a href="magnet:?xt=urn:btih:456">My Show S01E01 1080p</a>'
     soup = BeautifulSoup(html, "lxml")
     links = scraping_service._strategy_contextual_search(soup, "My Show")
-    assert "/details.php?id=456" in links
-
-
-def test_strategy_contextual_search_unrelated_keyword():
-    html = '<a href="/about">About our download policy</a>'
-    soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_contextual_search(soup, "My Show")
-    assert "/about" in links
+    assert links and links[0]["href"].startswith("magnet:")
 
 
 def test_strategy_find_in_tables_single_match():
-    html = '<table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>'
+    html = '<table><tr><td>My Show</td><td><a href="magnet:?xt=urn:btih:111">Download</a></td></tr></table>'
     soup = BeautifulSoup(html, "lxml")
     results = scraping_service._strategy_find_in_tables(soup, "My Show")
-    assert "/dl" in results
+    assert results and results[0]["href"].startswith("magnet:")
 
 
 def test_strategy_find_in_tables_multiple_matches():
     html = """
     <table>
-      <tr><td>My Show S01E01</td><td><a href="/e1">DL</a></td></tr>
-      <tr><td>My Show S01E02</td><td><a href="/e2">DL</a></td></tr>
+      <tr><td>My Show S01E01</td><td><a href="magnet:?xt=urn:btih:e1">DL</a></td></tr>
+      <tr><td>My Show S01E02</td><td><a href="magnet:?xt=urn:btih:e2">DL</a></td></tr>
     </table>
     """
     soup = BeautifulSoup(html, "lxml")
     results = scraping_service._strategy_find_in_tables(soup, "My Show")
-    assert {"/e1", "/e2"}.issubset(results.keys())
+    hrefs = {r["href"] for r in results}
+    assert {"magnet:?xt=urn:btih:e1", "magnet:?xt=urn:btih:e2"}.issubset(hrefs)
 
 
 def test_strategy_find_in_tables_ignores_unrelated_tables():
     html = """
-    <table><tr><td>Other</td><td><a href="/x">X</a></td></tr></table>
-    <table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>
+    <table><tr><td>Other</td><td><a href="magnet:?xt=urn:btih:x">X</a></td></tr></table>
+    <table><tr><td>My Show</td><td><a href="magnet:?xt=urn:btih:dl">Download</a></td></tr></table>
     """
     soup = BeautifulSoup(html, "lxml")
     results = scraping_service._strategy_find_in_tables(soup, "My Show")
-    assert "/dl" in results and "/x" not in results
-
-
-def test_score_candidate_links_prefers_magnet():
-    html = (
-        '<div><a href="magnet:?xt=urn:btih:1">Magnet</a></div>'
-        '<div><a href="/context">Download Torrent</a></div>'
-        '<table><tr><td>My Show</td><td><a href="/table">Link</a></td></tr></table>'
-    )
-    soup = BeautifulSoup(html, "lxml")
-    links = {"magnet:?xt=urn:btih:1", "/context", "/table"}
-    table_links = {"/table": 80.0}
-    best = scraping_service._score_candidate_links(links, "My Show", table_links, soup)
-    assert best == "magnet:?xt=urn:btih:1"
-
-
-def test_score_candidate_links_penalizes_ads():
-    html = (
-        '<div class="ad"><a href="/bad">My Show 1080p</a></div>'
-        '<div><a href="/good">My Show 1080p</a></div>'
-    )
-    soup = BeautifulSoup(html, "lxml")
-    links = {"/bad", "/good"}
-    best = scraping_service._score_candidate_links(links, "My Show", {}, soup)
-    assert best == "/good"
-
-
-def test_score_candidate_links_prefers_better_match():
-    html = (
-        '<div><a href="/high">My Show Episode</a></div>'
-        '<div><a href="/low">Another Show</a></div>'
-    )
-    soup = BeautifulSoup(html, "lxml")
-    links = {"/high", "/low"}
-    best = scraping_service._score_candidate_links(links, "My Show Episode", {}, soup)
-    assert best == "/high"
+    hrefs = {r["href"] for r in results}
+    assert "magnet:?xt=urn:btih:dl" in hrefs and "magnet:?xt=urn:btih:x" not in hrefs
