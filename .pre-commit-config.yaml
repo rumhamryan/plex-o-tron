@@ -41,6 +41,7 @@ repos:
         # Type stubs required for linting utility scripts
         -   types-requests
         -   types-beautifulsoup4
+        -   types-PyYAML
     -   id: pytest
         name: pytest
         entry: pytest
@@ -57,6 +58,7 @@ repos:
         -   lxml
         -   flask
         -   python-telegram-bot
+        -   pyyaml
         -   wikipedia
         -   libtorrent
         -   plexapi
