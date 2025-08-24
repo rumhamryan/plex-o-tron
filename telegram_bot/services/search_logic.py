@@ -6,6 +6,7 @@ import re
 from typing import Any
 from collections.abc import Callable, Coroutine
 
+import urllib.parse
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
@@ -44,7 +45,6 @@ async def orchestrate_searches(
 
     # A dedicated scraper for EZTV would need to be created in the future.
     scraper_map: dict[str, ScraperFunction] = {
-        "1337x": scraping_service.scrape_1337x,
         "YTS.mx": scraping_service.scrape_yts,
     }
 
@@ -73,49 +73,29 @@ async def orchestrate_searches(
                 continue
 
             search_query = query
-            year = kwargs.get("year")
-
-            # Only append the year for the 1337x scraper.
-            if site_name == "1337x" and year:
-                search_query += f" {year}"
-
             scraper_func = scraper_map.get(site_name)
 
             if scraper_func:
                 logger.info(
                     f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
                 )
-
-                # Allow callers to override the string used for fuzzy filtering. This
-                # is useful for episode-specific searches where the query contains
-                # season/episode tokens that would otherwise reduce the match score.
-                base_filter = kwargs.get("base_query_for_filter", query)
-                extra_kwargs = {
-                    k: v for k, v in kwargs.items() if k != "base_query_for_filter"
-                }
-
-                if site_name == "1337x":
-                    task = asyncio.create_task(
-                        scraper_func(
-                            search_query,
-                            media_type,
-                            site_url,
-                            context,
-                            base_query_for_filter=base_filter,
-                            **extra_kwargs,
-                        )
-                    )
-                else:
-                    task = asyncio.create_task(
-                        scraper_func(
-                            search_query, media_type, site_url, context, **extra_kwargs
-                        )
-                    )
+                task = asyncio.create_task(
+                    scraper_func(search_query, media_type, site_url, context, **kwargs)
+                )
                 tasks.append(task)
             else:
-                logger.warning(
-                    f"[SEARCH] Configured site '{site_name}' has no corresponding scraper function. It will be ignored."
+                logger.info(
+                    f"[SEARCH] No dedicated scraper for '{site_name}'. Using generic fallback."
                 )
+                final_url = site_url.replace(
+                    "{query}", urllib.parse.quote_plus(search_query)
+                )
+                task = asyncio.create_task(
+                    scraping_service.scrape_generic_page(
+                        search_query, media_type, final_url
+                    )
+                )
+                tasks.append(task)
 
     if not tasks:
         logger.warning("[SEARCH] No enabled search sites found to orchestrate.")
