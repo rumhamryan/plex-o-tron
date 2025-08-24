@@ -51,7 +51,7 @@ line-length = 88
 
 [tool.ruff]
 line-length = 88
-ignore = ["E501"]
+lint.ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

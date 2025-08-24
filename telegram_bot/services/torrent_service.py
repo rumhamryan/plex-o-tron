@@ -4,7 +4,8 @@ import asyncio
 import os
 import tempfile
 import time
-from typing import Any
+from typing import Any, Dict, Iterable, cast
+
 
 import httpx
 import libtorrent as lt
@@ -218,7 +219,7 @@ async def _fetch_and_parse_magnet_details(
     results = await asyncio.gather(*tasks)
 
     parsed_choices = []
-    for result in filter(None, results):
+    for result in cast(Iterable[Dict[str, Any]], filter(None, results)):
         ti = result["ti"]
 
         # Filter out the torrent if it's too large before adding it to the choices
