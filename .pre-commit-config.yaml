@@ -41,6 +41,7 @@ repos:
         # Type stubs required for linting utility scripts
         -   types-requests
         -   types-beautifulsoup4
+        -   types-PyYAML
     -   id: pytest
         name: pytest
         entry: pytest
@@ -62,3 +63,4 @@ repos:
         -   plexapi
         -   thefuzz
         -   "httpx[http2]"
+        -   pyyaml

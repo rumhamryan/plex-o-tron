@@ -1,9 +1,9 @@
 # telegram_bot/services/scraping_service.py
 
 import asyncio
-from collections import Counter
 import re
 import urllib.parse
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -13,8 +13,14 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ..config import logger
-from .search_logic import _parse_codec, _parse_size_to_gb, score_torrent_result
+from .search_logic import _parse_codec, score_torrent_result
 from ..utils import extract_first_int, parse_torrent_name
+from ..scrapers.generic import (
+    GenericTorrentScraper,
+    load_site_config,
+    TorrentData,
+    ConfigurationError,
+)
 
 
 # --- Helper Functions ---
@@ -70,7 +76,7 @@ async def fetch_episode_title_from_wikipedia(
 
         if main_page.title != show_title:
             corrected_show_title = main_page.title
-            canonical_title = corrected_show_title
+            canonical_title = corrected_show_title or canonical_title
             logger.info(
                 f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'"
             )
@@ -347,183 +353,58 @@ async def fetch_season_episode_count_from_wikipedia(
 # --- Torrent Site Scraping ---
 
 
-async def scrape_1337x(
+async def scrape_site(
+    site_name: str,
     query: str,
     media_type: str,
-    search_url_template: str,
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    base_query_for_filter: str | None = None,
-    **kwargs,
+    scraper_config_path: str = "telegram_bot/scrapers/configs",
+    **kwargs: Any,
 ) -> list[dict[str, Any]]:
-    """
-    Scrapes 1337x.to for torrents. It now correctly performs all network
-    requests within a single client session to prevent closure errors.
-    """
+    """Scrape a torrent site defined by a YAML configuration file."""
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     prefs_key = "movies" if "movie" in media_type else "tv"
     preferences = search_config.get("preferences", {}).get(prefs_key, {})
 
     if not preferences:
         logger.warning(
-            f"[SCRAPER] No preferences found for '{prefs_key}'. Cannot score 1337x results."
+            f"[SCRAPER] No preferences found for '{prefs_key}'. Cannot score {site_name} results."
         )
         return []
 
-    formatted_query = urllib.parse.quote_plus(query)
-    search_url = search_url_template.replace("{query}", formatted_query)
-    headers = {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-    }
-
-    results = []
-    best_match_base_name = "N/A"
-
     try:
-        # CORRECTED: The 'async with' block now wraps ALL network activity.
-        async with httpx.AsyncClient(
-            headers=headers, timeout=30, follow_redirects=True
-        ) as client:
-            # --- Initial Search Request ---
-            logger.info(
-                f"[SCRAPER] 1337x Stage 1: Scraping candidates from {search_url}"
-            )
-            response = await client.get(search_url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "lxml")
-
-            # --- Stage 1: Scrape candidates ---
-            candidates = []
-            table_body = soup.find("tbody")
-            if not isinstance(table_body, Tag):
-                return []
-
-            for row in table_body.find_all("tr"):
-                if not isinstance(row, Tag) or len(row.find_all("td")) < 2:
-                    continue
-                name_cell = row.find_all("td")[0]
-                if (
-                    not isinstance(name_cell, Tag)
-                    or len(links := name_cell.find_all("a")) < 2
-                ):
-                    continue
-                title = links[1].get_text(strip=True)
-                parsed_info = parse_torrent_name(title)
-                base_name = parsed_info.get("title")
-                if title and base_name:
-                    candidates.append(
-                        {
-                            "title": title,
-                            "base_name": base_name,
-                            "row_element": row,
-                            "parsed_info": parsed_info,
-                        }
-                    )
-
-            if not candidates:
-                logger.warning("[SCRAPER] 1337x: Found no candidates on page.")
-                return []
-
-            # --- Stage 2: Identify best match ---
-            filter_query = base_query_for_filter or query
-            candidates = [
-                c
-                for c in candidates
-                if fuzz.ratio(filter_query.lower(), c["base_name"].lower()) > 85
-            ]
-
-            if not candidates:
-                logger.warning(
-                    f"[SCRAPER] 1337x: No candidates survived fuzzy filter for query '{query}'."
-                )
-                return []
-
-            base_name_counts = Counter(c["base_name"] for c in candidates)
-            if not base_name_counts:
-                return []
-
-            best_match_base_name, _ = base_name_counts.most_common(1)[0]
-            logger.info(
-                f"[SCRAPER] 1337x Stage 2: Identified most common media name: '{best_match_base_name}'"
-            )
-
-            # --- Stage 3: Fetch detail pages and process torrents ---
-            base_url = "https://1337x.to"
-            for candidate in candidates:
-                if candidate["base_name"] == best_match_base_name:
-                    row = candidate["row_element"]
-                    cells = row.find_all("td")
-                    if len(cells) < 6:
-                        continue
-
-                    name_cell, seeds_cell, size_cell, uploader_cell = (
-                        cells[0],
-                        cells[1],
-                        cells[4],
-                        cells[5],
-                    )
-                    page_url_relative = name_cell.find_all("a")[1].get("href")
-                    if not isinstance(page_url_relative, str):
-                        continue
-
-                    detail_page_url = f"{base_url}{page_url_relative}"
-
-                    # This request now happens inside the active client session.
-                    detail_response = await client.get(detail_page_url)
-                    if detail_response.status_code != 200:
-                        logger.warning(
-                            f"Failed to fetch 1337x detail page {detail_page_url}, status: {detail_response.status_code}"
-                        )
-                        continue
-
-                    detail_soup = BeautifulSoup(detail_response.text, "lxml")
-                    magnet_tag = detail_soup.find("a", href=re.compile(r"^magnet:"))
-                    if (
-                        not magnet_tag
-                        or not isinstance(magnet_tag, Tag)
-                        or not (magnet_link := magnet_tag.get("href"))
-                    ):
-                        logger.warning(
-                            f"Could not find magnet link on page: {detail_page_url}"
-                        )
-                        continue
-
-                    # Process the rest of the data
-                    size_str = size_cell.get_text(strip=True)
-                    seeds_str = seeds_cell.get_text(strip=True)
-                    parsed_size_gb = _parse_size_to_gb(size_str)
-                    uploader = (
-                        uploader_cell.find("a").get_text(strip=True)
-                        if uploader_cell.find("a")
-                        else "Anonymous"
-                    )
-                    seeders_int = int(seeds_str) if seeds_str.isdigit() else 0
-                    score = score_torrent_result(
-                        candidate["title"], uploader, preferences, seeders=seeders_int
-                    )
-
-                    if score > 0 and isinstance(magnet_link, str):
-                        results.append(
-                            {
-                                "title": candidate["title"],
-                                "page_url": magnet_link,
-                                "score": score,
-                                "source": "1337x",
-                                "uploader": uploader,
-                                "size_gb": parsed_size_gb,
-                                "codec": _parse_codec(candidate["title"]),
-                                "seeders": seeders_int,
-                                "year": candidate["parsed_info"].get("year"),
-                            }
-                        )
-
-    except Exception as e:
-        logger.error(f"[SCRAPER ERROR] 1337x scrape failed: {e}", exc_info=True)
+        config_file = Path(scraper_config_path) / f"{site_name}.yaml"
+        site_config = load_site_config(config_file)
+    except (FileNotFoundError, ConfigurationError) as e:
+        logger.error(f"[SCRAPER] Failed to load config for '{site_name}': {e}")
         return []
 
-    logger.info(
-        f"[SCRAPER] 1337x Stage 3: Found {len(results)} relevant torrents for '{best_match_base_name}'."
-    )
+    scraper = GenericTorrentScraper(site_config)
+    torrents: list[TorrentData] = await scraper.search(query)
+
+    results: list[dict[str, Any]] = []
+    for t in torrents:
+        parsed_info = parse_torrent_name(t.title)
+        score = score_torrent_result(
+            t.title, t.uploader or "", preferences, seeders=t.seeders
+        )
+        if score <= 0 or not t.magnet_link:
+            continue
+        results.append(
+            {
+                "title": t.title,
+                "page_url": t.magnet_link,
+                "score": score,
+                "source": site_name,
+                "uploader": t.uploader or "Unknown",
+                "size_gb": t.size_bytes / (1024**3) if t.size_bytes else 0.0,
+                "codec": _parse_codec(t.title),
+                "seeders": t.seeders,
+                "year": parsed_info.get("year"),
+            }
+        )
+
     return results
 
 

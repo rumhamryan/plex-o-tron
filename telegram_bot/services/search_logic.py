@@ -44,7 +44,7 @@ async def orchestrate_searches(
 
     # A dedicated scraper for EZTV would need to be created in the future.
     scraper_map: dict[str, ScraperFunction] = {
-        "1337x": scraping_service.scrape_1337x,
+        "1337x": scraping_service.scrape_site,
         "YTS.mx": scraping_service.scrape_yts,
     }
 
@@ -66,7 +66,9 @@ async def orchestrate_searches(
                 )
                 continue
 
-            if not site_url:
+            scraper_func = scraper_map.get(site_name)
+
+            if scraper_func is not scraping_service.scrape_site and not site_url:
                 logger.warning(
                     f"[SEARCH] Skipping site '{site_name}' due to missing 'search_url' key."
                 )
@@ -78,8 +80,6 @@ async def orchestrate_searches(
             # Only append the year for the 1337x scraper.
             if site_name == "1337x" and year:
                 search_query += f" {year}"
-
-            scraper_func = scraper_map.get(site_name)
 
             if scraper_func:
                 logger.info(
@@ -94,12 +94,12 @@ async def orchestrate_searches(
                     k: v for k, v in kwargs.items() if k != "base_query_for_filter"
                 }
 
-                if site_name == "1337x":
+                if scraper_func is scraping_service.scrape_site:
                     task = asyncio.create_task(
                         scraper_func(
+                            site_name,
                             search_query,
                             media_type,
-                            site_url,
                             context,
                             base_query_for_filter=base_filter,
                             **extra_kwargs,

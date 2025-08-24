@@ -177,7 +177,7 @@ async def test_fetch_season_episode_count(mocker):
 
 
 @pytest.mark.asyncio
-async def test_scrape_1337x_parses_results(mocker):
+async def test_scrape_site_parses_results(mocker):
     # This is the response for the initial search results page
     search_html = """
     <table><tbody>
@@ -215,12 +215,11 @@ async def test_scrape_1337x_parses_results(mocker):
         }
     }
 
-    results = await scraping_service.scrape_1337x(
+    results = await scraping_service.scrape_site(
+        "1337x",
         "Sample Movie 2023",
         "movie",
-        "https://1337x.to/search/{query}/1/",
         context,
-        base_query_for_filter="Sample Movie",
     )
 
     assert len(results) == 1
@@ -230,7 +229,7 @@ async def test_scrape_1337x_parses_results(mocker):
 
 
 @pytest.mark.asyncio
-async def test_scrape_1337x_no_results(mocker):
+async def test_scrape_site_no_results(mocker):
     html = "<html><body>No results</body></html>"
     responses = [DummyResponse(text=html)]
     mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
@@ -248,12 +247,11 @@ async def test_scrape_1337x_no_results(mocker):
         }
     }
 
-    results = await scraping_service.scrape_1337x(
+    results = await scraping_service.scrape_site(
+        "1337x",
         "Sample",
         "movie",
-        "https://1337x.to/search/{query}/1/",
-        context,  # Pass the mock object here
-        base_query_for_filter="Sample Movie",
+        context,
     )
 
     assert results == []
