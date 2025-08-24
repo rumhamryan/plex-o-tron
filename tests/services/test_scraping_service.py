@@ -180,13 +180,16 @@ async def test_fetch_season_episode_count(mocker):
 async def test_scrape_1337x_parses_results(mocker):
     # This is the response for the initial search results page
     search_html = """
-    <table><tbody>
+    <table class="table-list"><tbody>
     <tr>
-      <td>
+      <td class="name">
         <a href="/cat">Movies</a>
         <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
       </td>
-      <td>10</td><td>0</td><td>0</td><td>1.5 GB</td><td><a>Anonymous</a></td>
+      <td class="seeds">10</td>
+      <td class="leeches">0</td>
+      <td class="size">1.5 GB</td>
+      <td class="uploader"><a>Anonymous</a></td>
     </tr>
     </tbody></table>
     """
@@ -194,7 +197,7 @@ async def test_scrape_1337x_parses_results(mocker):
     # This is the required second response for the torrent detail page
     detail_html = """
     <div>
-      <a href="magnet:?xt=urn:btih:FAKEHASH">Magnet Download</a>
+      <a class="btn-magnet" href="magnet:?xt=urn:btih:FAKEHASH">Magnet Download</a>
     </div>
     """
 

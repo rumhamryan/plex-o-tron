@@ -1,0 +1,14 @@
+site_name: "1337x"
+base_url: "https://1337x.to"
+search_path: "/search/{query}/1/"
+selectors:
+  results_container: "table.table-list tbody tr"
+  title: "td.name a:nth-of-type(2)"
+  details_page_link: "td.name a:nth-of-type(2)"
+  seeders: "td.seeds"
+  leechers: "td.leeches"
+  size: "td.size"
+  uploader: "td.uploader a"
+  magnet_link: null
+details_page_selectors:
+  magnet_link: "a.btn-magnet"
