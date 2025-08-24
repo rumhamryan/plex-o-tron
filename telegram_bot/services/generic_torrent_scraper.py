@@ -176,6 +176,9 @@ class GenericTorrentScraper:
                         detail_soup, self.details_selectors.get("magnet_url")
                     )
         if not magnet_link:
+            logger.warning(
+                f"[SCRAPER] {self.site_name}: No magnet link found for '{name}'"
+            )
             return None
 
         seeders = self._extract_int(row, self.results_selectors.get("seeds"))
@@ -242,7 +245,10 @@ class GenericTorrentScraper:
 
     def _extract_href(self, root: Tag, selector: Any) -> str | None:
         tag = root.select_one(selector) if isinstance(selector, str) else None
-        href = tag.get("href") if isinstance(tag, Tag) else None
+        if not isinstance(tag, Tag):
+            return None
+        # Some sites expose the target URL via ``data-href`` instead of ``href``.
+        href = tag.get("href") or tag.get("data-href")
         return href if isinstance(href, str) else None
 
     def _extract_int(self, root: Tag, selector: Any) -> int:
