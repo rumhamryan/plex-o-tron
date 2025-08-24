@@ -126,8 +126,13 @@ class GenericTorrentScraper:
             logger.error("[SCRAPER] 'rows' selector missing in config")
             return []
 
+        rows = soup.select(row_selector)
+        logger.debug(
+            f"[SCRAPER] {self.site_name}: Found {len(rows)} rows using selector '{row_selector}'"
+        )
+
         results: list[TorrentData] = []
-        for row in soup.select(row_selector):
+        for row in rows:
             if not isinstance(row, Tag):
                 continue
             try:
@@ -208,15 +213,25 @@ class GenericTorrentScraper:
             "Referer": f"{self.base_url}/",
         }
 
+        logger.debug(f"[SCRAPER] {self.site_name}: GET {url}")
+
         try:
             async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
                 response = await client.get(url, headers=headers)
+                logger.debug(
+                    f"[SCRAPER] {self.site_name}: GET {url} -> {response.status_code}"
+                )
                 response.raise_for_status()
+                logger.debug(
+                    f"[SCRAPER] {self.site_name}: Response snippet: {response.text[:200]!r}"
+                )
                 return response.text
         except httpx.HTTPStatusError as exc:  # noqa: BLE001
-            logger.error(
-                f"[SCRAPER] HTTP error fetching {url}: {exc}",
-            )
+            logger.error(f"[SCRAPER] HTTP error fetching {url}: {exc}")
+            if exc.response is not None:
+                logger.debug(
+                    f"[SCRAPER] {self.site_name}: Error response body: {exc.response.text[:200]!r}"
+                )
         except httpx.HTTPError as exc:  # noqa: BLE001
             logger.error(f"[SCRAPER] Request error fetching {url}: {exc}")
         return None
