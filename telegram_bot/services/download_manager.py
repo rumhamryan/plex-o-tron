@@ -47,7 +47,9 @@ class ProgressReporter:
                 return
 
             current_time = time.monotonic()
-            if current_time - self.last_update_time < 5:
+            if (
+                current_time - self.last_update_time < 1
+            ):  # Reduced from 5 for more frequent updates
                 return
             self.last_update_time = current_time
 

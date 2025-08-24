@@ -27,4 +27,4 @@ details_page_selectors:
 # Optional features to refine results
 advanced_features:
   enable_fuzzy_filter: true
-  fuzzy_filter_ratio: 85
+  fuzzy_filter_ratio: 90
