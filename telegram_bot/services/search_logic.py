@@ -43,9 +43,10 @@ async def orchestrate_searches(
         )
         return []
 
-    # A dedicated scraper for EZTV would need to be created in the future.
+    # Map site names to their dedicated scraper implementations
     scraper_map: dict[str, ScraperFunction] = {
         "YTS.mx": scraping_service.scrape_yts,
+        "1337x": scraping_service.scrape_1337x,
     }
 
     tasks = []
