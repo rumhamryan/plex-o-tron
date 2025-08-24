@@ -27,18 +27,38 @@ repos:
     hooks:
     -   id: uv-lock
 
--   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
-    hooks:
-    -   id: mypy
-        # Use the uv-powered language instead of the default 'python'
-        language: system
-
+# Local hooks use `language: python` so pre-commit creates virtual
+# environments and installs the required tooling automatically.
 -   repo: local
     hooks:
+    -   id: mypy
+        name: mypy
+        entry: mypy
+        language: python
+        types: [python]
+        additional_dependencies:
+        -   mypy==1.10.0
+        # Type stubs required for linting utility scripts
+        -   types-requests
+        -   types-beautifulsoup4
     -   id: pytest
         name: pytest
         entry: pytest
-        language: system
+        language: python
         types: [python]
         pass_filenames: false
+        additional_dependencies:
+        # Install project and test dependencies so the hook can run in isolation
+        -   pytest==8.4.1
+        -   pytest-asyncio
+        -   pytest-mock
+        -   pytest-cov
+        -   beautifulsoup4
+        -   lxml
+        -   flask
+        -   python-telegram-bot
+        -   wikipedia
+        -   libtorrent
+        -   plexapi
+        -   thefuzz
+        -   "httpx[http2]"
