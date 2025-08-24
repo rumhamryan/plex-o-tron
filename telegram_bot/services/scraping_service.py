@@ -69,8 +69,8 @@ async def fetch_episode_title_from_wikipedia(
         main_page_url = main_page.url
 
         if main_page.title != show_title:
-            corrected_show_title = main_page.title
-            canonical_title = corrected_show_title
+            canonical_title = main_page.title
+            corrected_show_title = canonical_title
             logger.info(
                 f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'"
             )
