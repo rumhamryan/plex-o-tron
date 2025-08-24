@@ -215,10 +215,13 @@ async def _fetch_and_parse_magnet_details(
         return None
 
     tasks = [fetch_one(link, i) for i, link in enumerate(magnet_links)]
-    results = await asyncio.gather(*tasks)
+    results: list[dict[str, Any] | None] = await asyncio.gather(*tasks)
 
-    parsed_choices = []
-    for result in filter(None, results):
+    parsed_choices: list[dict[str, Any]] = []
+    for result in results:
+        if result is None:
+            continue
+
         ti = result["ti"]
 
         # Filter out the torrent if it's too large before adding it to the choices
