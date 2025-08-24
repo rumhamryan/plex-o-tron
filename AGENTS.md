@@ -49,7 +49,8 @@ Unit tests cover handlers, services (download, scraping, torrent, Plex), workflo
 
 - **Black** + **Ruff** (line length 88).
 - **Pyright** configured for Python 3.12.
-- You may assume a typical 'pre-commit' stack (black, ruff, pytest hooks). If adding hooks, keep them fast and deterministic.
+- **pre-commit** is used to enforce style and quality. Hooks are configured for tools like black, ruff, and pytest.
+- All pre-commit hooks must pass before code is submitted.
 
 ## Project structure (agent-relevant)
 
@@ -118,10 +119,6 @@ Notes for agents:
 1. Add tests (look at existing test modules for patterns).
 2. Keep configurations in 'config.ini' (extend parser if you add new JSON blobs).
 3. Reuse utilities and UI helpers; don’t duplicate parsing or formatting.
-4. Run 'pytest', then format/lint (Black/Ruff).
-
-## Roadmap notes (for agents)
-
-- The repo contains a refactoring plan to **unify scrapers** under a generic fallback and keep YTS as a dedicated API path; follow that phased approach when touching scraping/search logic.
+4. Ensure all pre-commit hooks pass before submitting your changes.
 
 ---
