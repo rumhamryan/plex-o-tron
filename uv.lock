@@ -577,6 +577,7 @@ dependencies = [
     { name = "lxml" },
     { name = "plexapi" },
     { name = "python-telegram-bot" },
+    { name = "pyyaml" },
     { name = "thefuzz" },
     { name = "wikipedia" },
 ]
@@ -613,6 +614,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-mock", marker = "extra == 'dev'" },
     { name = "python-telegram-bot" },
+    { name = "pyyaml" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "thefuzz" },
     { name = "types-beautifulsoup4", marker = "extra == 'dev'" },
