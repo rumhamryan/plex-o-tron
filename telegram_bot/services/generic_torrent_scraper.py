@@ -9,6 +9,7 @@ from typing import Any, Optional
 import httpx
 import yaml
 from bs4 import BeautifulSoup, Tag
+from thefuzz import fuzz
 
 from ..config import logger
 
@@ -32,8 +33,15 @@ def load_site_config(config_path: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"Scraper config not found: {config_path}")
     with config_path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
-    required_keys = {"site_name", "base_url", "search_path", "selectors"}
-    missing = required_keys - data.keys()
+
+    required = {
+        "site_name",
+        "base_url",
+        "search_path",
+        "category_mapping",
+        "results_page_selectors",
+    }
+    missing = required - data.keys()
     if missing:
         raise ValueError(f"Config missing keys: {', '.join(sorted(missing))}")
     return data
@@ -60,143 +68,111 @@ class GenericTorrentScraper:
 
     The scraper uses CSS selectors defined in a YAML file to extract
     torrent information from a site's search results and, if necessary,
-    a detail page for magnet links.
+    a detail page for magnet links. Configuration allows per-site
+    customisation without changing the scraper code.
     """
 
     def __init__(self, site_config: dict[str, Any]) -> None:
         self.config = site_config
         self.base_url: str = site_config["base_url"].rstrip("/")
         self.search_path: str = site_config["search_path"]
-        self.selectors: dict[str, Any] = site_config["selectors"]
-        self.details_selectors: dict[str, Any] | None = site_config.get(
-            "details_page_selectors"
+        self.category_mapping: dict[str, str] = site_config["category_mapping"]
+        self.results_selectors: dict[str, Any] = site_config["results_page_selectors"]
+        self.details_selectors: dict[str, Any] = site_config.get(
+            "details_page_selectors", {}
+        )
+        self.advanced_features: dict[str, Any] = site_config.get(
+            "advanced_features", {}
         )
         self.site_name: str = site_config["site_name"]
 
-    async def search(self, query: str) -> list[TorrentData]:
+    async def search(
+        self,
+        query: str,
+        media_type: str,
+        base_query_for_filter: str | None = None,
+    ) -> list[TorrentData]:
         """Search the site for ``query`` and return scraped torrent data."""
         if not isinstance(query, str) or not query.strip():
             logger.warning("[SCRAPER] Empty query provided to GenericTorrentScraper")
             return []
 
+        category_path = self.category_mapping.get(media_type)
+        if not category_path:
+            logger.error(
+                f"[SCRAPER] Media type '{media_type}' not mapped for {self.site_name}"
+            )
+            return []
+
         formatted_query = urllib.parse.quote_plus(query)
-        search_url = urllib.parse.urljoin(
-            self.base_url, self.search_path.format(query=formatted_query)
+        search_path = self.search_path.format(
+            query=formatted_query, category=category_path, page=1
         )
+        search_url = urllib.parse.urljoin(self.base_url, search_path)
+
+        search_html = await self._fetch_page(search_url)
+        if not search_html:
+            return []
+
+        soup = BeautifulSoup(search_html, "lxml")
+        row_selector = self.results_selectors.get("rows")
+        if not isinstance(row_selector, str):
+            logger.error("[SCRAPER] 'rows' selector missing in config")
+            return []
 
         results: list[TorrentData] = []
-        try:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                response = await client.get(search_url)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, "lxml")
+        for row in soup.select(row_selector):
+            if not isinstance(row, Tag):
+                continue
+            try:
+                parsed = await self._parse_row(row)
+                if parsed:
+                    results.append(parsed)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"[SCRAPER] Failed to parse row: {exc}")
+                continue
 
-                container_selector = self.selectors.get("results_container")
-                if not isinstance(container_selector, str):
-                    logger.error(
-                        "[SCRAPER] 'results_container' selector missing or invalid"
-                    )
-                    return []
-
-                for element in soup.select(container_selector):
-                    if not isinstance(element, Tag):
-                        continue
-                    parsed = await self._parse_result(element, client)
-                    if parsed:
-                        results.append(parsed)
-        except Exception as exc:
-            logger.error(f"[SCRAPER] Generic scraper failed: {exc}")
-            return []
+        if self.advanced_features.get("enable_fuzzy_filter") and results:
+            base = (base_query_for_filter or query).lower()
+            threshold = int(self.advanced_features.get("fuzzy_filter_ratio", 85))
+            results = [
+                r
+                for r in results
+                if fuzz.partial_ratio(base, r.name.lower()) >= threshold
+            ]
 
         return results
 
-    async def _parse_result(
-        self, element: Tag, client: httpx.AsyncClient
-    ) -> Optional[TorrentData]:
+    async def _parse_row(self, row: Tag) -> Optional[TorrentData]:
         """Parse a single search result row into ``TorrentData``."""
-        selectors = self.selectors
-
-        title_selector = selectors.get("title")
-        if not isinstance(title_selector, str):
-            return None
-        title_tag = element.select_one(title_selector)
-        if not isinstance(title_tag, Tag):
-            return None
-        title = title_tag.get_text(strip=True)
-        if not title:
+        name = self._extract_text(row, self.results_selectors.get("name"))
+        if not name:
             return None
 
-        magnet_link: str | None = None
-        magnet_selector = selectors.get("magnet_link")
-        if isinstance(magnet_selector, str):
-            magnet_tag = element.select_one(magnet_selector)
-            if isinstance(magnet_tag, Tag):
-                href_val = magnet_tag.get("href")
-                if isinstance(href_val, str):
-                    magnet_link = href_val
-
+        magnet_link = self._extract_href(row, self.results_selectors.get("magnet_url"))
         if not magnet_link:
-            details_selector = selectors.get("details_page_link")
-            details_tag = (
-                element.select_one(details_selector)
-                if isinstance(details_selector, str)
-                else None
+            details_href = self._extract_href(
+                row, self.results_selectors.get("details_page_link")
             )
-            detail_href = (
-                details_tag.get("href") if isinstance(details_tag, Tag) else None
-            )
-            if isinstance(detail_href, str) and self.details_selectors:
-                detail_url = urllib.parse.urljoin(self.base_url, detail_href)
-                try:
-                    detail_resp = await client.get(detail_url)
-                    detail_resp.raise_for_status()
-                    detail_soup = BeautifulSoup(detail_resp.text, "lxml")
-                    magnet_detail_sel = self.details_selectors.get("magnet_link")
-                    if isinstance(magnet_detail_sel, str):
-                        magnet_tag = detail_soup.select_one(magnet_detail_sel)
-                        if isinstance(magnet_tag, Tag):
-                            href_val = magnet_tag.get("href")
-                            if isinstance(href_val, str):
-                                magnet_link = href_val
-                except httpx.HTTPError as exc:
-                    logger.warning(
-                        f"[SCRAPER] Failed fetching detail page {detail_url}: {exc}"
+            if details_href:
+                detail_url = urllib.parse.urljoin(self.base_url, details_href)
+                detail_html = await self._fetch_page(detail_url)
+                if detail_html:
+                    detail_soup = BeautifulSoup(detail_html, "lxml")
+                    magnet_link = self._extract_href(
+                        detail_soup, self.details_selectors.get("magnet_url")
                     )
-                    return None
-
         if not magnet_link:
             return None
 
-        def _safe_int(sel_key: str) -> int:
-            sel = selectors.get(sel_key)
-            tag = element.select_one(sel) if isinstance(sel, str) else None
-            text = tag.get_text(strip=True) if isinstance(tag, Tag) else ""
-            return int(text) if text.isdigit() else 0
-
-        seeders = _safe_int("seeders")
-        leechers = _safe_int("leechers")
-
-        size_selector = selectors.get("size")
-        size_tag = (
-            element.select_one(size_selector)
-            if isinstance(size_selector, str)
-            else None
-        )
-        size_text = size_tag.get_text(strip=True) if isinstance(size_tag, Tag) else ""
+        seeders = self._extract_int(row, self.results_selectors.get("seeds"))
+        leechers = self._extract_int(row, self.results_selectors.get("leechers"))
+        size_text = self._extract_text(row, self.results_selectors.get("size"))
         size_bytes = _parse_size_to_bytes(size_text)
-
-        uploader_selector = selectors.get("uploader")
-        uploader_tag = (
-            element.select_one(uploader_selector)
-            if isinstance(uploader_selector, str)
-            else None
-        )
-        uploader = (
-            uploader_tag.get_text(strip=True) if isinstance(uploader_tag, Tag) else None
-        )
+        uploader = self._extract_text(row, self.results_selectors.get("uploader"))
 
         return TorrentData(
-            name=title,
+            name=name,
             magnet_url=magnet_link,
             seeders=seeders,
             leechers=leechers,
@@ -204,3 +180,33 @@ class GenericTorrentScraper:
             uploader=uploader,
             source_site=self.site_name,
         )
+
+    async def _fetch_page(self, url: str) -> str | None:
+        """Fetch ``url`` and return the response text, handling errors."""
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/115.0 Safari/537.36"
+            )
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                return resp.text
+        except httpx.HTTPError as exc:  # noqa: BLE001
+            logger.warning(f"[SCRAPER] HTTP error fetching {url}: {exc}")
+        return None
+
+    def _extract_text(self, root: Tag, selector: Any) -> str:
+        tag = root.select_one(selector) if isinstance(selector, str) else None
+        return tag.get_text(strip=True) if isinstance(tag, Tag) else ""
+
+    def _extract_href(self, root: Tag, selector: Any) -> str | None:
+        tag = root.select_one(selector) if isinstance(selector, str) else None
+        href = tag.get("href") if isinstance(tag, Tag) else None
+        return href if isinstance(href, str) else None
+
+    def _extract_int(self, root: Tag, selector: Any) -> int:
+        text = self._extract_text(root, selector)
+        return int(text) if text.isdigit() else 0
