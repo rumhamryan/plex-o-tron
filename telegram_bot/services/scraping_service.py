@@ -692,6 +692,103 @@ def _strategy_find_in_tables(soup: BeautifulSoup, query: str) -> list[dict[str, 
     return results
 
 
+async def scrape_1337x(
+    query: str,
+    media_type: str,
+    search_url_template: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    **_kwargs: Any,
+) -> list[dict[str, Any]]:
+    """
+    Scrape torrent results from 1337x.
+
+    The 1337x search page lists torrent entries without magnet links. This
+    scraper fetches the search results page, then follows each result's detail
+    page to extract the magnet URL and related metadata.
+    """
+
+    if not query.strip() or not search_url_template.strip():
+        return []
+
+    formatted_query = urllib.parse.quote_plus(query)
+    search_url = search_url_template.replace("{query}", formatted_query)
+
+    logger.info(f"[SCRAPER] 1337x: Searching '{query}'")
+
+    search_html = await _get_page_html(search_url)
+    if not search_html:
+        return []
+
+    soup = BeautifulSoup(search_html, "lxml")
+    table = soup.find("table", class_="table-list")
+    if not isinstance(table, Tag):
+        return []
+
+    preferences = (
+        context.bot_data.get("SEARCH_CONFIG", {})
+        .get("preferences", {})
+        .get("movies" if media_type == "movie" else "tv", {})
+    )
+
+    results: list[dict[str, Any]] = []
+    base_url = urllib.parse.urljoin(search_url, "/")
+
+    for row in table.find_all("tr")[1:]:  # skip header row
+        if not isinstance(row, Tag):
+            continue
+
+        link_tag = row.find("a", href=True)
+        if not isinstance(link_tag, Tag):
+            continue
+        href = link_tag.get("href")
+        if not isinstance(href, str):
+            continue
+
+        title = link_tag.get_text(strip=True)
+        detail_url = urllib.parse.urljoin(base_url, href)
+
+        detail_html = await _get_page_html(detail_url)
+        if not detail_html:
+            continue
+        detail_soup = BeautifulSoup(detail_html, "lxml")
+        magnet_tag = detail_soup.find(
+            "a", href=lambda h: isinstance(h, str) and h.startswith("magnet:")
+        )
+        if not isinstance(magnet_tag, Tag):
+            continue
+
+        cells = row.find_all("td")
+        seeders = (
+            extract_first_int(cells[1].get_text(strip=True)) if len(cells) > 1 else 0
+        )
+        seeders = seeders or 0
+        size_text = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+        uploader_tag = cells[5].find("a") if len(cells) > 5 else None
+        uploader = (
+            uploader_tag.get_text(strip=True)
+            if isinstance(uploader_tag, Tag)
+            else "Unknown"
+        )
+
+        size_gb = _parse_size_to_gb(size_text)
+        score = score_torrent_result(title, uploader, preferences, seeders=seeders)
+
+        results.append(
+            {
+                "title": title,
+                "page_url": magnet_tag["href"],
+                "score": score,
+                "source": "1337x",
+                "uploader": uploader,
+                "size_gb": size_gb,
+                "codec": _parse_codec(title),
+                "seeders": seeders,
+            }
+        )
+
+    return results
+
+
 async def scrape_generic_page(
     query: str, media_type: str, search_url: str
 ) -> list[dict[str, Any]]:

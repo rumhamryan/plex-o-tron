@@ -220,6 +220,38 @@ async def test_scrape_generic_page_no_results(mocker):
 
 
 @pytest.mark.asyncio
+async def test_scrape_1337x_parses_results(mocker):
+    search_html = """
+    <table class="table-list">
+      <tr><th>Name</th><th>Seeds</th><th>Leeches</th><th>Size</th><th>Time</th><th>Uploader</th></tr>
+      <tr>
+        <td class="coll-1 name"><a href="/torrent/123">Test.Show.S01E01.720p.x264</a></td>
+        <td class="coll-2 seeds">10</td>
+        <td class="coll-3 leeches">0</td>
+        <td class="coll-4 size">500 MB</td>
+        <td class="coll-5 time">Today</td>
+        <td class="coll-6 uploader"><a href="/user/Uploader">Uploader</a></td>
+      </tr>
+    </table>
+    """
+    detail_html = '<a href="magnet:?xt=urn:btih:HASH">Magnet</a>'
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        side_effect=[search_html, detail_html],
+    )
+    context = Mock()
+    context.bot_data = {"SEARCH_CONFIG": {"preferences": {"tv": {}}}}
+
+    results = await scraping_service.scrape_1337x(
+        "Test Show", "tv", "https://1337x.to/search/{query}/1/", context
+    )
+
+    assert len(results) == 1
+    assert results[0]["source"] == "1337x"
+    assert results[0]["page_url"].startswith("magnet:")
+
+
+@pytest.mark.asyncio
 async def test_scrape_yts_parses_results(mocker):
     search_html = """
     <div class="browse-movie-wrap">
