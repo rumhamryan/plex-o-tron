@@ -3,6 +3,8 @@ from pathlib import Path
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, ANY
+
+import httpx
 import pytest
 from telegram_bot.services.download_manager import (
     ProgressReporter,
@@ -12,6 +14,7 @@ from telegram_bot.services.download_manager import (
     process_queue_for_user,
     handle_pause_request,
     handle_resume_request,
+    download_with_progress,
 )
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -181,6 +184,37 @@ async def test_download_task_wrapper_failure_message(mocker):
     finalize_mock.assert_awaited_once()
     args, _ = finalize_mock.call_args
     assert "Download Failed" in args[3]
+
+
+@pytest.mark.asyncio
+async def test_download_with_progress_http_status_error(mocker):
+    """Ensures HTTP errors during .torrent retrieval are gracefully handled."""
+    session = Mock()
+    bot_data = {"TORRENT_SESSION": session}
+    download_data: dict[str, str] = {}
+
+    request = httpx.Request("GET", "http://example.com/bad.torrent")
+    response = httpx.Response(404, request=request)
+    http_error = httpx.HTTPStatusError("not found", request=request, response=response)
+    response.raise_for_status = Mock(side_effect=http_error)
+
+    client = AsyncMock()
+    client.get.return_value = response
+    async_client = AsyncMock()
+    async_client.__aenter__.return_value = client
+    mocker.patch("httpx.AsyncClient", return_value=async_client)
+
+    success, info = await download_with_progress(
+        source="http://example.com/bad.torrent",
+        save_path="/tmp",
+        status_callback=AsyncMock(),
+        bot_data=bot_data,
+        download_data=download_data,
+    )
+
+    assert success is False
+    assert info is None
+    session.add_torrent.assert_not_called()
 
 
 @pytest.mark.asyncio
