@@ -28,6 +28,9 @@ Before setting up the Python environment, ensure the necessary system-level depe
 #### Python
 *   **Python 3.12 or later** is required. It is assumed that you have Python installed and available in your system's PATH. You can verify this by running `python --version` or `python3 --version`.
 
+#### uv
+This will be required to create the venv and manage dependencies.
+
 #### C++ Dependencies (Crucial for `libtorrent`)
 The `libtorrent` package is a Python wrapper around a powerful C++ library. For it to work, the underlying C++ components must be available on your system.
 
@@ -53,7 +56,7 @@ The `libtorrent` package is a Python wrapper around a powerful C++ library. For 
 Using a virtual environment is highly recommended to isolate project dependencies.
 
 1.  **Navigate to the project directory** in your terminal or command prompt.
-2.  **Create the virtual environment**: `python3 -m venv venv`
+2.  **Create the virtual environment**: `uv venv`
 3.  **Activate the virtual environment**:
     *   **Windows**: `.\venv\Scripts\activate`
     *   **Ubuntu / Debian**: `source venv/bin/activate`
@@ -63,7 +66,7 @@ Using a virtual environment is highly recommended to isolate project dependencie
 With your virtual environment activated (and after completing Step 1), you can install all required Python packages with a single command.
 
 ```bash
-pip install .
+uv pip sync pyproject.toml
 ```
 
 ### Step 4: Configure the Bot
@@ -95,7 +98,7 @@ tv_shows_save_path = /mnt/tv
 
 With your virtual environment active and configuration complete, start the bot:
 ```bash
-python __main__.py
+uv run __main__.py
 ```
 
 To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment (`source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.
@@ -105,7 +108,7 @@ To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment 
 Prepare your local environment before contributing by installing development dependencies and setting up pre-commit hooks:
 
 ```bash
-pip install -e .[dev]
+uv pip sync pyproject.toml
 pre-commit install
 ```
 
