@@ -185,8 +185,8 @@ async def download_with_progress(
                 "ti": lt.torrent_info(source),  # type: ignore
             }
 
-    except httpx.RequestError as e:
-        logger.error(f"Failed to download .torrent file from URL '{source}': {e}")
+    except httpx.HTTPError as e:
+        logger.error(f"Failed to retrieve .torrent file from URL '{source}': {e}")
         return False, None
     except RuntimeError as e:
         # This catches errors from lt.torrent_info(), e.g., "not a valid torrent".
