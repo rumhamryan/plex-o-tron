@@ -12,6 +12,7 @@ from telegram_bot.services.download_manager import (
     process_queue_for_user,
     handle_pause_request,
     handle_resume_request,
+    handle_cancel_request,
 )
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -306,3 +307,50 @@ async def test_pause_and_resume_requests(
     update_resume = make_update(callback_query=callback_resume)
     await handle_resume_request(update_resume, context)
     assert download_data["is_paused"] is False
+
+
+@pytest.mark.asyncio
+async def test_cancel_request_pauses_updates(
+    mocker, make_update, make_callback_query, make_message, context
+):
+    """Ensure status updates pause during cancellation confirmation."""
+    message = make_message()
+    download_data = {"lock": asyncio.Lock(), "is_paused": False}
+    context.bot_data["active_downloads"] = {str(message.chat.id): download_data}
+
+    safe_mock = mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message",
+        AsyncMock(),
+    )
+
+    # Initiate cancellation
+    update_cancel = make_update(
+        callback_query=make_callback_query("cancel_download", message=message)
+    )
+    await handle_cancel_request(update_cancel, context)
+    assert download_data["cancellation_pending"] is True
+
+    # Progress reports should be suppressed while flag is set
+    reporter = ProgressReporter(
+        application=Mock(),
+        chat_id=message.chat.id,
+        message_id=message.message_id,
+        parsed_info={},
+        clean_name="Sample",
+        download_data=download_data,
+    )
+    status = SimpleNamespace(
+        progress=0.1,
+        download_rate=0,
+        state=SimpleNamespace(name="downloading"),
+        num_peers=0,
+    )
+    await reporter.report(status)
+    assert safe_mock.await_count == 1  # Only the confirmation prompt was sent
+
+    # Resuming should clear the flag
+    update_resume = make_update(
+        callback_query=make_callback_query("resume_download", message=message)
+    )
+    await handle_resume_request(update_resume, context)
+    assert "cancellation_pending" not in download_data
