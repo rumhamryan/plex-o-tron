@@ -722,8 +722,10 @@ async def _present_search_results(message, context, results, query_str):
 
     results_text = f"Found {len(filtered_results)} valid result\\(s\\) for *{escaped_query}*\\. Please select one to download:"
 
-    for i, result in enumerate(filtered_results[:10]):  # Limit to 10 choices
-        button_label = f"{result.get('codec', 'N/A')} | {result.get('size_gb', 0.0):.2f} GB | S: {result.get('seeders', 0)}"
+    for i, result in enumerate(filtered_results[:5]):  # Limit to 5 choices
+        source_site = result.get("source", "Site")
+        source_name = source_site.split(".")[0]
+        button_label = f"{result.get('codec', 'N/A')} | S: {result.get('seeders', 0)} | {result.get('size_gb', 0.0):.2f} GB | [{source_name}]"
         keyboard.append(
             [InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")]
         )

@@ -4,9 +4,48 @@ import math
 import os
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 from telegram import Message, Bot
 from telegram.error import BadRequest
+
+
+def get_site_name_from_url(url: str) -> str:
+    """
+    Extracts a short, readable site name from a URL.
+
+    Examples:
+        - "https://yts.mx/..." -> "YTS"
+        - "https://1337x.to/..." -> "1337x"
+        - "https://eztvx.to/..." -> "EZTVx"
+
+    Args:
+        url: The full URL of the website.
+
+    Returns:
+        A cleaned, uppercase site name or "Unknown" if parsing fails.
+    """
+    if not url:
+        return "Unknown"
+    try:
+        # Use urlparse to reliably get the network location (e.g., 'yts.mx')
+        netloc = urlparse(url).netloc
+        if not netloc:
+            return "Unknown"
+
+        # Remove 'www.' prefix if it exists
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+
+        # Split the domain by dots and take the primary name
+        # (e.g., 'yts' from 'yts.mx', '1337x' from '1337x.to')
+        primary_name = netloc.partition(".")[0]
+
+        # Return the cleaned name, capitalized for consistency
+        return primary_name.upper()
+    except Exception:
+        # Fallback for any unexpected parsing error
+        return "Unknown"
 
 
 def format_bytes(size_bytes: int) -> str:
