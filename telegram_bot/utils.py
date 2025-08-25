@@ -4,8 +4,9 @@ import math
 import os
 import re
 from typing import Any
+from urllib.parse import urlparse
 
-from telegram import Message, Bot
+from telegram import Bot, Message
 from telegram.error import BadRequest
 
 
@@ -90,3 +91,32 @@ def parse_torrent_name(name: str) -> dict[str, Any]:
     title = re.sub(regex_pattern, "", no_ext, flags=re.I).strip()
     title = re.sub(r"\s+", " ", title).strip()
     return {"type": "unknown", "title": title}
+
+
+def get_site_name_from_url(url: str) -> str:
+    """Extract a readable site name from a URL.
+
+    The function parses the hostname, strips common prefixes (like ``www``),
+    and returns the base domain in a normalized form. If the site name contains
+    only alphabetic characters, it is upper-cased to improve readability; other
+    names are returned as-is.
+
+    Parameters
+    ----------
+    url:
+        The URL from which to extract the site name.
+
+    Returns
+    -------
+    str
+        A short, human-friendly site name. Returns ``"Unknown"`` when the URL
+        does not contain a hostname.
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if not hostname:
+        return "Unknown"
+
+    hostname = hostname.replace("www.", "")
+    site = hostname.split(".")[0]
+    return site.upper() if site.isalpha() else site

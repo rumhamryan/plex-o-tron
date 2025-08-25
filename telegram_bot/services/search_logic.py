@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ..config import logger
+from ..utils import get_site_name_from_url
 from . import scraping_service
 
 # --- Type Aliases for Readability ---
@@ -129,6 +130,20 @@ async def orchestrate_searches(
         f"[SEARCH] Orchestration complete. Returning {len(all_results)} sorted results."
     )
     return all_results
+
+
+# --- Result Formatting ---
+
+
+def format_torrent_search_result(result: dict[str, Any]) -> str:
+    """Return a user-friendly string for a torrent result.
+
+    Including the source site in the display text helps users decide which
+    option to pick by providing additional context.
+    """
+    site_name = get_site_name_from_url(result.get("page_url", ""))
+    title = result.get("title", "Unknown Title")
+    return f"[{site_name}] {title}"
 
 
 # --- Result Scoring and Parsing ---

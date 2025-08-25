@@ -4,6 +4,7 @@ import pytest
 from telegram_bot.services.search_logic import (
     _parse_codec,
     _parse_size_to_gb,
+    format_torrent_search_result,
     score_torrent_result,
 )
 
@@ -47,3 +48,8 @@ def test_score_torrent_result():
 
     no_match = score_torrent_result("Another 720p x264", "unknown", prefs, seeders=3)
     assert no_match == 3
+
+
+def test_format_torrent_search_result():
+    result = {"title": "Movie", "page_url": "https://yts.mx/torrent"}
+    assert format_torrent_search_result(result) == "[YTS] Movie"
