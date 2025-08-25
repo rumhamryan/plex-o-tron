@@ -16,3 +16,16 @@
 -   **Step 3: Clear the Flag on Resolution**
     -   **File to modify**: `telegram_bot/services/download_manager.py`
     -   **Change**: In `handle_cancel_request`, after the user makes a choice on the confirmation prompt ("Yes, cancel" or "No, keep"), ensure the `cancellation_pending` flag is removed from `context.chat_data` for that torrent, regardless of their choice. This will resume status updates.
+
+### 2. Fix pause/resume functionality
+
+-   **Goal**: Ensure the pause/resume button and download status correctly reflect the torrent's state.
+-   **Strategy**: Modify the pause/resume handler to toggle the state and update the reporting function to display the correct button and status text based on whether the torrent is paused.
+
+-   **Step 1: Modify Pause/Resume Handler**
+    -   **File to modify**: `telegram_bot/services/download_manager.py`
+    -   **Change**: In the `handle_pause_resume` callback, get the torrent handle. Check its flags to see if it's paused. If it is, call `resume()`. Otherwise, call `pause()`. This will toggle the torrent's state.
+
+-   **Step 2: Update Status Reporting Logic**
+    -   **File to modify**: `telegram_bot/services/download_manager.py`
+    -   **Change**: In the `report` job, when generating the status message for a torrent, check if it's paused. If paused, set the status text to "paused" and the button label to "▶️ Resume". If not paused, set the status text to "downloading" and the button label to "⏸️ Pause".
