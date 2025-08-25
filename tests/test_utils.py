@@ -1,7 +1,12 @@
 import sys
 from pathlib import Path
 import pytest
-from telegram_bot.utils import format_bytes, extract_first_int, parse_torrent_name
+from telegram_bot.utils import (
+    format_bytes,
+    extract_first_int,
+    parse_torrent_name,
+    get_site_name_from_url,
+)
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -63,3 +68,16 @@ def test_extract_first_int(text, expected_int):
 def test_parse_torrent_name(name, expected):
     """Verify that torrent names are parsed into the correct metadata."""
     assert parse_torrent_name(name) == expected
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://yts.mx/some/path", "YTS"),
+        ("https://1337x.to/torrent/123", "1337X"),
+        ("", "Unknown"),
+    ],
+)
+def test_get_site_name_from_url(url, expected):
+    """Ensure site names are extracted cleanly from URLs."""
+    assert get_site_name_from_url(url) == expected

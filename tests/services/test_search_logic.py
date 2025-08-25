@@ -5,6 +5,8 @@ from telegram_bot.services.search_logic import (
     _parse_codec,
     _parse_size_to_gb,
     score_torrent_result,
+    format_result_title,
+    group_and_filter_results,
 )
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -47,3 +49,19 @@ def test_score_torrent_result():
 
     no_match = score_torrent_result("Another 720p x264", "unknown", prefs, seeders=3)
     assert no_match == 3
+
+
+def test_format_result_title():
+    result = {"title": "Movie", "page_url": "https://yts.mx/t/1"}
+    assert format_result_title(result) == "[YTS] Movie"
+
+
+def test_group_and_filter_results():
+    results = [
+        {"title": "Sample Film 2020", "year": 2020},
+        {"title": "Sample Film 2021", "year": 2021},
+        {"title": "Different Movie 2020", "year": 2020},
+    ]
+    grouped = group_and_filter_results(results, "Sample Film")
+    assert len(grouped["results"]) == 2
+    assert grouped["years"] == ["2020", "2021"]

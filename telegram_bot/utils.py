@@ -4,6 +4,7 @@ import math
 import os
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 from telegram import Message, Bot
 from telegram.error import BadRequest
@@ -26,6 +27,47 @@ def extract_first_int(text: str) -> int | None:
         return None
     match = re.search(r"\d+", text.strip())
     return int(match.group(0)) if match else None
+
+
+def get_site_name_from_url(url: str) -> str:
+    """Derives a human-friendly site name from a URL.
+
+    The function extracts the hostname, strips common subdomains such as
+    ``www`` and returns the uppercased base domain. If the hostname cannot be
+    determined the function falls back to ``"Unknown"``.
+
+    Parameters
+    ----------
+    url:
+        The URL to inspect.
+
+    Returns
+    -------
+    str
+        A short name representing the source site, e.g. ``"YTS"``.
+    """
+
+    if not url:
+        return "Unknown"
+
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme == "magnet":
+            return "MAGNET"
+
+        host = parsed.netloc
+        if not host:
+            return "Unknown"
+
+        host = host.split("@")[-1]
+        if host.startswith("www."):
+            host = host[4:]
+
+        base = host.split(".")[0]
+        return base.upper() if base else "Unknown"
+    except Exception:
+        # If urlparse or any string operations fail, return a safe default.
+        return "Unknown"
 
 
 async def safe_edit_message(bot_or_message: Bot | Message, text: str, **kwargs) -> None:

@@ -719,10 +719,13 @@ async def _present_search_results(message, context, results, query_str):
     # Use the filtered list from this point on
     context.user_data["search_results"] = filtered_results
     keyboard = []
-
-    results_text = f"Found {len(filtered_results)} valid result\\(s\\) for *{escaped_query}*\\. Please select one to download:"
+    lines = [
+        f"Found {len(filtered_results)} valid result\\(s\\) for *{escaped_query}*\\. Please select one to download:"
+    ]
 
     for i, result in enumerate(filtered_results[:10]):  # Limit to 10 choices
+        display_title = search_logic.format_result_title(result)
+        lines.append(f"{i + 1}. {escape_markdown(display_title, version=2)}")
         button_label = f"{result.get('codec', 'N/A')} | {result.get('size_gb', 0.0):.2f} GB | S: {result.get('seeders', 0)}"
         keyboard.append(
             [InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")]
@@ -733,7 +736,7 @@ async def _present_search_results(message, context, results, query_str):
     )
     await safe_edit_message(
         message,
-        text=results_text,
+        text="\n".join(lines),
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -782,9 +785,8 @@ async def _process_preliminary_results(
         )
         return
 
-    unique_years = sorted(
-        {str(result["year"]) for result in results if result.get("year")}
-    )
+    grouped = search_logic.group_and_filter_results(results, title)
+    unique_years = grouped["years"]
 
     if len(unique_years) > 1:
         logger.info(

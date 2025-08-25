@@ -9,8 +9,9 @@ from collections.abc import Callable, Coroutine
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
+from ..utils import get_site_name_from_url
+
 from ..config import logger
-from . import scraping_service
 
 # --- Type Aliases for Readability ---
 ScraperCoroutine = Coroutine[Any, Any, list[dict[str, Any]]]
@@ -30,6 +31,9 @@ async def orchestrate_searches(
     enabled scraper, runs them in parallel, and returns a single list of
     results sorted by score.
     """
+    # Importing here avoids a circular import during test collection.
+    from . import scraping_service
+
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     websites_config = search_config.get("websites", {})
 
@@ -194,6 +198,64 @@ def _parse_size_to_gb(size_str: str) -> float:
     except (ValueError, TypeError):
         return 0.0
     return 0.0
+
+
+def format_result_title(result: dict[str, Any]) -> str:
+    """Formats a torrent result title with its source site.
+
+    The returned string is intended for display to the user and takes the form
+    ``"[SITE] Original Title"``. If the site cannot be determined the source
+    defaults to ``"Unknown"``.
+    """
+
+    site_name = get_site_name_from_url(result.get("page_url", ""))
+    if site_name == "Unknown" and result.get("source"):
+        site_name = str(result["source"]).upper()
+
+    title = result.get("title", "")
+    return f"[{site_name}] {title}".strip()
+
+
+def group_and_filter_results(
+    results: list[dict[str, Any]], query: str
+) -> dict[str, Any]:
+    """Groups results by title similarity and isolates the most relevant set.
+
+    The function first clusters results using fuzzy title matching to avoid
+    mixing unrelated releases. It then selects the group whose canonical title
+    best matches the user's original query. Only the years from this group are
+    considered when prompting the user for disambiguation.
+    """
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for res in results:
+        title = res.get("title")
+        if not title:
+            continue
+
+        # Find an existing group with a sufficiently similar title
+        matched_key = None
+        for key in groups:
+            if fuzz.token_sort_ratio(title, key) >= 90:
+                matched_key = key
+                break
+
+        if matched_key:
+            groups[matched_key].append(res)
+        else:
+            groups[title] = [res]
+
+    if not groups:
+        return {"results": [], "years": []}
+
+    best_match = process.extractOne(
+        query, list(groups.keys()), scorer=fuzz.token_sort_ratio
+    )
+    best_key = best_match[0] if best_match else ""
+    best_group = groups.get(best_key, [])
+    unique_years = sorted({str(r["year"]) for r in best_group if r.get("year")})
+
+    return {"results": best_group, "years": unique_years}
 
 
 # --- Local Filesystem Searching (for Delete workflow) ---

@@ -620,6 +620,7 @@ async def handle_resume_request(update, context):
         download_data = active_downloads[chat_id_str]
         async with download_data["lock"]:
             download_data["is_paused"] = False
+            download_data.pop("cancellation_pending", None)
             logger.info(f"Resume request received for download for user {chat_id_str}.")
     else:
         await safe_edit_message(
@@ -646,6 +647,7 @@ async def handle_cancel_request(update, context):
     download_data = active_downloads[chat_id_str]
     async with download_data["lock"]:
         if query.data == "cancel_download":
+            download_data["cancellation_pending"] = True
             message_text = "Are you sure you want to cancel this download\\?"
             reply_markup = InlineKeyboardMarkup(
                 [
@@ -667,6 +669,7 @@ async def handle_cancel_request(update, context):
             )
 
         elif query.data == "cancel_confirm":
+            download_data.pop("cancellation_pending", None)
             logger.info(f"Cancellation confirmed for user {chat_id_str}.")
             if "task" in download_data and not download_data["task"].done():
                 download_data["task"].cancel()

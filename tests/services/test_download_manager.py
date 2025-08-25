@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, ANY
 import pytest
+from telegram import Update
 from telegram_bot.services.download_manager import (
     ProgressReporter,
     download_task_wrapper,
@@ -12,6 +13,7 @@ from telegram_bot.services.download_manager import (
     process_queue_for_user,
     handle_pause_request,
     handle_resume_request,
+    handle_cancel_request,
 )
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -306,3 +308,65 @@ async def test_pause_and_resume_requests(
     update_resume = make_update(callback_query=callback_resume)
     await handle_resume_request(update_resume, context)
     assert download_data["is_paused"] is False
+
+
+@pytest.mark.asyncio
+async def test_handle_cancel_request_sets_and_clears_flag(
+    mocker, context, make_callback_query, make_message
+):
+    download_data = {"lock": asyncio.Lock(), "task": AsyncMock()}
+    download_data["task"].done.return_value = False
+    context.bot_data["active_downloads"] = {"456": download_data}
+
+    mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message", AsyncMock()
+    )
+
+    query = make_callback_query("cancel_download", make_message())
+    await handle_cancel_request(Update(update_id=1, callback_query=query), context)
+    assert download_data.get("cancellation_pending") is True
+
+    query_confirm = make_callback_query("cancel_confirm", query.message)
+    await handle_cancel_request(
+        Update(update_id=2, callback_query=query_confirm), context
+    )
+    assert "cancellation_pending" not in download_data
+
+
+@pytest.mark.asyncio
+async def test_progress_reporter_skips_when_cancellation_pending(mocker):
+    status = SimpleNamespace(
+        progress=0.1,
+        download_rate=0,
+        state=SimpleNamespace(name="downloading"),
+        num_peers=0,
+    )
+    application = Mock()
+    download_data = {"lock": asyncio.Lock(), "cancellation_pending": True}
+    reporter = ProgressReporter(
+        application,
+        chat_id=1,
+        message_id=1,
+        parsed_info={},
+        clean_name="Name",
+        download_data=download_data,
+    )
+
+    safe_mock = mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message", AsyncMock()
+    )
+    await reporter.report(status)
+    safe_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resume_request_clears_cancellation_flag(
+    mocker, context, make_callback_query, make_message
+):
+    download_data = {"lock": asyncio.Lock(), "cancellation_pending": True}
+    context.bot_data["active_downloads"] = {"456": download_data}
+
+    query = make_callback_query("resume_download", make_message())
+    update = Update(update_id=1, callback_query=query)
+    await handle_resume_request(update, context)
+    assert "cancellation_pending" not in download_data
