@@ -26,6 +26,7 @@ dependencies = [
     "plexapi",
     "thefuzz",
     "httpx[http2]",
+    "PyYAML"
 ]
 
 [project.optional-dependencies]
