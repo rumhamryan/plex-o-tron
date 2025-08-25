@@ -6,14 +6,15 @@ from unittest.mock import AsyncMock, Mock, ANY
 
 import httpx
 import pytest
+import libtorrent as lt
 from telegram_bot.services.download_manager import (
     ProgressReporter,
     download_task_wrapper,
     add_download_to_queue,
     add_season_to_queue,
     process_queue_for_user,
-    handle_pause_request,
-    handle_resume_request,
+    handle_pause_resume,
+    handle_cancel_request,
     download_with_progress,
 )
 
@@ -49,6 +50,9 @@ async def test_progress_reporter_movie(mocker):
     _, kwargs = safe_mock.call_args
     assert "⬇️ *Downloading:*" in kwargs["text"]
     assert "Sample Movie" in kwargs["text"]
+    btn = kwargs["reply_markup"].inline_keyboard[0][0]
+    assert btn.text == "⏸️ Pause"
+    assert btn.callback_data == "pause_resume"
 
 
 @pytest.mark.asyncio
@@ -86,6 +90,41 @@ async def test_progress_reporter_tv_paused(mocker):
     _, kwargs = safe_mock.call_args
     assert "⏸️ *Paused:*" in kwargs["text"]
     assert "S01E02" in kwargs["text"]
+    btn = kwargs["reply_markup"].inline_keyboard[0][0]
+    assert btn.text == "▶️ Resume"
+    assert btn.callback_data == "pause_resume"
+
+
+@pytest.mark.asyncio
+async def test_progress_reporter_skips_when_cancellation_pending(mocker):
+    status = SimpleNamespace(
+        progress=0.5,
+        download_rate=1024 * 1024,
+        state=SimpleNamespace(name="downloading"),
+        num_peers=5,
+    )
+    application = Mock()
+    download_data = {
+        "lock": asyncio.Lock(),
+        "is_paused": False,
+        "cancellation_pending": True,
+    }
+    reporter = ProgressReporter(
+        application,
+        chat_id=1,
+        message_id=2,
+        parsed_info={"type": "movie"},
+        clean_name="Sample Movie",
+        download_data=download_data,
+    )
+    safe_mock = mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message",
+        AsyncMock(),
+    )
+
+    await reporter.report(status)
+
+    safe_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -324,19 +363,77 @@ async def test_process_queue_for_user_start(mocker):
 
 
 @pytest.mark.asyncio
-async def test_pause_and_resume_requests(
+async def test_handle_pause_resume_toggles_state(
+    make_update, make_callback_query, make_message, context
+):
+    class DummyHandle:
+        """Simple stand-in for a libtorrent handle."""
+
+        def __init__(self) -> None:
+            self.paused = False
+
+        def status(self):
+            flags = lt.torrent_flags.paused if self.paused else 0
+            return SimpleNamespace(flags=flags)
+
+        def pause(self):
+            self.paused = True
+
+        def resume(self):
+            self.paused = False
+
+    message = make_message()
+    handle = DummyHandle()
+    download_data = {"lock": asyncio.Lock(), "is_paused": False, "handle": handle}
+    context.bot_data["active_downloads"] = {str(message.chat.id): download_data}
+
+    callback = make_callback_query(data="pause_resume", message=message)
+    update = make_update(callback_query=callback)
+    await handle_pause_resume(update, context)
+    assert download_data["is_paused"] is True
+    assert handle.paused is True
+
+    callback2 = make_callback_query(data="pause_resume", message=message)
+    update2 = make_update(callback_query=callback2)
+    await handle_pause_resume(update2, context)
+    assert download_data["is_paused"] is False
+    assert handle.paused is False
+
+
+@pytest.mark.asyncio
+async def test_cancel_request_flag_flow(
     mocker, make_update, make_callback_query, make_message, context
 ):
     message = make_message()
-    callback = make_callback_query(data="pause_download", message=message)
-    update = make_update(callback_query=callback)
-    download_data = {"lock": asyncio.Lock(), "is_paused": False}
+    task = Mock()
+    task.done.return_value = False
+    download_data = {"lock": asyncio.Lock(), "task": task}
     context.bot_data["active_downloads"] = {str(message.chat.id): download_data}
+    mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message",
+        AsyncMock(),
+    )
 
-    await handle_pause_request(update, context)
-    assert download_data["is_paused"] is True
+    # Initiate cancellation
+    update_start = make_update(
+        callback_query=make_callback_query("cancel_download", message)
+    )
+    await handle_cancel_request(update_start, context)
+    assert download_data.get("cancellation_pending") is True
 
-    callback_resume = make_callback_query(data="resume_download", message=message)
-    update_resume = make_update(callback_query=callback_resume)
-    await handle_resume_request(update_resume, context)
-    assert download_data["is_paused"] is False
+    # Deny cancellation
+    update_deny = make_update(
+        callback_query=make_callback_query("cancel_deny", message)
+    )
+    await handle_cancel_request(update_deny, context)
+    assert "cancellation_pending" not in download_data
+
+    # Start again and confirm
+    await handle_cancel_request(update_start, context)
+    assert download_data.get("cancellation_pending") is True
+    update_confirm = make_update(
+        callback_query=make_callback_query("cancel_confirm", message)
+    )
+    await handle_cancel_request(update_confirm, context)
+    assert "cancellation_pending" not in download_data
+    task.cancel.assert_called_once()
