@@ -37,7 +37,7 @@ repos:
         language: python
         types: [python]
         additional_dependencies:
-        -   mypy==1.10.0
+        -   mypy==1.17.1
         # Type stubs required for linting utility scripts
         -   types-requests
         -   types-beautifulsoup4
