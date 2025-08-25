@@ -94,12 +94,13 @@ class ProgressReporter:
                 f"*Speed:* {speed_str} MB/s"
             )
 
+            # Use a single toggle button for both pause and resume actions.
             if is_paused:
                 reply_markup = InlineKeyboardMarkup(
                     [
                         [
                             InlineKeyboardButton(
-                                "▶️ Resume", callback_data="resume_download"
+                                "▶️ Resume", callback_data="pause_resume"
                             ),
                             InlineKeyboardButton(
                                 "⏹️ Cancel", callback_data="cancel_download"
@@ -112,7 +113,7 @@ class ProgressReporter:
                     [
                         [
                             InlineKeyboardButton(
-                                "⏸️ Pause", callback_data="pause_download"
+                                "⏸️ Pause", callback_data="pause_resume"
                             ),
                             InlineKeyboardButton(
                                 "⏹️ Cancel", callback_data="cancel_download"
@@ -591,42 +592,39 @@ async def add_season_to_queue(update, context):
     await process_queue_for_user(chat_id, context.application)
 
 
-async def handle_pause_request(update, context):
-    """Handles a user's request to pause a download."""
+async def handle_pause_resume(update, context):
+    """Toggle pause or resume for the current download."""
     query = update.callback_query
     chat_id_str = str(query.message.chat_id)
     active_downloads = context.bot_data.get("active_downloads", {})
 
-    if chat_id_str in active_downloads:
-        download_data = active_downloads[chat_id_str]
-        async with download_data["lock"]:
-            download_data["is_paused"] = True
-            logger.info(f"Pause request received for download for user {chat_id_str}.")
-    else:
+    if chat_id_str not in active_downloads:
         await safe_edit_message(
             query.message,
-            text="ℹ️ Could not find an active download to pause\\.",
+            text="ℹ️ Could not find an active download to pause or resume\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
+        return
 
+    download_data = active_downloads[chat_id_str]
+    async with download_data["lock"]:
+        handle = download_data.get("handle")
+        if handle is None:
+            logger.warning(
+                "Pause/resume requested but no torrent handle found for user %s.",
+                chat_id_str,
+            )
+            return
 
-async def handle_resume_request(update, context):
-    """Handles a user's request to resume a download."""
-    query = update.callback_query
-    chat_id_str = str(query.message.chat_id)
-    active_downloads = context.bot_data.get("active_downloads", {})
-
-    if chat_id_str in active_downloads:
-        download_data = active_downloads[chat_id_str]
-        async with download_data["lock"]:
+        is_paused = bool(handle.status().flags & lt.torrent_flags.paused)
+        if is_paused:
+            handle.resume()
             download_data["is_paused"] = False
-            logger.info(f"Resume request received for download for user {chat_id_str}.")
-    else:
-        await safe_edit_message(
-            query.message,
-            text="ℹ️ This download is in the queue and will resume automatically\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
+            logger.info(f"Resume request processed for user {chat_id_str}.")
+        else:
+            handle.pause()
+            download_data["is_paused"] = True
+            logger.info(f"Pause request processed for user {chat_id_str}.")
 
 
 async def handle_cancel_request(update, context):
@@ -646,6 +644,8 @@ async def handle_cancel_request(update, context):
     download_data = active_downloads[chat_id_str]
     async with download_data["lock"]:
         if query.data == "cancel_download":
+            # Mark this download so progress updates pause during confirmation.
+            download_data["cancellation_pending"] = True
             message_text = "Are you sure you want to cancel this download\\?"
             reply_markup = InlineKeyboardMarkup(
                 [
@@ -654,8 +654,8 @@ async def handle_cancel_request(update, context):
                             "✅ Yes, Cancel", callback_data="cancel_confirm"
                         ),
                         InlineKeyboardButton(
-                            "❌ No, Continue", callback_data="resume_download"
-                        ),  # Simplification
+                            "❌ No, Continue", callback_data="cancel_deny"
+                        ),
                     ]
                 ]
             )
@@ -667,6 +667,12 @@ async def handle_cancel_request(update, context):
             )
 
         elif query.data == "cancel_confirm":
+            # User confirmed cancellation; clear flag and stop the task.
+            download_data.pop("cancellation_pending", None)
             logger.info(f"Cancellation confirmed for user {chat_id_str}.")
             if "task" in download_data and not download_data["task"].done():
                 download_data["task"].cancel()
+
+        elif query.data == "cancel_deny":
+            # User opted not to cancel; remove the flag so updates resume.
+            download_data.pop("cancellation_pending", None)

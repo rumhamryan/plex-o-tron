@@ -10,8 +10,7 @@ from ..services.download_manager import (
     add_download_to_queue,
     add_season_to_queue,
     handle_cancel_request,
-    handle_pause_request,
-    handle_resume_request,
+    handle_pause_resume,
 )
 from ..workflows.delete_workflow import handle_delete_buttons
 from ..workflows.search_workflow import handle_search_buttons
@@ -46,11 +45,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif action == "confirm_season_download":
         await add_season_to_queue(update, context)
 
-    elif action == "pause_download":
-        await handle_pause_request(update, context)
-
-    elif action == "resume_download":
-        await handle_resume_request(update, context)
+    elif action == "pause_resume":
+        await handle_pause_resume(update, context)
 
     elif action.startswith("cancel_"):
         # Handles cancel_operation, cancel_download, and confirm_cancel
