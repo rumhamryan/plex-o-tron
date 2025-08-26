@@ -54,7 +54,11 @@ class ProgressReporter:
             self.last_update_time = current_time
 
             progress_percent = status.progress * 100
-            speed_mbps = status.download_rate / 1024 / 1024
+            is_paused = self.download_data.get("is_paused", False)
+            # When a download is paused libtorrent may still report the last
+            # observed download rate. We override the speed to reflect the
+            # effective transfer rate during a pause.
+            speed_mbps = 0.0 if is_paused else status.download_rate / 1024 / 1024
 
             # --- CORRECTED STRING PREPARATION WITH version=2 ---
             progress_str = escape_markdown(f"{progress_percent:.2f}", version=2)
@@ -78,7 +82,6 @@ class ProgressReporter:
             else:
                 name_str = f"`{escape_markdown(self.clean_name, version=2)}`"
 
-            is_paused = self.download_data.get("is_paused", False)
             header_str = "⏸️ *Paused:*" if is_paused else "⬇️ *Downloading:*"
             state_str = (
                 "*paused*"
@@ -209,14 +212,16 @@ async def download_with_progress(
         if bot_data.get("is_shutting_down") or download_data.get("requeued"):
             raise asyncio.CancelledError("Shutdown or requeue initiated.")
 
-        # Handle pausing
+        # Handle pausing. We still emit progress updates so the user interface
+        # can reflect the paused state and show a toggle button to resume.
         if download_data.get("is_paused"):
             handle.pause()
-            # Loop here until resumed, but still check for shutdown
+            await status_callback(handle.status())  # Immediate paused update
             while download_data.get("is_paused"):
                 if bot_data.get("is_shutting_down"):
                     raise asyncio.CancelledError("Shutdown initiated.")
                 await asyncio.sleep(1)
+                await status_callback(handle.status())
             handle.resume()
 
         status = handle.status()
