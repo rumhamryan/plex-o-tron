@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import urllib.parse
+import asyncio
 from dataclasses import dataclass
 import asyncio
 from pathlib import Path
@@ -26,12 +27,14 @@ class TorrentData:
     """Container for data extracted from a torrent index."""
 
     name: str
-    magnet_url: str
-    seeders: int
-    leechers: int
-    size_bytes: int
-    source_site: str
+    magnet_url: str | None = None
+    seeders: int = 0
+    leechers: int = 0
+    size_bytes: int = 0
+    source_site: str = ""
     uploader: str | None = None
+    # The detail page is optional and used only if the magnet link is absent
+    details_link: str | None = None
 
 
 def load_site_config(config_path: Path) -> dict[str, Any]:
@@ -226,6 +229,12 @@ class GenericTorrentScraper:
         best_name, _ = base_name_counts.most_common(1)[0]
         final_results = [r for r, base in strong_candidates if base == best_name]
 
+        # Fetch magnet links for remaining results concurrently. Only results
+        # that pass filtering trigger additional network requests, reducing
+        # overall scraping time.
+        await self._resolve_magnets(final_results)
+        final_results = [r for r in final_results if r.magnet_url]
+
         logger.info(
             f"[SCRAPER] {self.site_name}: Parsed {len(final_results)} torrents for '{query}'"
         )
@@ -241,12 +250,12 @@ class GenericTorrentScraper:
         reuse existing connections. This significantly reduces overhead when
         parsing many rows.
         """
-
         name = self._extract_text(row, self.results_selectors.get("name"))
         if not name:
             return None
 
         magnet_link = self._extract_href(row, self.results_selectors.get("magnet_url"))
+        details_href = None
         if not magnet_link:
             details_href = self._extract_href(
                 row, self.results_selectors.get("details_page_link")
@@ -279,6 +288,7 @@ class GenericTorrentScraper:
             size_bytes=size_bytes,
             uploader=uploader,
             source_site=self.site_name,
+            details_link=details_href,
         )
 
     async def _fetch_page(
