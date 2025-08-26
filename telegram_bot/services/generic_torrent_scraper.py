@@ -9,9 +9,11 @@ from typing import Any, Optional
 import httpx
 import yaml
 from bs4 import BeautifulSoup, Tag
+from collections import Counter
 from thefuzz import fuzz
 
 from ..config import logger
+from ..utils import parse_torrent_name
 
 
 @dataclass
@@ -84,6 +86,14 @@ class GenericTorrentScraper:
         self.advanced_features: dict[str, Any] = site_config.get(
             "advanced_features", {}
         )
+        self.matching: dict[str, Any] = site_config.get("matching", {})
+        scorer_name = self.matching.get("fuzz_scorer", "ratio")
+        self._fuzz_scorer = getattr(fuzz, scorer_name, fuzz.ratio)
+        self._fuzz_threshold = int(self.matching.get("fuzz_threshold", 75))
+        if not hasattr(fuzz, scorer_name):
+            logger.warning(
+                "[SCRAPER] Unknown fuzz scorer '%s'; defaulting to 'ratio'", scorer_name
+            )
         self.site_name: str = site_config["site_name"]
 
     async def search(
@@ -136,25 +146,53 @@ class GenericTorrentScraper:
             if not isinstance(row, Tag):
                 continue
             try:
-                parsed = await self._parse_row(row)
-                if parsed:
-                    results.append(parsed)
+                parsed_row = await self._parse_row(row)
+                if parsed_row is not None:
+                    results.append(parsed_row)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[SCRAPER] Failed to parse row: {exc}")
                 continue
 
-        if self.advanced_features.get("enable_fuzzy_filter") and results:
-            base = (base_query_for_filter or query).lower()
-            threshold = int(self.advanced_features.get("fuzzy_filter_ratio", 85))
-            results = [
-                r
-                for r in results
-                if fuzz.partial_ratio(base, r.name.lower()) >= threshold
-            ]
+        if not results:
+            logger.info(f"[SCRAPER] {self.site_name}: Parsed 0 torrents for '{query}'")
+            return []
+
+        # --- Two-stage filtering to improve precision ---
+        filter_query = (base_query_for_filter or query).lower()
+
+        # Stage 1: lenient fuzzy match to gather viable candidates
+        candidates: list[tuple[TorrentData, str]] = []
+        for res in results:
+            parsed_info = parse_torrent_name(res.name)
+            base_name = parsed_info.get("title", "").lower()
+            candidates.append((res, base_name))
+
+        strong_candidates = [
+            (r, base)
+            for r, base in candidates
+            if base and self._fuzz_scorer(filter_query, base) >= self._fuzz_threshold
+        ]
+        if not strong_candidates:
+            logger.info(
+                f"[SCRAPER] {self.site_name}: No strong candidates for '{query}'"
+            )
+            return []
+
+        # Stage 2: keep only results matching the most common base name
+        base_name_counts = Counter(base for _, base in strong_candidates)
+        if not base_name_counts:
+            logger.info(
+                f"[SCRAPER] {self.site_name}: Unable to determine consensus for '{query}'"
+            )
+            return []
+
+        best_name, _ = base_name_counts.most_common(1)[0]
+        final_results = [r for r, base in strong_candidates if base == best_name]
+
         logger.info(
-            f"[SCRAPER] {self.site_name}: Parsed {len(results)} torrents for '{query}'"
+            f"[SCRAPER] {self.site_name}: Parsed {len(final_results)} torrents for '{query}'"
         )
-        return results
+        return final_results
 
     async def _parse_row(self, row: Tag) -> Optional[TorrentData]:
         """Parse a single search result row into ``TorrentData``."""
