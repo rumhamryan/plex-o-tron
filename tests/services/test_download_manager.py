@@ -90,6 +90,8 @@ async def test_progress_reporter_tv_paused(mocker):
     _, kwargs = safe_mock.call_args
     assert "⏸️ *Paused:*" in kwargs["text"]
     assert "S01E02" in kwargs["text"]
+    assert "*State:* *paused*" in kwargs["text"]
+    assert "*Speed:* 0\.00 MB/s" in kwargs["text"]
     btn = kwargs["reply_markup"].inline_keyboard[0][0]
     assert btn.text == "▶️ Resume"
     assert btn.callback_data == "pause_resume"
@@ -254,6 +256,75 @@ async def test_download_with_progress_http_status_error(mocker):
     assert success is False
     assert info is None
     session.add_torrent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_download_with_progress_reports_during_pause(mocker):
+    """Ensures progress updates continue while a download is paused."""
+
+    class DummyStatus(SimpleNamespace):
+        pass
+
+    class DummyHandle:
+        def __init__(self) -> None:
+            self.status_obj = DummyStatus(
+                is_seeding=False,
+                progress=0.5,
+                download_rate=1024,
+                state=SimpleNamespace(name="downloading"),
+                num_peers=1,
+            )
+
+        def status(self):
+            return self.status_obj
+
+        def pause(self):
+            return None
+
+        def resume(self):
+            return None
+
+        def name(self):
+            return "dummy"
+
+        def torrent_file(self):
+            return "ti"
+
+    class DummySession:
+        def add_torrent(self, _):
+            return handle
+
+    handle = DummyHandle()
+    session = DummySession()
+    bot_data = {"TORRENT_SESSION": session}
+    download_data = {"lock": asyncio.Lock(), "is_paused": False}
+    mocker.patch(
+        "telegram_bot.services.download_manager.lt.parse_magnet_uri",
+        return_value=SimpleNamespace(),
+    )
+
+    calls: list[bool] = []
+
+    async def status_callback(_):
+        calls.append(download_data["is_paused"])
+        if len(calls) == 1:
+            download_data["is_paused"] = True
+        elif len(calls) == 3:
+            download_data["is_paused"] = False
+            handle.status_obj.is_seeding = True
+
+    mocker.patch("asyncio.sleep", AsyncMock())
+
+    success, _ = await download_with_progress(
+        source="magnet:?xt=urn:btih:test",
+        save_path="/tmp",
+        status_callback=status_callback,
+        bot_data=bot_data,
+        download_data=download_data,
+    )
+
+    assert success is True
+    assert any(calls)
 
 
 @pytest.mark.asyncio
