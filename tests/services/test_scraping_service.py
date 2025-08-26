@@ -294,16 +294,13 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
     detail_good = """
     <div><a class="btn-magnet" href="magnet:?xt=urn:btih:GOOD">Magnet</a></div>
     """
-    detail_bad = """
-    <div><a class="btn-magnet" href="magnet:?xt=urn:btih:BAD">Magnet</a></div>
-    """
 
     responses = [
         DummyResponse(text=search_html),
         DummyResponse(text=detail_good),
-        DummyResponse(text=detail_bad),
     ]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    client = DummyClient(responses)
+    mocker.patch("httpx.AsyncClient", return_value=client)
 
     context = Mock()
     context.bot_data = {
@@ -328,6 +325,8 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
 
     assert len(results) == 1
     assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
+    # Only the search page and one detail page should have been requested
+    assert client._index == 2
 
 
 @pytest.mark.asyncio
