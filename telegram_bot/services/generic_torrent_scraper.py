@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import urllib.parse
 from dataclasses import dataclass
+import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
@@ -121,6 +122,7 @@ class GenericTorrentScraper:
         base_query_for_filter: str | None = None,
     ) -> list[TorrentData]:
         """Search the site for ``query`` and return scraped torrent data."""
+
         if not isinstance(query, str) or not query.strip():
             logger.warning("[SCRAPER] Empty query provided to GenericTorrentScraper")
             return []
@@ -138,53 +140,55 @@ class GenericTorrentScraper:
         )
         search_url = urllib.parse.urljoin(self.base_url, search_path)
 
-        logger.info(
-            f"[SCRAPER] {self.site_name}: Fetching search results from {search_url}"
-        )
-        search_html = await self._fetch_page(search_url)
-        if not search_html:
-            logger.error(
-                f"[SCRAPER] {self.site_name}: Failed to retrieve search results from {search_url}"
-            )
-            return []
-
-        soup = BeautifulSoup(search_html, "lxml")
-
-        # Narrow the parsing scope to a configured results container. This avoids
-        # scanning the entire document when only a specific section is relevant.
-        results_container_selector = self.results_selectors.get("results_container")
-        search_area: BeautifulSoup | Tag = soup
-        if isinstance(results_container_selector, str):
-            container = soup.select_one(results_container_selector)
-            if container is not None:
-                search_area = container
-            else:
-                logger.debug(
-                    f"[SCRAPER] {self.site_name}: Results container selector "
-                    f"'{results_container_selector}' not found; using full page"
-                )
-
-        row_selector = self.results_selectors.get("rows")
-        if not isinstance(row_selector, str):
-            logger.error("[SCRAPER] 'rows' selector missing in config")
-            return []
-
-        rows = search_area.select(row_selector)
-        logger.debug(
-            f"[SCRAPER] {self.site_name}: Found {len(rows)} rows using selector '{row_selector}'"
-        )
-
         results: list[TorrentData] = []
-        for row in rows:
-            if not isinstance(row, Tag):
-                continue
-            try:
-                parsed_row = await self._parse_row(row)
-                if parsed_row is not None:
-                    results.append(parsed_row)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"[SCRAPER] Failed to parse row: {exc}")
-                continue
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            logger.info(
+                f"[SCRAPER] {self.site_name}: Fetching search results from {search_url}"
+            )
+            search_html = await self._fetch_page(search_url, client)
+            if not search_html:
+                logger.error(
+                    f"[SCRAPER] {self.site_name}: Failed to retrieve search results from {search_url}"
+                )
+                return []
+
+            soup = BeautifulSoup(search_html, "lxml")
+
+            # Narrow the parsing scope to a configured results container. This avoids
+            # scanning the entire document when only a specific section is relevant.
+            results_container_selector = self.results_selectors.get("results_container")
+            search_area: BeautifulSoup | Tag = soup
+            if isinstance(results_container_selector, str):
+                container = soup.select_one(results_container_selector)
+                if container is not None:
+                    search_area = container
+                else:
+                    logger.debug(
+                        f"[SCRAPER] {self.site_name}: Results container selector "
+                        f"'{results_container_selector}' not found; using full page"
+                    )
+
+            row_selector = self.results_selectors.get("rows")
+            if not isinstance(row_selector, str):
+                logger.error("[SCRAPER] 'rows' selector missing in config")
+                return []
+
+            rows = search_area.select(row_selector)
+            logger.debug(
+                f"[SCRAPER] {self.site_name}: Found {len(rows)} rows using selector '{row_selector}'"
+            )
+
+            # Parse rows concurrently so detail-page requests do not block each other.
+            parse_tasks = [
+                self._parse_row(row, client) for row in rows if isinstance(row, Tag)
+            ]
+            parsed_rows = await asyncio.gather(*parse_tasks, return_exceptions=True)
+
+            for parsed in parsed_rows:
+                if isinstance(parsed, TorrentData):
+                    results.append(parsed)
+                elif isinstance(parsed, Exception):
+                    logger.warning(f"[SCRAPER] Failed to parse row: {parsed}")
 
         if not results:
             logger.info(f"[SCRAPER] {self.site_name}: Parsed 0 torrents for '{query}'")
@@ -227,8 +231,17 @@ class GenericTorrentScraper:
         )
         return final_results
 
-    async def _parse_row(self, row: Tag) -> Optional[TorrentData]:
-        """Parse a single search result row into ``TorrentData``."""
+    async def _parse_row(
+        self, row: Tag, client: httpx.AsyncClient
+    ) -> Optional[TorrentData]:
+        """Parse a single search result row into ``TorrentData``.
+
+        A shared ``httpx.AsyncClient`` instance is passed in so that any
+        additional requests (e.g. fetching a detail page for the magnet link)
+        reuse existing connections. This significantly reduces overhead when
+        parsing many rows.
+        """
+
         name = self._extract_text(row, self.results_selectors.get("name"))
         if not name:
             return None
@@ -240,7 +253,7 @@ class GenericTorrentScraper:
             )
             if details_href:
                 detail_url = urllib.parse.urljoin(self.base_url, details_href)
-                detail_html = await self._fetch_page(detail_url)
+                detail_html = await self._fetch_page(detail_url, client)
                 if detail_html:
                     detail_soup = BeautifulSoup(detail_html, "lxml")
                     magnet_link = self._extract_href(
@@ -268,8 +281,22 @@ class GenericTorrentScraper:
             source_site=self.site_name,
         )
 
-    async def _fetch_page(self, url: str) -> str | None:
-        """Fetch ``url`` and return the response text, handling errors."""
+    async def _fetch_page(
+        self, url: str, client: httpx.AsyncClient | None = None
+    ) -> str | None:
+        """Fetch ``url`` and return the response text, handling errors.
+
+        A reusable :class:`httpx.AsyncClient` can be supplied to avoid the cost of
+        creating a new connection for every request. When ``client`` is ``None``
+        a short-lived client is created for the call. This function is small and
+        self-contained so it's easy to mock in tests.
+        """
+
+        if client is None:
+            async with httpx.AsyncClient(
+                timeout=30, follow_redirects=True
+            ) as temp_client:
+                return await self._fetch_page(url, temp_client)
 
         headers = {
             # Some torrent sites (e.g. 1337x) return HTTP 403 unless common
@@ -290,16 +317,15 @@ class GenericTorrentScraper:
         logger.debug(f"[SCRAPER] {self.site_name}: GET {url}")
 
         try:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                response = await client.get(url, headers=headers)
-                logger.debug(
-                    f"[SCRAPER] {self.site_name}: GET {url} -> {response.status_code}"
-                )
-                response.raise_for_status()
-                logger.debug(
-                    f"[SCRAPER] {self.site_name}: Response snippet: {response.text[:200]!r}"
-                )
-                return response.text
+            response = await client.get(url, headers=headers)
+            logger.debug(
+                f"[SCRAPER] {self.site_name}: GET {url} -> {response.status_code}"
+            )
+            response.raise_for_status()
+            logger.debug(
+                f"[SCRAPER] {self.site_name}: Response snippet: {response.text[:200]!r}"
+            )
+            return response.text
         except httpx.HTTPStatusError as exc:  # noqa: BLE001
             logger.error(f"[SCRAPER] HTTP error fetching {url}: {exc}")
             if exc.response is not None:
