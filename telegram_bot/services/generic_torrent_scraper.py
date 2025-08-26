@@ -16,6 +16,10 @@ from ..config import logger
 from ..utils import parse_torrent_name
 
 
+# Cache for site configurations to avoid repeated disk reads.
+_config_cache: dict[Path, dict[str, Any]] = {}
+
+
 @dataclass
 class TorrentData:
     """Container for data extracted from a torrent index."""
@@ -30,10 +34,22 @@ class TorrentData:
 
 
 def load_site_config(config_path: Path) -> dict[str, Any]:
-    """Load and minimally validate a YAML site configuration."""
-    if not config_path.exists():
-        raise FileNotFoundError(f"Scraper config not found: {config_path}")
-    with config_path.open("r", encoding="utf-8") as fh:
+    """Load and minimally validate a YAML site configuration.
+
+    To improve performance, configuration files are cached in-memory after the
+    first load. Subsequent calls with the same ``config_path`` return the cached
+    data, avoiding repeated disk I/O.
+    """
+
+    resolved_path = config_path.resolve()
+    cached = _config_cache.get(resolved_path)
+    if cached is not None:
+        return cached
+
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"Scraper config not found: {resolved_path}")
+
+    with resolved_path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
 
     required = {
@@ -46,6 +62,8 @@ def load_site_config(config_path: Path) -> dict[str, Any]:
     missing = required - data.keys()
     if missing:
         raise ValueError(f"Config missing keys: {', '.join(sorted(missing))}")
+
+    _config_cache[resolved_path] = data
     return data
 
 
@@ -131,12 +149,27 @@ class GenericTorrentScraper:
             return []
 
         soup = BeautifulSoup(search_html, "lxml")
+
+        # Narrow the parsing scope to a configured results container. This avoids
+        # scanning the entire document when only a specific section is relevant.
+        results_container_selector = self.results_selectors.get("results_container")
+        search_area: BeautifulSoup | Tag = soup
+        if isinstance(results_container_selector, str):
+            container = soup.select_one(results_container_selector)
+            if container is not None:
+                search_area = container
+            else:
+                logger.debug(
+                    f"[SCRAPER] {self.site_name}: Results container selector "
+                    f"'{results_container_selector}' not found; using full page"
+                )
+
         row_selector = self.results_selectors.get("rows")
         if not isinstance(row_selector, str):
             logger.error("[SCRAPER] 'rows' selector missing in config")
             return []
 
-        rows = soup.select(row_selector)
+        rows = search_area.select(row_selector)
         logger.debug(
             f"[SCRAPER] {self.site_name}: Found {len(rows)} rows using selector '{row_selector}'"
         )
