@@ -24,7 +24,7 @@ details_page_selectors:
   # Use a robust selector that targets any link beginning with 'magnet:'
   magnet_url: "a[href^='magnet:']"
 
-# Optional features to refine results
-advanced_features:
-  enable_fuzzy_filter: true
-  fuzzy_filter_ratio: 85
+# Matching configuration to fine-tune fuzzy filtering
+matching:
+  fuzz_scorer: token_set_ratio
+  fuzz_threshold: 88
