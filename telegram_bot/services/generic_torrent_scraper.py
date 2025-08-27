@@ -122,8 +122,14 @@ class GenericTorrentScraper:
         query: str,
         media_type: str,
         base_query_for_filter: str | None = None,
+        limit: int = 15,
     ) -> list[TorrentData]:
-        """Search the site for ``query`` and return scraped torrent data."""
+        """Search the site for ``query`` and return scraped torrent data.
+
+        The ``limit`` parameter controls how many of the highest seeder-count
+        torrents are fully parsed. Limiting this reduces time spent on low
+        quality results, which in turn lowers overall scraping latency.
+        """
         if not isinstance(query, str) or not query.strip():
             logger.warning("[SCRAPER] Empty query provided to GenericTorrentScraper")
             return []
@@ -167,28 +173,10 @@ class GenericTorrentScraper:
                     f"'{results_container_selector}' not found; using full page"
                 )
 
-        row_selector = self.results_selectors.get("rows")
-        if not isinstance(row_selector, str):
-            logger.error("[SCRAPER] 'rows' selector missing in config")
-            return []
-
-        rows = search_area.select(row_selector)
-        logger.debug(
-            f"[SCRAPER] {self.site_name}: Found {len(rows)} rows using selector '{row_selector}'"
-        )
-
-        results: list[TorrentData] = []
-        for row in rows:
-            if not isinstance(row, Tag):
-                continue
-            try:
-                parsed_row = self._parse_basic_row(row)
-                if parsed_row is not None:
-                    results.append(parsed_row)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"[SCRAPER] Failed to parse row: {exc}")
-                continue
-
+        # Efficiently parse only the most promising rows. Seeders are used as a
+        # quick proxy for quality, so we avoid expending effort on results that
+        # are unlikely to be worth downloading.
+        results = self._parse_and_select_top_results(search_area, limit)
         if not results:
             logger.info(f"[SCRAPER] {self.site_name}: Parsed 0 torrents for '{query}'")
             return []
@@ -236,20 +224,26 @@ class GenericTorrentScraper:
         )
         return final_results
 
-    def _parse_basic_row(self, row: Tag) -> Optional[TorrentData]:
-        """Parse basic fields from a search result row without network calls."""
+    def _extract_data_from_row(self, row: Tag) -> Optional[TorrentData]:
+        """Extract all relevant fields from a single result row.
+
+        This method performs the expensive parsing of a row and is therefore
+        called only on a small subset of high-quality results. Keeping this
+        logic isolated makes the selection strategy in
+        ``_parse_and_select_top_results`` easier to understand and modify.
+        """
+
         name = self._extract_text(row, self.results_selectors.get("name"))
         if not name:
             return None
 
-        magnet_link = self._extract_href(row, self.results_selectors.get("magnet_url"))
-        details_href = None
-        if not magnet_link:
-            details_href = self._extract_href(
-                row, self.results_selectors.get("details_page_link")
-            )
+        link = self._extract_href(row, self.results_selectors.get("magnet"))
+        magnet_url = (
+            link if isinstance(link, str) and link.startswith("magnet:") else None
+        )
+        details_href = None if magnet_url else link
 
-        seeders = self._extract_int(row, self.results_selectors.get("seeds"))
+        seeders = self._extract_int(row, self.results_selectors.get("seeders"))
         leechers = self._extract_int(row, self.results_selectors.get("leechers"))
         size_text = self._extract_text(row, self.results_selectors.get("size"))
         size_bytes = _parse_size_to_bytes(size_text)
@@ -257,7 +251,7 @@ class GenericTorrentScraper:
 
         return TorrentData(
             name=name,
-            magnet_url=magnet_link,
+            magnet_url=magnet_url,
             seeders=seeders,
             leechers=leechers,
             size_bytes=size_bytes,
@@ -265,6 +259,43 @@ class GenericTorrentScraper:
             source_site=self.site_name,
             details_link=details_href,
         )
+
+    def _parse_and_select_top_results(
+        self, search_area: BeautifulSoup | Tag, limit: int
+    ) -> list[TorrentData]:
+        """Parse rows and return only the top ``limit`` results by seeders."""
+
+        row_selector = self.results_selectors.get("result_row")
+        if not isinstance(row_selector, str):
+            logger.error("[SCRAPER] 'result_row' selector missing in config")
+            return []
+
+        rows = [r for r in search_area.select(row_selector) if isinstance(r, Tag)]
+        logger.debug(
+            f"[SCRAPER] {self.site_name}: Found {len(rows)} rows using selector '{row_selector}'"
+        )
+
+        # Extract seeders for each row in a lightweight pass.
+        seeders_selector = self.results_selectors.get("seeders")
+        scored_rows: list[tuple[int, Tag]] = []
+        for row in rows:
+            seeders = self._extract_int(row, seeders_selector)
+            scored_rows.append((seeders, row))
+
+        # Sort rows by seeder count (descending) and parse only the top subset.
+        top_rows = sorted(scored_rows, key=lambda x: x[0], reverse=True)[:limit]
+
+        selected: list[TorrentData] = []
+        for _, row in top_rows:
+            try:
+                parsed = self._extract_data_from_row(row)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"[SCRAPER] Failed to parse row: {exc}")
+                continue
+            if parsed is not None:
+                selected.append(parsed)
+
+        return selected
 
     async def _resolve_magnets(self, items: list[TorrentData]) -> None:
         """Fetch magnet links for items missing them in parallel."""

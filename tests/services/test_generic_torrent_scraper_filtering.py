@@ -12,10 +12,10 @@ async def test_two_stage_filtering_keeps_consensus_results(mocker):
         "search_path": "/search/{query}/{category}/{page}/",
         "category_mapping": {"movie": "movies"},
         "results_page_selectors": {
-            "rows": "tr",
+            "result_row": "tr",
             "name": "td.name a",
-            "magnet_url": "td.name a",
-            "seeds": "td.seeds",
+            "magnet": "td.name a",
+            "seeders": "td.seeds",
             "leechers": "td.leeches",
             "size": "td.size",
         },

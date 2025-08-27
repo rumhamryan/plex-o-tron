@@ -15,10 +15,10 @@ async def test_search_parses_magnet_link_from_detail_page(mocker):
         "search_path": "/search/{query}/{category}/{page}/",
         "category_mapping": {"movie": "movies"},
         "results_page_selectors": {
-            "rows": "tr",
+            "result_row": "tr",
             "name": "td.name a",
-            "details_page_link": "td.name a",
-            "seeds": "td.seeds",
+            "magnet": "td.name a",
+            "seeders": "td.seeds",
             "leechers": "td.leeches",
             "size": "td.size",
         },
