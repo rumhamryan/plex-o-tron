@@ -1,91 +1,139 @@
-You are an expert Python developer tasked with optimizing a generic web scraper. I will provide you with an analysis and a detailed refactoring plan. Your goal is to apply the logic from this plan to the project's source code.
+### **Project Plan: Implement "Top N" Optimization for Generic Scraper**
 
-Please follow these instructions carefully:
+**Objective:** Refactor the `GenericTorrentScraper` to significantly improve performance by avoiding the processing of low-quality torrents. The scraper will be modified to find a limited number of the best torrents ("Top N") instead of processing every result on a page.
 
-1. Understand the Goal: The primary objective is to improve the performance and precision of the existing generic scraper by implementing caching and a more robust, two-stage filtering mechanism. Do not change the overall generic architecture.
+---
 
-2. Code is Illustrative: The code examples provided within the '''python and '''yaml blocks are templates and logical guides. They are not complete, production-ready files.
+### **Phase 1: Enhance Configuration for Granular Parsing**
 
-3. Do Not Copy-Paste Blindly: You must intelligently integrate the logic from the examples into the actual project files. This will require you to adapt variable names, ensure correct class structure, and handle all necessary imports.
+**Goal:** Update the scraper's YAML configuration to provide the specific CSS selectors needed for the new, more targeted parsing logic.
 
-4. Follow the Plan's Logic: The core of the task is to implement the concepts described:
-    - Caching for YAML configuration files.
-    - Using a "results container" selector to narrow the HTML parsing scope.
-    - Implementing a two-stage filtering process: gather all candidates, find the most likely correct media title by consensus, and then filter out non-matching results.
+1.  **Locate the Target Configuration File:** Open the relevant YAML configuration file for the website you are optimizing (e.g., `1337x.yaml`).
 
-Here is the analysis and plan:
+2.  **Add Detailed Selectors:** Under the `selectors` key, add new entries that allow the scraper to precisely target individual pieces of data within a result row. This is crucial for the new logic, which needs to quickly extract a preliminary score (seeders) before deciding to parse the rest of the row.
 
-### Analysis: Pinpointing the Inefficiencies
+3.  **Example `1337x.yaml` Implementation:**
+    ```yaml
+    # In file: telegram_bot/scrapers/configs/1337x.yaml
 
-The core issues lie in how the generic scraper discovers and filters content, which is fundamentally different from the old, highly specialized function.
+    # ... (existing configuration) ...
+    selectors:
+      # This selector should identify the container holding all search results.
+      results_container: 'table.table-list tbody'
 
-1.  **Performance Bottleneck:** The primary slowdown comes from performing multiple, expensive full-document scans for every search. The old code was fast because it knew exactly where to look (e.g., the `<tbody>` of a specific table). The new code runs several strategies (`_strategy_find_direct_links`, `_strategy_contextual_search`, `_strategy_find_in_tables`), each of which may iterate over every single `<a>` tag or `<table>` tag in the entire HTML document. When searching for a full season, this process repeats for every single episode, compounding the delay.
+      # This selector should identify a single torrent row within the container.
+      result_row: 'tr'
 
+      # --- Add the following new, granular selectors ---
 
-### Plan to Optimize the Generic Scraper
+      # Selector for the torrent name/title within a row.
+      name: 'td.name a:nth-of-type(2)'
 
-Here is a step-by-step plan to refactor your generic scraper to incorporate the best elements of the old version, thereby increasing its speed and accuracy.
+      # Selector for the link to the details page within a row.
+      magnet: 'td.name a[href^="/torrent/"]'
 
-#### **1. Optimize Performance by Reducing Redundant Work**
+      # Selector for the seeder count within a row. THIS IS THE MOST IMPORTANT ONE.
+      seeders: 'td.seeds'
 
-We can make the scraper significantly faster by loading configurations only once and narrowing the scope of the HTML parsing.
+      # Selector for the size within a row.
+      size: 'td.size'
 
-**Step 1.1: Cache Scraper Configurations**
-The scraper loads and parses the `1337x.yaml` file every time `scrape_1337x` is called. This is unnecessary I/O. We should cache this configuration in memory.
+      # Selector for the uploader within a row.
+      uploader: 'td.uploader a'
+    ```
 
-*   **Action:** Implement a simple module-level cache.
+#### **Verification Steps:**
 
-```python
-# telegram_bot/services/generic_torrent_scraper.py
+1.  **Manual Selector Validation:**
+    *   Open a web browser and navigate to a search results page on the target website (e.g., 1337x).
+    *   Open the browser's Developer Tools (usually by pressing F12).
+    *   Go to the "Console" tab.
+    *   For each new selector you added to the YAML file, test it using `document.querySelectorAll()`. For example, type `document.querySelectorAll('td.seeds')` into the console and press Enter.
+    *   **Confirm** that the command returns a list of elements and that the content of these elements matches the data you expect (e.g., the seeder counts on the page).
+    *   **Verify** that the `results_container` selector returns exactly one element.
 
-_config_cache = {}
+---
 
-def load_site_config(config_path: Path) -> dict[str, Any]:
-    """Loads a site's YAML configuration, using a cache to avoid repeated file reads."""
-    if config_path in _config_cache:
-        return _config_cache[config_path]
+### **Phase 2: Implement the Core Optimization Logic**
 
-    # ... (your existing YAML loading logic)
+**Goal:** Create the new methods within the `GenericTorrentScraper` class that perform the efficient "Top N" selection.
 
-    config = ... # result of yaml.safe_load()
-    _config_cache[config_path] = config
-    return config
-```
+1.  **Locate the Scraper Class:** Open the file `generic_torrent_scraper.py` (or the file containing the `GenericTorrentScraper` class).
 
-**Step 1.2: Pre-filter the HTML with a "Results Container" Selector**
-Instead of having each strategy scan the entire `BeautifulSoup` object, we can add a selector to the YAML config that identifies the main container for search results. This reduces the search space for your strategies from the whole document to just the relevant section.
+2.  **Create a Row-Parsing Helper Method (`_extract_data_from_row`):** This private method is responsible for the detailed parsing of a *single* HTML row.
 
-*   **Action:** Update your YAML config and the main search method.
+3.  **Implement the Main "Top N" Selection Method (`_parse_and_select_top_results`):** This primary method iterates through all rows but only calls the expensive `_extract_data_from_row` for high-quality torrents.
 
-**`1337x.yaml` (Example Addition):**
-```yaml
-# ... other configs ...
-selectors:
-  results_container: 'table.table-list tbody' # This selector isolates the table body with the results
-# ... other selectors ...
-```
+    *(Refer to the previous response for the full code of these methods.)*
 
-**`generic_torrent_scraper.py` (Updated `search` method):**
-```python
-# In GenericTorrentScraper class
-async def search(self, query: str, ...):
-    html = await self._fetch_page(...)
-    if not html:
-        return []
+#### **Verification Steps:**
 
-    soup = BeautifulSoup(html, "lxml")
+1.  **Unit Test `_extract_data_from_row`:**
+    *   Create a temporary test script or a formal unit test.
+    *   Save a sample HTML `<tr>...</tr>` element from the target site's search results into a string.
+    *   Use BeautifulSoup to parse this string into a `Tag` object.
+    *   Instantiate your `GenericTorrentScraper` (it may require a mock config).
+    *   Call `scraper._extract_data_from_row()` with the sample `Tag`.
+    *   **Assert** that the method returns a dictionary containing the correctly parsed data (title, seeders, etc.).
+    *   **Assert** that the method returns `None` if you pass it a malformed or irrelevant row tag.
 
-    # Isolate the search to only the relevant part of the page
-    results_container_selector = self.config.get("selectors", {}).get("results_container")
-    if results_container_selector:
-        search_area = soup.select_one(results_container_selector)
-        if not search_area:
-            # If the container isn't found, maybe the page structure changed.
-            # Fall back to searching the whole soup object as before.
-            search_area = soup
-    else:
-        search_area = soup
+2.  **Unit Test `_parse_and_select_top_results`:**
+    *   Save a larger block of HTML (the entire `<tbody>...</tbody>` content) into a file or a multi-line string.
+    *   In a test script, parse this HTML into a `Tag` object representing the `search_area`.
+    *   Call `scraper._parse_and_select_top_results(search_area, limit=5)`.
+    *   **Assert** that the returned list has a length of exactly 5.
+    *   **Assert** that the first item in the list has the highest seeder count from your sample HTML, and the last item has the fifth-highest seeder count. The list must be sorted correctly.
 
-    # Now, pass the much smaller 'search_area' to your strategies instead of 'soup'
-    # e.g., raw_results = self._strategy_find_in_tables(search_area, query)
-```
+---
+
+### **Phase 3: Integrate New Logic into the Main `search` Method**
+
+**Goal:** Modify the existing `search` method to use the new, efficient logic instead of the old approach.
+
+1.  **Locate the `search` Method:** In the `GenericTorrentScraper` class, find the `async def search(...)` method.
+
+2.  **Refactor the Method:** Replace the existing parsing loop with a call to your new `_parse_and_select_top_results` method. Add a `limit` parameter to the method signature.
+
+    *(Refer to the previous response for the full refactoring code.)*
+
+#### **Verification Steps:**
+
+1.  **Integration Test `search`:**
+    *   Modify your test script to now call the public `scraper.search()` method.
+    *   You may need to use a library like `pytest-asyncio` to test the `async` method.
+    *   Mock the network call (`_fetch_page`) to return your saved sample HTML instead of making a real web request.
+    *   Call `await scraper.search(query="test", media_type="movie", limit=10)`.
+    *   **Assert** that the final returned list contains no more than 10 items.
+    *   **Assert** that the results are the highest-quality ones from your sample data, demonstrating that the entire internal pipeline is working correctly.
+
+---
+
+### **Phase 4: Update the High-Level Scraper Invocation**
+
+**Goal:** Ensure the top-level function that calls the generic scraper passes the new `limit` parameter.
+
+1.  **Locate the Calling Function:** Open `telegram_bot/services/scraping_service.py` and find the `scrape_1337x` function.
+
+2.  **Pass the `limit` Argument:** When you call `scraper.search`, add the `limit` argument.
+
+    *(Refer to the previous response for the full code example.)*
+
+#### **Verification Steps:**
+
+1.  **Confirm Parameter Propagation:**
+    *   Temporarily add a `print()` or `logger.info()` statement inside the `GenericTorrentScraper.search()` method to display the value of the `limit` parameter it receives.
+    *   Run the application and perform a search.
+    *   **Observe** the console/log output.
+    *   **Confirm** that the log message shows the correct limit value (e.g., `15`) that was passed from `scrape_1337x`. This verifies the parameter is being passed through the layers correctly.
+    *   Remove the temporary log statement once verified.
+
+---
+
+### **Phase 5: Final End-to-End Verification**
+
+**Goal:** Confirm that the complete, integrated optimization is working as expected in the live application.
+
+1.  **Run a Test Search:** Execute a search in your Telegram bot for a popular item that is known to have many results on the target site.
+2.  **Check the Logs:** Examine the application's log output. You should see your final log message: `"[SCRAPER] 1337x: Efficiently processed top X torrents..."`, where `X` is at most the limit you set (e.g., 15).
+3.  **Observe Performance:** The time taken for the search operation should be noticeably faster than before the changes.
+4.  **Validate UI Results:** Confirm that the bot presents the user with the expected number of choices (e.g., 5) and that these choices correspond to the highest-quality torrents (highest seeder counts) from the website.

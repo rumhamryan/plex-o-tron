@@ -3,6 +3,15 @@
 > A concise, agent-oriented guide to hacking on this project.
 > Format reference: AGENTS.md open format.
 
+You are an expert Python developer tasked with optimizing a generic web scraper. I will provide you with an analysis and a detailed refactoring plan. Your goal is to apply the logic from this plan to the project's source code.
+
+Please follow these instructions carefully:
+
+1. Understand the Goal: The primary objective is to improve the performance and precision of the existing code.
+2. Code is Illustrative: The code examples provided within the python and yaml blocks are templates and logical guides. They are not complete, production-ready files.
+3. Do Not Copy-Paste Blindly: You must intelligently integrate the logic from the examples into the actual project files. This will require you to adapt variable names, ensure correct class structure, and handle all necessary imports.
+4. Follow the Plan's Logic: The core of the task is to implement the concepts described in INSTRUCTIONS.md
+
 ## Project snapshot
 
 - Name: **plex-o-tron-bot** (Telegram bot that searches, downloads, organizes media for Plex).
@@ -23,6 +32,9 @@ sudo apt-get update && sudo apt-get install -y libtorrent-rasterbar-dev
 
 # 3) Sync dependencies from lockfile
 uv pip sync pyproject.toml
+
+# 4) Install pre-commit
+pre-commit install
 ```
 
 Linux libtorrent headers are required for the Python package to function.
@@ -31,7 +43,7 @@ Linux libtorrent headers are required for the Python package to function.
 
 ```bash
 # Start the bot
-python telegram_bot/__main__.py
+uv run __main__.py
 ```
 
 - The bot reads **'config.ini'** (see 'Configuration'). It will exit if required fields are missing.
