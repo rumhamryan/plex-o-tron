@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, AsyncMock
 import wikipedia
 from bs4 import BeautifulSoup
 from telegram_bot.services import scraping_service
@@ -327,6 +327,26 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
     assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
     # Only the search page and one detail page should have been requested
     assert client._index == 2
+
+
+@pytest.mark.asyncio
+async def test_scrape_1337x_passes_limit(mocker):
+    """scrape_1337x should forward the limit argument to the scraper."""
+
+    mock_search = AsyncMock(return_value=[])
+    mocker.patch.object(scraping_service.GenericTorrentScraper, "search", mock_search)
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {"preferences": {"movies": {"codecs": {"x": 1}}}}
+    }
+
+    await scraping_service.scrape_1337x(
+        "query", "movie", "https://example.com/{query}", context, limit=7
+    )
+
+    mock_search.assert_awaited_once()
+    assert mock_search.call_args.kwargs["limit"] == 7
 
 
 @pytest.mark.asyncio

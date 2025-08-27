@@ -353,6 +353,7 @@ async def scrape_1337x(
     media_type: str,
     search_url_template: str,
     context: ContextTypes.DEFAULT_TYPE,
+    limit: int = 15,
     **kwargs,
 ) -> list[dict[str, Any]]:
     """Scrape 1337x using the generic scraper framework."""
@@ -384,7 +385,7 @@ async def scrape_1337x(
     scraper = GenericTorrentScraper(site_config)
     base_filter = kwargs.get("base_query_for_filter")
     raw_results = await scraper.search(
-        query, media_type, base_query_for_filter=base_filter
+        query, media_type, base_query_for_filter=base_filter, limit=limit
     )
 
     results: list[dict[str, Any]] = []
