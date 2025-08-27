@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import urllib.parse
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -16,24 +17,42 @@ from ..config import logger
 from ..utils import parse_torrent_name
 
 
+# Cache for site configurations to avoid repeated disk reads.
+_config_cache: dict[Path, dict[str, Any]] = {}
+
+
 @dataclass
 class TorrentData:
     """Container for data extracted from a torrent index."""
 
     name: str
-    magnet_url: str
-    seeders: int
-    leechers: int
-    size_bytes: int
-    source_site: str
+    magnet_url: str | None = None
+    seeders: int = 0
+    leechers: int = 0
+    size_bytes: int = 0
+    source_site: str = ""
     uploader: str | None = None
+    # The detail page is optional and used only if the magnet link is absent
+    details_link: str | None = None
 
 
 def load_site_config(config_path: Path) -> dict[str, Any]:
-    """Load and minimally validate a YAML site configuration."""
-    if not config_path.exists():
-        raise FileNotFoundError(f"Scraper config not found: {config_path}")
-    with config_path.open("r", encoding="utf-8") as fh:
+    """Load and minimally validate a YAML site configuration.
+
+    To improve performance, configuration files are cached in-memory after the
+    first load. Subsequent calls with the same ``config_path`` return the cached
+    data, avoiding repeated disk I/O.
+    """
+
+    resolved_path = config_path.resolve()
+    cached = _config_cache.get(resolved_path)
+    if cached is not None:
+        return cached
+
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"Scraper config not found: {resolved_path}")
+
+    with resolved_path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
 
     required = {
@@ -46,6 +65,8 @@ def load_site_config(config_path: Path) -> dict[str, Any]:
     missing = required - data.keys()
     if missing:
         raise ValueError(f"Config missing keys: {', '.join(sorted(missing))}")
+
+    _config_cache[resolved_path] = data
     return data
 
 
@@ -131,12 +152,27 @@ class GenericTorrentScraper:
             return []
 
         soup = BeautifulSoup(search_html, "lxml")
+
+        # Narrow the parsing scope to a configured results container. This avoids
+        # scanning the entire document when only a specific section is relevant.
+        results_container_selector = self.results_selectors.get("results_container")
+        search_area: BeautifulSoup | Tag = soup
+        if isinstance(results_container_selector, str):
+            container = soup.select_one(results_container_selector)
+            if container is not None:
+                search_area = container
+            else:
+                logger.debug(
+                    f"[SCRAPER] {self.site_name}: Results container selector "
+                    f"'{results_container_selector}' not found; using full page"
+                )
+
         row_selector = self.results_selectors.get("rows")
         if not isinstance(row_selector, str):
             logger.error("[SCRAPER] 'rows' selector missing in config")
             return []
 
-        rows = soup.select(row_selector)
+        rows = search_area.select(row_selector)
         logger.debug(
             f"[SCRAPER] {self.site_name}: Found {len(rows)} rows using selector '{row_selector}'"
         )
@@ -146,7 +182,7 @@ class GenericTorrentScraper:
             if not isinstance(row, Tag):
                 continue
             try:
-                parsed_row = await self._parse_row(row)
+                parsed_row = self._parse_basic_row(row)
                 if parsed_row is not None:
                     results.append(parsed_row)
             except Exception as exc:  # noqa: BLE001
@@ -189,35 +225,29 @@ class GenericTorrentScraper:
         best_name, _ = base_name_counts.most_common(1)[0]
         final_results = [r for r, base in strong_candidates if base == best_name]
 
+        # Fetch magnet links for remaining results concurrently. Only results
+        # that pass filtering trigger additional network requests, reducing
+        # overall scraping time.
+        await self._resolve_magnets(final_results)
+        final_results = [r for r in final_results if r.magnet_url]
+
         logger.info(
             f"[SCRAPER] {self.site_name}: Parsed {len(final_results)} torrents for '{query}'"
         )
         return final_results
 
-    async def _parse_row(self, row: Tag) -> Optional[TorrentData]:
-        """Parse a single search result row into ``TorrentData``."""
+    def _parse_basic_row(self, row: Tag) -> Optional[TorrentData]:
+        """Parse basic fields from a search result row without network calls."""
         name = self._extract_text(row, self.results_selectors.get("name"))
         if not name:
             return None
 
         magnet_link = self._extract_href(row, self.results_selectors.get("magnet_url"))
+        details_href = None
         if not magnet_link:
             details_href = self._extract_href(
                 row, self.results_selectors.get("details_page_link")
             )
-            if details_href:
-                detail_url = urllib.parse.urljoin(self.base_url, details_href)
-                detail_html = await self._fetch_page(detail_url)
-                if detail_html:
-                    detail_soup = BeautifulSoup(detail_html, "lxml")
-                    magnet_link = self._extract_href(
-                        detail_soup, self.details_selectors.get("magnet_url")
-                    )
-        if not magnet_link:
-            logger.warning(
-                f"[SCRAPER] {self.site_name}: No magnet link found for '{name}'"
-            )
-            return None
 
         seeders = self._extract_int(row, self.results_selectors.get("seeds"))
         leechers = self._extract_int(row, self.results_selectors.get("leechers"))
@@ -233,7 +263,31 @@ class GenericTorrentScraper:
             size_bytes=size_bytes,
             uploader=uploader,
             source_site=self.site_name,
+            details_link=details_href,
         )
+
+    async def _resolve_magnets(self, items: list[TorrentData]) -> None:
+        """Fetch magnet links for items missing them in parallel."""
+        tasks: list[tuple[TorrentData, asyncio.Task[str | None]]] = []
+        for item in items:
+            if item.magnet_url or not item.details_link:
+                continue
+            detail_url = urllib.parse.urljoin(self.base_url, item.details_link)
+            tasks.append((item, asyncio.create_task(self._fetch_page(detail_url))))
+
+        if not tasks:
+            return
+
+        responses = await asyncio.gather(*(task for _, task in tasks))
+        for (item, _), html in zip(tasks, responses):
+            if not html:
+                continue
+            detail_soup = BeautifulSoup(html, "lxml")
+            magnet_link = self._extract_href(
+                detail_soup, self.details_selectors.get("magnet_url")
+            )
+            if magnet_link:
+                item.magnet_url = magnet_link
 
     async def _fetch_page(self, url: str) -> str | None:
         """Fetch ``url`` and return the response text, handling errors."""

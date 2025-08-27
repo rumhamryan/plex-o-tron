@@ -11,7 +11,8 @@ search_path: "/category-search/{query}/{category}/{page}/"
 
 # CSS selectors for parsing the initial results page
 results_page_selectors:
-  rows: "table.table-list tbody tr"
+  results_container: "table.table-list tbody"
+  rows: "tr"
   name: "td.name a:nth-of-type(2)"
   details_page_link: "td.name a:nth-of-type(2)"
   seeds: "td.seeds"
