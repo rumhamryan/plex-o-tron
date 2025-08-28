@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+import logging
 import pytest
 from unittest.mock import Mock, AsyncMock
 import wikipedia
@@ -408,6 +409,81 @@ async def test_scrape_yts_parses_results(mocker):
     assert len(results) == 1
     assert results[0]["source"] == "YTS.mx"
     assert results[0]["seeders"] == 10
+
+
+@pytest.mark.asyncio
+async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
+    """YTS scraper retries when API validation fails."""
+    search_html = """
+    <div class="browse-movie-wrap">
+      <a class="browse-movie-title" href="https://yts.mx/movies/test-movie">Test Movie</a>
+      <div class="browse-movie-year">2023</div>
+    </div>
+    """
+    movie_html = '<div id="movie-info" data-movie-id="1234"></div>'
+    bad_api_json = {
+        "status": "ok",
+        "data": {
+            "movie": {
+                "title_long": "Test Movie (2023)",
+                "year": 2023,
+                "torrents": [],  # Missing torrents triggers retry
+            }
+        },
+    }
+    good_api_json = {
+        "status": "ok",
+        "data": {
+            "movie": {
+                "title_long": "Test Movie (2023)",
+                "year": 2023,
+                "torrents": [
+                    {
+                        "quality": "1080p",
+                        "type": "WEB",
+                        "size_bytes": 1024**3,
+                        "hash": "abcdef",
+                        "seeds": 10,
+                    }
+                ],
+            }
+        },
+    }
+    responses = [
+        DummyResponse(text=search_html),
+        DummyResponse(text=movie_html),
+        DummyResponse(json_data=bad_api_json),
+        DummyResponse(json_data=good_api_json),
+    ]
+    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    mocker.patch("asyncio.sleep", new=AsyncMock())
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x264": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"YTS": 2},
+                }
+            }
+        }
+    }
+
+    with caplog.at_level(logging.DEBUG):
+        results = await scraping_service.scrape_yts(
+            "Test Movie",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="2023",
+            resolution="1080p",
+        )
+
+    assert len(results) == 1
+    assert any("attempt 1 failed validation" in m for m in caplog.messages)
+    assert any("attempt 2 succeeded" in m for m in caplog.messages)
 
 
 def test_strategy_find_direct_links_magnet():

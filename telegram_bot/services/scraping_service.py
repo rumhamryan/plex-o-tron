@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 import re
 import urllib.parse
+import time
 from typing import Any
 
 import httpx
@@ -510,26 +511,82 @@ async def scrape_yts(
                 )
                 return []
 
-            # Stage 3: Call the YTS API with the movie ID
+            # Stage 3: Call the YTS API with the movie ID and validate
             api_url = f"https://yts.mx/api/v2/movie_details.json?movie_id={movie_id}"
-            response = await client.get(api_url)
-            response.raise_for_status()
-            api_data = response.json()
+            api_data: dict[str, Any] | None = None
+            movie_data: dict[str, Any] | None = None
+            torrents: list[dict[str, Any]] = []
 
-            if api_data.get("status") != "ok" or "movie" not in api_data.get(
-                "data", {}
-            ):
+            for attempt in range(1, 4):
+                delay = 2 ** (attempt - 1)
+                api_start = time.perf_counter()
+                try:
+                    response = await client.get(api_url)
+                    duration = time.perf_counter() - api_start
+                    response.raise_for_status()
+                    api_data = response.json()
+                except Exception as e:
+                    logger.debug(
+                        (
+                            "[SCRAPER] YTS API attempt %s request error: %s. "
+                            "Retrying in %ss."
+                        ),
+                        attempt,
+                        e,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                movie_data = api_data.get("data", {}).get("movie")
+                torrents = movie_data.get("torrents", []) if movie_data else []
+                conditions = []
+                status = api_data.get("status")
+                if status != "ok":
+                    conditions.append(f"status != 'ok' (got {status!r})")
+                if not movie_data:
+                    conditions.append("missing 'movie' object")
+                if movie_data and not torrents:
+                    conditions.append("missing 'torrents' entries")
+
+                if conditions:
+                    logger.debug(
+                        (
+                            "[SCRAPER] YTS API attempt %s failed validation: %s. "
+                            "Found %s torrents, expected >=1. Retrying in %ss."
+                        ),
+                        attempt,
+                        "; ".join(conditions),
+                        len(torrents),
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                logger.debug(
+                    (
+                        "[SCRAPER] YTS API attempt %s succeeded in %.2fs "
+                        "with %d torrents."
+                    ),
+                    attempt,
+                    duration,
+                    len(torrents),
+                )
+                break
+            else:
                 logger.error(
-                    f"[SCRAPER ERROR] YTS API returned an error: {api_data.get('status_message')}"
+                    (
+                        "[SCRAPER ERROR] YTS API validation failed after 3 attempts "
+                        f"for movie id {movie_id}."
+                    )
                 )
                 return []
 
             # Stage 4: Parse the API response
-            results = []
-            movie_data = api_data["data"]["movie"]
+            results: list[dict[str, Any]] = []
             movie_title = movie_data.get("title_long", query)
 
-            for torrent in movie_data.get("torrents", []):
+            for torrent in torrents:
                 quality = torrent.get("quality", "").lower()
                 if not resolution or (resolution and resolution in quality):
                     size_gb = torrent.get("size_bytes", 0) / (1024**3)
