@@ -1,0 +1,739 @@
+[2025-08-26 23:00:58] [INFO] Starting bot...
+[2025-08-26 23:00:58] [INFO] [CONFIG] Search configuration loaded successfully.
+[2025-08-26 23:00:58] [INFO] [CONFIG] Resolved path for 'default': C:\Users\Ryan\Desktop\Telegram Downloads\Unsorted
+[2025-08-26 23:00:58] [INFO] [CONFIG] Resolved path for 'movies': C:\Users\Ryan\Desktop\Telegram Downloads\Movies
+[2025-08-26 23:00:58] [INFO] [CONFIG] Resolved path for 'tv_shows': C:\Users\Ryan\Desktop\Telegram Downloads\TV
+[2025-08-26 23:00:58] [INFO] [INFO] Plex configuration loaded successfully.
+[2025-08-26 23:00:59] [DEBUG] Set Bot API URL: https://api.telegram.org/bot8464176097:AAEvgnlv_I-mlJ1I0vtieF-LeFEPAPXM91U
+[2025-08-26 23:00:59] [DEBUG] Set Bot API File URL: https://api.telegram.org/file/bot8464176097:AAEvgnlv_I-mlJ1I0vtieF-LeFEPAPXM91U
+[2025-08-26 23:00:59] [INFO] Creating global libtorrent session for the application.
+[2025-08-26 23:00:59] [INFO] All handlers have been registered.
+[2025-08-26 23:00:59] [INFO] Bot startup complete. Starting polling...
+[2025-08-26 23:00:59] [DEBUG] Using proactor: IocpProactor
+[2025-08-26 23:00:59] [DEBUG] Network Retry Loop (Bootstrap Initialize Application): Starting
+[2025-08-26 23:00:59] [DEBUG] Calling Bot API endpoint `getMe` with parameters `{}`
+[2025-08-26 23:00:59] [DEBUG] connect_tcp.started host='api.telegram.org' port=443 local_address=None timeout=5.0 socket_options=None
+[2025-08-26 23:00:59] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2B8E1B50>
+[2025-08-26 23:00:59] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2B85F750> server_hostname='api.telegram.org' timeout=5.0
+[2025-08-26 23:00:59] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2A50EED0>
+[2025-08-26 23:00:59] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:00:59] [DEBUG] send_request_headers.complete
+[2025-08-26 23:00:59] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:00:59] [DEBUG] send_request_body.complete
+[2025-08-26 23:00:59] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:00:59] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:00 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'263'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:00:59] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:00:59] [DEBUG] receive_response_body.complete
+[2025-08-26 23:00:59] [DEBUG] response_closed.started
+[2025-08-26 23:00:59] [DEBUG] response_closed.complete
+[2025-08-26 23:00:59] [DEBUG] Call to Bot API endpoint `getMe` finished with return value `{'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot', 'can_join_groups': True, 'can_read_all_group_messages': False, 'supports_inline_queries': False, 'can_connect_to_business': False, 'has_main_web_app': False}`
+[2025-08-26 23:00:59] [DEBUG] This Bot is already initialized.
+[2025-08-26 23:00:59] [INFO] --- Loading persisted state and resuming downloads ---
+[2025-08-26 23:00:59] [INFO] Loaded state: 0 active, 0 queued downloads.
+[2025-08-26 23:00:59] [INFO] No active downloads to resume.
+[2025-08-26 23:00:59] [DEBUG] Updater started (polling)
+[2025-08-26 23:00:59] [DEBUG] Network Retry Loop (Bootstrap delete Webhook): Starting
+[2025-08-26 23:00:59] [DEBUG] Deleting webhook
+[2025-08-26 23:00:59] [DEBUG] Calling Bot API endpoint `deleteWebhook` with parameters `{}`
+[2025-08-26 23:00:59] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:00:59] [DEBUG] send_request_headers.complete
+[2025-08-26 23:00:59] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:00:59] [DEBUG] send_request_body.complete
+[2025-08-26 23:00:59] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:00] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:01 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'68'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:00] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:00] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:00] [DEBUG] response_closed.started
+[2025-08-26 23:01:00] [DEBUG] response_closed.complete
+[2025-08-26 23:01:00] [DEBUG] Call to Bot API endpoint `deleteWebhook` finished with return value `True`
+[2025-08-26 23:01:00] [DEBUG] Bootstrap done
+[2025-08-26 23:01:00] [DEBUG] Waiting for polling to start
+[2025-08-26 23:01:00] [DEBUG] Polling updates from Telegram started
+[2025-08-26 23:01:00] [DEBUG] Network Retry Loop (Polling Updates): Starting
+[2025-08-26 23:01:00] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 0, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:00] [INFO] Application started
+[2025-08-26 23:01:00] [DEBUG] connect_tcp.started host='api.telegram.org' port=443 local_address=None timeout=5.0 socket_options=None
+[2025-08-26 23:01:00] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC4E510>
+[2025-08-26 23:01:00] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2B85F8D0> server_hostname='api.telegram.org' timeout=5.0
+[2025-08-26 23:01:00] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2A689070>
+[2025-08-26 23:01:00] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:00] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:00] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:00] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:00] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:03 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'344'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:02] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:02] [DEBUG] response_closed.started
+[2025-08-26 23:01:02] [DEBUG] response_closed.complete
+[2025-08-26 23:01:02] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[{'update_id': 739451308, 'message': {'message_id': 2912, 'from': {'id': 7772565881, 'is_bot': False, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'language_code': 'en'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274463, 'text': 'Search'}}]`
+[2025-08-26 23:01:02] [DEBUG] Getting updates: [739451308]
+[2025-08-26 23:01:02] [DEBUG] Processing update Update(message=Message(channel_chat_created=False, chat=Chat(first_name='Ryan', id=7772565881, last_name='Oswalt', type=<ChatType.PRIVATE>, username='rumhamryan'), date=datetime.datetime(2025, 8, 27, 6, 1, 3, tzinfo=datetime.timezone.utc), delete_chat_photo=False, from_user=User(first_name='Ryan', id=7772565881, is_bot=False, language_code='en', last_name='Oswalt', username='rumhamryan'), group_chat_created=False, message_id=2912, supergroup_chat_created=False, text='Search'), update_id=739451308)
+[2025-08-26 23:01:02] [INFO] User 7772565881 initiated /search command.
+[2025-08-26 23:01:02] [DEBUG] Calling Bot API endpoint `deleteMessage` with parameters `{'chat_id': 7772565881, 'message_id': 2912}`
+[2025-08-26 23:01:02] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451309, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:02] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:02] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:02] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:02] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:02] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:03 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'25'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:02] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:02] [DEBUG] response_closed.started
+[2025-08-26 23:01:02] [DEBUG] response_closed.complete
+[2025-08-26 23:01:02] [DEBUG] Call to Bot API endpoint `deleteMessage` finished with return value `True`
+[2025-08-26 23:01:02] [DEBUG] Calling Bot API endpoint `sendMessage` with parameters `{'chat_id': 7772565881, 'text': 'What type of media do you want to search for\\?', 'parse_mode': <ParseMode.MARKDOWN_V2>, 'reply_markup': InlineKeyboardMarkup(inline_keyboard=((InlineKeyboardButton(callback_data='search_start_movie', text='\U0001f3ac Movie'), InlineKeyboardButton(callback_data='search_start_tv', text='\U0001f4fa TV Show')), (InlineKeyboardButton(callback_data='cancel_operation', text='\u274c Cancel'),)))}`
+[2025-08-26 23:01:02] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:02] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:02] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:02] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:03] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:04 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'556'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:03] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:03] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:03] [DEBUG] response_closed.started
+[2025-08-26 23:01:03] [DEBUG] response_closed.complete
+[2025-08-26 23:01:03] [DEBUG] Call to Bot API endpoint `sendMessage` finished with return value `{'message_id': 2913, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274464, 'text': 'What type of media do you want to search for?', 'reply_markup': {'inline_keyboard': [[{'text': '\U0001f3ac Movie', 'callback_data': 'search_start_movie'}, {'text': '\U0001f4fa TV Show', 'callback_data': 'search_start_tv'}], [{'text': '\u274c Cancel', 'callback_data': 'cancel_operation'}]]}}`
+[2025-08-26 23:01:05] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:06 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'831'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:05] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:05] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:05] [DEBUG] response_closed.started
+[2025-08-26 23:01:05] [DEBUG] response_closed.complete
+[2025-08-26 23:01:05] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[{'update_id': 739451309, 'callback_query': {'id': '5712800154940907342', 'from': {'id': 7772565881, 'is_bot': False, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'language_code': 'en'}, 'message': {'message_id': 2913, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274464, 'text': 'What type of media do you want to search for?', 'reply_markup': {'inline_keyboard': [[{'text': '\U0001f3ac Movie', 'callback_data': 'search_start_movie'}, {'text': '\U0001f4fa TV Show', 'callback_data': 'search_start_tv'}], [{'text': '\u274c Cancel', 'callback_data': 'cancel_operation'}]]}}, 'chat_instance': '4884005105768554674', 'data': 'search_start_movie'}}]`
+[2025-08-26 23:01:05] [DEBUG] Getting updates: [739451309]
+[2025-08-26 23:01:05] [DEBUG] Processing update Update(callback_query=CallbackQuery(chat_instance='4884005105768554674', data='search_start_movie', from_user=User(first_name='Ryan', id=7772565881, is_bot=False, language_code='en', last_name='Oswalt', username='rumhamryan'), id='5712800154940907342', message=Message(channel_chat_created=False, chat=Chat(first_name='Ryan', id=7772565881, last_name='Oswalt', type=<ChatType.PRIVATE>, username='rumhamryan'), date=datetime.datetime(2025, 8, 27, 6, 1, 4, tzinfo=datetime.timezone.utc), delete_chat_photo=False, from_user=User(first_name='Plex-o-Tron Workbench', id=8464176097, is_bot=True, username='win_down_bot'), group_chat_created=False, message_id=2913, reply_markup=InlineKeyboardMarkup(inline_keyboard=((InlineKeyboardButton(callback_data='search_start_movie', text='\U0001f3ac Movie'), InlineKeyboardButton(callback_data='search_start_tv', text='\U0001f4fa TV Show')), (InlineKeyboardButton(callback_data='cancel_operation', text='\u274c Cancel'),))), supergroup_chat_created=False, text='What type of media do you want to search for?')), update_id=739451309)
+[2025-08-26 23:01:05] [DEBUG] Calling Bot API endpoint `answerCallbackQuery` with parameters `{'callback_query_id': '5712800154940907342'}`
+[2025-08-26 23:01:05] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:05] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451310, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:05] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:05] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:05] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:05] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:05] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:05] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:05] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:05] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:05] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:06] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:07 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'25'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:06] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:06] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:06] [DEBUG] response_closed.started
+[2025-08-26 23:01:06] [DEBUG] response_closed.complete
+[2025-08-26 23:01:06] [DEBUG] Call to Bot API endpoint `answerCallbackQuery` finished with return value `True`
+[2025-08-26 23:01:06] [DEBUG] Calling Bot API endpoint `editMessageText` with parameters `{'text': '\U0001f3ac Please send me the title of the movie to search for \\(you can include the year\\)\\.', 'chat_id': 7772565881, 'message_id': 2913, 'parse_mode': <ParseMode.MARKDOWN_V2>, 'reply_markup': InlineKeyboardMarkup(inline_keyboard=((InlineKeyboardButton(callback_data='cancel_operation', text='\u274c Cancel'),),))}`
+[2025-08-26 23:01:06] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:06] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:06] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:06] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:06] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:06] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:07 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'491'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:06] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:06] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:06] [DEBUG] response_closed.started
+[2025-08-26 23:01:06] [DEBUG] response_closed.complete
+[2025-08-26 23:01:06] [DEBUG] Call to Bot API endpoint `editMessageText` finished with return value `{'message_id': 2913, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274464, 'edit_date': 1756274467, 'text': '\U0001f3ac Please send me the title of the movie to search for (you can include the year).', 'reply_markup': {'inline_keyboard': [[{'text': '\u274c Cancel', 'callback_data': 'cancel_operation'}]]}}`
+[2025-08-26 23:01:07] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:08 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'346'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:07] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:07] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:07] [DEBUG] response_closed.started
+[2025-08-26 23:01:07] [DEBUG] response_closed.complete
+[2025-08-26 23:01:07] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[{'update_id': 739451310, 'message': {'message_id': 2914, 'from': {'id': 7772565881, 'is_bot': False, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'language_code': 'en'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274468, 'text': 'Superman'}}]`
+[2025-08-26 23:01:07] [DEBUG] Getting updates: [739451310]
+[2025-08-26 23:01:07] [DEBUG] Processing update Update(message=Message(channel_chat_created=False, chat=Chat(first_name='Ryan', id=7772565881, last_name='Oswalt', type=<ChatType.PRIVATE>, username='rumhamryan'), date=datetime.datetime(2025, 8, 27, 6, 1, 8, tzinfo=datetime.timezone.utc), delete_chat_photo=False, from_user=User(first_name='Ryan', id=7772565881, is_bot=False, language_code='en', last_name='Oswalt', username='rumhamryan'), group_chat_created=False, message_id=2914, supergroup_chat_created=False, text='Superman'), update_id=739451310)
+[2025-08-26 23:01:07] [DEBUG] Calling Bot API endpoint `deleteMessage` with parameters `{'chat_id': 7772565881, 'message_id': 2913}`
+[2025-08-26 23:01:07] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:07] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451311, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:07] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:07] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:07] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:07] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:07] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:07] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:07] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:07] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:07] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:09 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'25'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:08] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:08] [DEBUG] response_closed.started
+[2025-08-26 23:01:08] [DEBUG] response_closed.complete
+[2025-08-26 23:01:08] [DEBUG] Call to Bot API endpoint `deleteMessage` finished with return value `True`
+[2025-08-26 23:01:08] [DEBUG] Calling Bot API endpoint `deleteMessage` with parameters `{'chat_id': 7772565881, 'message_id': 2914}`
+[2025-08-26 23:01:08] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:08] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:08] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:09 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'25'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:08] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:08] [DEBUG] response_closed.started
+[2025-08-26 23:01:08] [DEBUG] response_closed.complete
+[2025-08-26 23:01:08] [DEBUG] Call to Bot API endpoint `deleteMessage` finished with return value `True`
+[2025-08-26 23:01:08] [DEBUG] Calling Bot API endpoint `sendMessage` with parameters `{'chat_id': 7772565881, 'text': '\U0001f50e Searching for available years for *Superman*\\.\\.\\.', 'parse_mode': <ParseMode.MARKDOWN_V2>}`
+[2025-08-26 23:01:08] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:08] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:08] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:09 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'387'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:08] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:08] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:08] [DEBUG] response_closed.started
+[2025-08-26 23:01:08] [DEBUG] response_closed.complete
+[2025-08-26 23:01:08] [DEBUG] Call to Bot API endpoint `sendMessage` finished with return value `{'message_id': 2915, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274469, 'text': '\U0001f50e Searching for available years for Superman...', 'entities': [{'offset': 37, 'length': 8, 'type': 'bold'}]}`
+[2025-08-26 23:01:08] [INFO] [SEARCH] Creating search task for 'YTS.mx' with query: 'Superman'
+[2025-08-26 23:01:08] [INFO] [SEARCH] Creating search task for '1337x' with query: 'Superman'
+[2025-08-26 23:01:08] [INFO] [SCRAPER] YTS: Initiating API-based scrape for 'Superman' (Year: None, Res: None).
+[2025-08-26 23:01:09] [INFO] [SCRAPER] 1337x: Fetching search results from https://1337x.to/category-search/Superman/Movies/1/
+[2025-08-26 23:01:09] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/category-search/Superman/Movies/1/
+[2025-08-26 23:01:09] [DEBUG] connect_tcp.started host='yts.mx' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:09] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:09] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC93440>
+[2025-08-26 23:01:09] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BC9C250> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:09] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC93170>
+[2025-08-26 23:01:09] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BC590D0> server_hostname='yts.mx' timeout=30
+[2025-08-26 23:01:09] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC930E0>
+[2025-08-26 23:01:09] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:09] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:09] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:09] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:09] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:09] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC91A90>
+[2025-08-26 23:01:09] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:09] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:09] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:09] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:09] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:09] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:10 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/category-search/Superman/Movies/1/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=0mgKYtsr6vgvhq5ks7xGneWF3r4taLISrlpHrMagu8pqt9z0Y7KDcq2I5DkckNTYMaVdcoOafI4vj8k%2BFvvDHGt%2F6xno1V3BBEi8xTTQnDoJeq9sJ4JZmX0A9g%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595a50e8697be3-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=929&min_rtt=890&rtt_var=319&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2829&recv_bytes=1020&delivery_rate=2726930&cwnd=251&unsent_bytes=0&cid=841c5d1e493b87a5&ts=404&x=0"')])
+[2025-08-26 23:01:09] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:09] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:09] [DEBUG] response_closed.started
+[2025-08-26 23:01:09] [DEBUG] response_closed.complete
+[2025-08-26 23:01:09] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/category-search/Superman/Movies/1/ -> 200
+[2025-08-26 23:01:09] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman Torrents | 1337x</title>\r\n<meta name = "viewport" content'
+[2025-08-26 23:01:09] [DEBUG] close.started
+[2025-08-26 23:01:09] [DEBUG] close.complete
+[2025-08-26 23:01:10] [DEBUG] [SCRAPER] 1337x: Found 40 rows using selector 'tr'
+[2025-08-26 23:01:10] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464639/Superman-2025-1080p-WEB-DL-HEVC-x265-5-1-BONE/
+[2025-08-26 23:01:10] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464762/Superman-2025-WEB-DL-2160p-HDR10-HEVC-DDP-Atmos-5-1-x265-E/
+[2025-08-26 23:01:10] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464691/Superman-2025-1080p-WEBRip-AAC5-1-10bits-x265-Rapta/
+[2025-08-26 23:01:10] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:10] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:10] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:10] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:11 GMT'), (b'Content-Type', b'text/html; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'cloudflare'), (b'Nel', b'{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'), (b'Vary', b'Accept-Encoding'), (b'Expires', b'Thu, 19 Nov 1981 08:52:00 GMT'), (b'Cache-Control', b'no-store, no-cache, must-revalidate'), (b'Pragma', b'no-cache'), (b'Report-To', b'{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=HsQS2ZpCemtd2tCLCOmMfhwLjnORSV88dzqYX%2B0v8AFOvDsyKdG8QM997duQ6a90hKIPsNnyntPEzekAz95WV0a7oB6M"}]}'), (b'X-Varnish', b'172649'), (b'Age', b'0'), (b'Via', b'1.1 varnish (Varnish/6.5)'), (b'Speculation-Rules', b'"/cdn-cgi/speculation"'), (b'Strict-Transport-Security', b'max-age=0; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Frame-Options', b'DENY'), (b'X-Content-Type-Options', b'nosniff'), (b'Cf-Cache-Status', b'DYNAMIC'), (b'Content-Encoding', b'gzip'), (b'Set-Cookie', b'PHPSESSID=9orl58v88vdvh0orgn4k4fv7vs; Path=/'), (b'CF-RAY', b'97595a511aaa9091-LAX'), (b'alt-svc', b'h3=":443"; ma=86400')])
+[2025-08-26 23:01:10] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDBD0D0>
+[2025-08-26 23:01:10] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BDB4CD0> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:10] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDBC9E0>
+[2025-08-26 23:01:10] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BD952D0> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:10] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDBCD40>
+[2025-08-26 23:01:10] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BDB45D0> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:10] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDA3D70>
+[2025-08-26 23:01:10] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDA3D40>
+[2025-08-26 23:01:10] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDA3170>
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:10] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:10] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:10] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:10] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:10] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:10] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:10] [DEBUG] response_closed.started
+[2025-08-26 23:01:10] [DEBUG] response_closed.complete
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:10] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:10] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:10] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:11] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:12 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464762/Superman-2025-WEB-DL-2160p-HDR10-HEVC-DDP-Atmos-5-1-x265-E/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=VF4jb5vOcP6WaV7YPrfa1QFoI%2FQbGVv5hMV9u0kUDkakMe4DyHQ8eqsmVUPWcWDQPbmtU1PG0WjpKRQoU3duZUYkk0ZIL38p%2BGXlQhMweqUzO5jEecwGISFAVQ%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595a592cf2f8cf-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=1660&min_rtt=1541&rtt_var=513&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2828&recv_bytes=1061&delivery_rate=1792079&cwnd=251&unsent_bytes=0&cid=4d1db0da03570b34&ts=421&x=0"')])
+[2025-08-26 23:01:11] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:11] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:12 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464639/Superman-2025-1080p-WEB-DL-HEVC-x265-5-1-BONE/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=Hmkhpr0yO4UK1CRuFw%2FLuP%2FE05h%2BX48ituCXzhF5PJL%2FsACDvcRQ75N0wVbbUzggstSbRb4G6gZQPKP4xmSFzxUbpmzq8keWV2r6%2BpGkm7MZfnCWdZtt1liQzQ%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595a5928020908-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=865&min_rtt=816&rtt_var=271&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2830&recv_bytes=1048&delivery_rate=3518833&cwnd=251&unsent_bytes=0&cid=303c3886d7468305&ts=439&x=0"')])
+[2025-08-26 23:01:11] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:11] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:12 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464691/Superman-2025-1080p-WEBRip-AAC5-1-10bits-x265-Rapta/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=qWSu51D001T7H6xT4RrwnatwIY7ehlHcNK3X1f4wrF4iPL9u%2BV%2FGoLHAIo34neVO6o6jRkun7EKe3JDCC36LD1%2FdfYawOCTusqA29Ms2MapvmSFJT2UfK5adMw%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595a5929412ab5-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=1171&min_rtt=1077&rtt_var=385&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2829&recv_bytes=1054&delivery_rate=2671586&cwnd=251&unsent_bytes=0&cid=735d97fd8603c120&ts=444&x=0"')])
+[2025-08-26 23:01:11] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:11] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:11] [DEBUG] response_closed.started
+[2025-08-26 23:01:11] [DEBUG] response_closed.complete
+[2025-08-26 23:01:11] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464762/Superman-2025-WEB-DL-2160p-HDR10-HEVC-DDP-Atmos-5-1-x265-E/ -> 200
+[2025-08-26 23:01:11] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman 2025 WEB-DL 2160p HDR10+ HEVC DDP Atmos 5.1 x265-E Torren'
+[2025-08-26 23:01:11] [DEBUG] close.started
+[2025-08-26 23:01:11] [DEBUG] close.complete
+[2025-08-26 23:01:11] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:11] [DEBUG] response_closed.started
+[2025-08-26 23:01:11] [DEBUG] response_closed.complete
+[2025-08-26 23:01:11] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464639/Superman-2025-1080p-WEB-DL-HEVC-x265-5-1-BONE/ -> 200
+[2025-08-26 23:01:11] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman 2025 1080p WEB-DL HEVC x265 5.1 BONE Torrent | 1337x</tit'
+[2025-08-26 23:01:11] [DEBUG] close.started
+[2025-08-26 23:01:11] [DEBUG] close.complete
+[2025-08-26 23:01:11] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:11] [DEBUG] response_closed.started
+[2025-08-26 23:01:11] [DEBUG] response_closed.complete
+[2025-08-26 23:01:11] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464691/Superman-2025-1080p-WEBRip-AAC5-1-10bits-x265-Rapta/ -> 200
+[2025-08-26 23:01:11] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.1080p.WEBRip.AAC5.1.10bits.x265-Rapta Torrent | 1337'
+[2025-08-26 23:01:11] [DEBUG] close.started
+[2025-08-26 23:01:11] [DEBUG] close.complete
+[2025-08-26 23:01:11] [INFO] [SCRAPER] 1337x: Parsed 3 torrents for 'Superman'
+[2025-08-26 23:01:11] [INFO] [SCRAPER] 1337x: Found 3 torrents for query 'Superman'.
+[2025-08-26 23:01:17] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:18 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'23'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:17] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:17] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:17] [DEBUG] response_closed.started
+[2025-08-26 23:01:17] [DEBUG] response_closed.complete
+[2025-08-26 23:01:17] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[]`
+[2025-08-26 23:01:17] [DEBUG] No new updates found.
+[2025-08-26 23:01:17] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451311, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:17] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:17] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:17] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:17] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:17] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:28] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:29 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'23'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:28] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:28] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:28] [DEBUG] response_closed.started
+[2025-08-26 23:01:28] [DEBUG] response_closed.complete
+[2025-08-26 23:01:28] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[]`
+[2025-08-26 23:01:28] [DEBUG] No new updates found.
+[2025-08-26 23:01:28] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451311, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:28] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:28] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:28] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:28] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:28] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:31] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:32 GMT'), (b'Content-Type', b'text/html; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'cloudflare'), (b'Nel', b'{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'), (b'Vary', b'Accept-Encoding'), (b'Expires', b'Thu, 19 Nov 1981 08:52:00 GMT'), (b'Cache-Control', b'no-store, no-cache, must-revalidate'), (b'Pragma', b'no-cache'), (b'Report-To', b'{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=CD%2BybUyr5Ya3UQdvA4EhKcuCgW8YIGHgTNI0wPbNGq4w4HQYFQCwEEufKdbVA1FqYYzFkHshpgszDV7Ce%2BjUrm9IMw2D"}]}'), (b'X-Varnish', b'1584442'), (b'Age', b'0'), (b'Via', b'1.1 varnish (Varnish/5.2)'), (b'Speculation-Rules', b'"/cdn-cgi/speculation"'), (b'Strict-Transport-Security', b'max-age=0; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Frame-Options', b'DENY'), (b'X-Content-Type-Options', b'nosniff'), (b'Cf-Cache-Status', b'DYNAMIC'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'97595a598abe9091-LAX'), (b'alt-svc', b'h3=":443"; ma=86400')])
+[2025-08-26 23:01:31] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:31] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:31] [DEBUG] response_closed.started
+[2025-08-26 23:01:31] [DEBUG] response_closed.complete
+[2025-08-26 23:01:31] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:31] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:31] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:31] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:31] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:32] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:33 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'cloudflare'), (b'Nel', b'{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'), (b'Vary', b'Accept-Encoding'), (b'Expires', b'Thu, 19 Nov 1981 08:52:00 GMT'), (b'Cache-Control', b'no-store, no-cache, must-revalidate'), (b'Pragma', b'no-cache'), (b'Content-Encoding', b'gzip'), (b'X-Varnish', b'1087344'), (b'Age', b'0'), (b'Via', b'1.1 varnish (Varnish/5.2)'), (b'Accept-Ranges', b'bytes'), (b'Strict-Transport-Security', b'max-age=0; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Frame-Options', b'DENY'), (b'X-Content-Type-Options', b'nosniff'), (b'Cf-Cache-Status', b'DYNAMIC'), (b'Speculation-Rules', b'"/cdn-cgi/speculation"'), (b'Report-To', b'{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=VcvugQ%2F25kWb3Y1DsipaMV5K0s%2F3%2Fy23SXcqRfwgMgMHYNblNKlT%2FAhRRBhjDFfgvEIkCurQB8uUEMoL6puQtS4Ngffs"}]}'), (b'CF-RAY', b'97595adc89069091-LAX'), (b'alt-svc', b'h3=":443"; ma=86400')])
+[2025-08-26 23:01:32] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:32] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:32] [DEBUG] response_closed.started
+[2025-08-26 23:01:32] [DEBUG] response_closed.complete
+[2025-08-26 23:01:32] [INFO] [SCRAPER] YTS API scrape finished. Found 4 matching torrents.
+[2025-08-26 23:01:32] [DEBUG] close.started
+[2025-08-26 23:01:32] [DEBUG] close.complete
+[2025-08-26 23:01:32] [INFO] [SEARCH] Orchestration complete. Returning 7 sorted results.
+[2025-08-26 23:01:32] [INFO] Found one unique year for 'Superman': 2025. Proceeding to resolution selection.
+[2025-08-26 23:01:32] [DEBUG] Calling Bot API endpoint `editMessageText` with parameters `{'text': 'Got it: `Superman \\(2025\\)`\\. Now, please select your desired resolution:', 'chat_id': 7772565881, 'message_id': 2915, 'parse_mode': <ParseMode.MARKDOWN_V2>, 'reply_markup': InlineKeyboardMarkup(inline_keyboard=((InlineKeyboardButton(callback_data='search_resolution_1080p', text='1080p'), InlineKeyboardButton(callback_data='search_resolution_4k', text='4K (2160p)')), (InlineKeyboardButton(callback_data='cancel_operation', text='\u274c Cancel'),)))}`
+[2025-08-26 23:01:32] [DEBUG] close.started
+[2025-08-26 23:01:32] [DEBUG] close.complete
+[2025-08-26 23:01:32] [DEBUG] connect_tcp.started host='api.telegram.org' port=443 local_address=None timeout=5.0 socket_options=None
+[2025-08-26 23:01:32] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC91A30>
+[2025-08-26 23:01:32] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2B85F750> server_hostname='api.telegram.org' timeout=5.0
+[2025-08-26 23:01:32] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C18BD40>
+[2025-08-26 23:01:32] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:32] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:32] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:32] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:32] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:32] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:33 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'641'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:32] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:32] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:32] [DEBUG] response_closed.started
+[2025-08-26 23:01:32] [DEBUG] response_closed.complete
+[2025-08-26 23:01:32] [DEBUG] Call to Bot API endpoint `editMessageText` finished with return value `{'message_id': 2915, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274469, 'edit_date': 1756274493, 'text': 'Got it: Superman (2025). Now, please select your desired resolution:', 'entities': [{'offset': 8, 'length': 15, 'type': 'code'}], 'reply_markup': {'inline_keyboard': [[{'text': '1080p', 'callback_data': 'search_resolution_1080p'}, {'text': '4K (2160p)', 'callback_data': 'search_resolution_4k'}], [{'text': '\u274c Cancel', 'callback_data': 'cancel_operation'}]]}}`
+[2025-08-26 23:01:37] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:38 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'921'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:37] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:37] [DEBUG] response_closed.started
+[2025-08-26 23:01:37] [DEBUG] response_closed.complete
+[2025-08-26 23:01:37] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[{'update_id': 739451311, 'callback_query': {'id': '5712800158334400220', 'from': {'id': 7772565881, 'is_bot': False, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'language_code': 'en'}, 'message': {'message_id': 2915, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274469, 'edit_date': 1756274493, 'text': 'Got it: Superman (2025). Now, please select your desired resolution:', 'entities': [{'offset': 8, 'length': 15, 'type': 'code'}], 'reply_markup': {'inline_keyboard': [[{'text': '1080p', 'callback_data': 'search_resolution_1080p'}, {'text': '4K (2160p)', 'callback_data': 'search_resolution_4k'}], [{'text': '\u274c Cancel', 'callback_data': 'cancel_operation'}]]}}, 'chat_instance': '4884005105768554674', 'data': 'search_resolution_1080p'}}]`
+[2025-08-26 23:01:37] [DEBUG] Getting updates: [739451311]
+[2025-08-26 23:01:37] [DEBUG] Processing update Update(callback_query=CallbackQuery(chat_instance='4884005105768554674', data='search_resolution_1080p', from_user=User(first_name='Ryan', id=7772565881, is_bot=False, language_code='en', last_name='Oswalt', username='rumhamryan'), id='5712800158334400220', message=Message(channel_chat_created=False, chat=Chat(first_name='Ryan', id=7772565881, last_name='Oswalt', type=<ChatType.PRIVATE>, username='rumhamryan'), date=datetime.datetime(2025, 8, 27, 6, 1, 9, tzinfo=datetime.timezone.utc), delete_chat_photo=False, edit_date=datetime.datetime(2025, 8, 27, 6, 1, 33, tzinfo=datetime.timezone.utc), entities=(MessageEntity(length=15, offset=8, type=<MessageEntityType.CODE>),), from_user=User(first_name='Plex-o-Tron Workbench', id=8464176097, is_bot=True, username='win_down_bot'), group_chat_created=False, message_id=2915, reply_markup=InlineKeyboardMarkup(inline_keyboard=((InlineKeyboardButton(callback_data='search_resolution_1080p', text='1080p'), InlineKeyboardButton(callback_data='search_resolution_4k', text='4K (2160p)')), (InlineKeyboardButton(callback_data='cancel_operation', text='\u274c Cancel'),))), supergroup_chat_created=False, text='Got it: Superman (2025). Now, please select your desired resolution:')), update_id=739451311)
+[2025-08-26 23:01:37] [DEBUG] Calling Bot API endpoint `answerCallbackQuery` with parameters `{'callback_query_id': '5712800158334400220'}`
+[2025-08-26 23:01:37] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451312, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:37] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:37] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:37] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:37] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:37] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:38 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'25'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:37] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:37] [DEBUG] response_closed.started
+[2025-08-26 23:01:37] [DEBUG] response_closed.complete
+[2025-08-26 23:01:37] [DEBUG] Call to Bot API endpoint `answerCallbackQuery` finished with return value `True`
+[2025-08-26 23:01:37] [DEBUG] Calling Bot API endpoint `editMessageText` with parameters `{'text': '\U0001f50e Searching all sources for *Superman \\(2025\\)* in *1080p*\\.\\.\\.', 'chat_id': 7772565881, 'message_id': 2915, 'parse_mode': <ParseMode.MARKDOWN_V2>}`
+[2025-08-26 23:01:37] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:37] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:37] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:37] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:38] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:39 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'458'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:38] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:38] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:38] [DEBUG] response_closed.started
+[2025-08-26 23:01:38] [DEBUG] response_closed.complete
+[2025-08-26 23:01:38] [DEBUG] Call to Bot API endpoint `editMessageText` finished with return value `{'message_id': 2915, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274469, 'edit_date': 1756274499, 'text': '\U0001f50e Searching all sources for Superman (2025) in 1080p...', 'entities': [{'offset': 29, 'length': 15, 'type': 'bold'}, {'offset': 48, 'length': 5, 'type': 'bold'}]}`
+[2025-08-26 23:01:38] [INFO] [SEARCH] Creating search task for 'YTS.mx' with query: 'Superman'
+[2025-08-26 23:01:38] [INFO] [SEARCH] Creating search task for '1337x' with query: 'Superman'
+[2025-08-26 23:01:38] [INFO] [SCRAPER] YTS: Initiating API-based scrape for 'Superman' (Year: 2025, Res: 1080p).
+[2025-08-26 23:01:38] [INFO] [SCRAPER] 1337x: Fetching search results from https://1337x.to/category-search/Superman+2025/Movies/1/
+[2025-08-26 23:01:38] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/category-search/Superman+2025/Movies/1/
+[2025-08-26 23:01:38] [DEBUG] connect_tcp.started host='yts.mx' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:38] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:38] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC4D850>
+[2025-08-26 23:01:38] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2C2CDD50> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:38] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC4D160>
+[2025-08-26 23:01:38] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2C2CD9D0> server_hostname='yts.mx' timeout=30
+[2025-08-26 23:01:38] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2A548D40>
+[2025-08-26 23:01:38] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:38] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:38] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:38] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:38] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:38] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC91C70>
+[2025-08-26 23:01:38] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:38] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:38] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:38] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:38] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:39] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:40 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/category-search/Superman+2025/Movies/1/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=pFBaJXYPPU1hfl3UZKKMdGi8fZ0uz5sOY1aDBwedj5Qajv2PFeOM35Jx2q%2Bmub%2BHRJt5iQi72TxL5LUTRsD8cWjhhBmnBvjpi2%2BRoA%2FufwsgaXBSVrOR2fgXPg%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b088f95cb9f-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=942&min_rtt=930&rtt_var=271&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2829&recv_bytes=1025&delivery_rate=3097326&cwnd=251&unsent_bytes=0&cid=252d8a703dc2d81a&ts=865&x=0"')])
+[2025-08-26 23:01:39] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:39] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:40 GMT'), (b'Content-Type', b'text/html; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'cloudflare'), (b'Nel', b'{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'), (b'Vary', b'Accept-Encoding'), (b'Expires', b'Thu, 19 Nov 1981 08:52:00 GMT'), (b'Cache-Control', b'no-store, no-cache, must-revalidate'), (b'Pragma', b'no-cache'), (b'Report-To', b'{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=bnRHehn8WRnKVvAQCuBQ4a3KSWigC2CZRNlV5U4zbDF578q1EVISbtz%2B2Rb3VMo3xCmiLPEWdUv%2FkqKYr319ntFAxfv9"}]}'), (b'X-Varnish', b'8459948'), (b'Age', b'0'), (b'Via', b'1.1 varnish (Varnish/5.2)'), (b'Speculation-Rules', b'"/cdn-cgi/speculation"'), (b'Strict-Transport-Security', b'max-age=0; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Frame-Options', b'DENY'), (b'X-Content-Type-Options', b'nosniff'), (b'Cf-Cache-Status', b'DYNAMIC'), (b'Content-Encoding', b'gzip'), (b'Set-Cookie', b'PHPSESSID=suau97e8i5ps89nlbrcqggvvp1; Path=/'), (b'CF-RAY', b'97595b08a8d27c01-LAX'), (b'alt-svc', b'h3=":443"; ma=86400')])
+[2025-08-26 23:01:39] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:39] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:39] [DEBUG] response_closed.started
+[2025-08-26 23:01:39] [DEBUG] response_closed.complete
+[2025-08-26 23:01:39] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/category-search/Superman+2025/Movies/1/ -> 200
+[2025-08-26 23:01:39] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman 2025 Torrents | 1337x</title>\r\n<meta name = "viewport" co'
+[2025-08-26 23:01:39] [DEBUG] close.started
+[2025-08-26 23:01:39] [DEBUG] close.complete
+[2025-08-26 23:01:39] [DEBUG] [SCRAPER] 1337x: Found 35 rows using selector 'tr'
+[2025-08-26 23:01:39] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464639/Superman-2025-1080p-WEB-DL-HEVC-x265-5-1-BONE/
+[2025-08-26 23:01:40] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464762/Superman-2025-WEB-DL-2160p-HDR10-HEVC-DDP-Atmos-5-1-x265-E/
+[2025-08-26 23:01:40] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464691/Superman-2025-1080p-WEBRip-AAC5-1-10bits-x265-Rapta/
+[2025-08-26 23:01:40] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464594/Superman-2025-720p-AMZN-WEB-DL-DDP5-1-HEVC-KyoGo/
+[2025-08-26 23:01:40] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6465150/Superman-2025-Hybrid-2160p-WEB-DL-DV-HDR-DDP5-1-Atmos-H265-AOC/
+[2025-08-26 23:01:40] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6447164/Superman-2025-1080p-TS-READNFO-x264-AC3-AOC/
+[2025-08-26 23:01:41] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6465149/Superman-2025-2160p-WEB-DL-DDP5-1-Atmos-SDR-H265-AOC/
+[2025-08-26 23:01:41] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6469331/Superman-2025-1080p-WEBRip-x265-KONTRAST/
+[2025-08-26 23:01:41] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464757/Superman-2025-1080p-iT-WEB-DL-DDP5-1-Atmos-H264-AZO/
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.started host='1337x.to' port=443 local_address=None timeout=30 socket_options=None
+[2025-08-26 23:01:41] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:41] [DEBUG] response_closed.started
+[2025-08-26 23:01:41] [DEBUG] response_closed.complete
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:41] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:41] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C042FC0>
+[2025-08-26 23:01:41] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BE94F50> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C0433B0>
+[2025-08-26 23:01:41] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BE94AD0> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C042F00>
+[2025-08-26 23:01:41] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BE95350> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C043440>
+[2025-08-26 23:01:41] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BE946D0> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:41] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C043920>
+[2025-08-26 23:01:41] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BE96AD0> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:41] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C088F80>
+[2025-08-26 23:01:41] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C089BB0>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:41] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:41] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:41] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:41] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C0882F0>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:41] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:41] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C089EB0>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:41] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:41] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C08AA50>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:41] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:41] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:41] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BEA5A30>
+[2025-08-26 23:01:42] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BE957D0> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:42] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BEA4D70>
+[2025-08-26 23:01:42] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BC5B150> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:42] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BEA4CE0>
+[2025-08-26 23:01:42] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2C31E650> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:42] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C32D760>
+[2025-08-26 23:01:42] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2BE95D50> server_hostname='1337x.to' timeout=30
+[2025-08-26 23:01:42] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BC4FE90>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:42] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2C043AD0>
+[2025-08-26 23:01:42] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDBC3B0>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:42] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:42] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2BDBE330>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:42] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'cloudflare'), (b'Nel', b'{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'), (b'Vary', b'Accept-Encoding'), (b'Expires', b'Thu, 19 Nov 1981 08:52:00 GMT'), (b'Cache-Control', b'no-store, no-cache, must-revalidate'), (b'Pragma', b'no-cache'), (b'Report-To', b'{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=12kyszSlbAmx2lduGtjdnIOR7RfbSgkvdZ8PNdEgkZHRyGJ0mdJcxNXyMQFpNv2dVypSCM1jlX3SFaaKm2e3ghUTw55M"}]}'), (b'X-Varnish', b'1651305'), (b'Age', b'0'), (b'Via', b'1.1 varnish (Varnish/5.2)'), (b'Speculation-Rules', b'"/cdn-cgi/speculation"'), (b'Strict-Transport-Security', b'max-age=0; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Frame-Options', b'DENY'), (b'X-Content-Type-Options', b'nosniff'), (b'Cf-Cache-Status', b'DYNAMIC'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'97595b1b4ea97c01-LAX'), (b'alt-svc', b'h3=":443"; ma=86400')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464691/Superman-2025-1080p-WEBRip-AAC5-1-10bits-x265-Rapta/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=pcNJuown6%2BMLU9SxF48lXZ9ru%2F6TzYkFlQmgZMA1mCCHev3pb9R6nCDw%2FIwaTYvt1EC5%2BhXe5hYf8UUodFTVOcG3BX4JZhbbeXd2YDkKAYda2AKwGAzC9bVmFA%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1baeadcb7d-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=810&min_rtt=765&rtt_var=253&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2828&recv_bytes=1054&delivery_rate=3756160&cwnd=251&unsent_bytes=0&cid=f617e40ff6b45adf&ts=437&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464762/Superman-2025-WEB-DL-2160p-HDR10-HEVC-DDP-Atmos-5-1-x265-E/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=spq1MHPRS0PUA%2B36KPhzGUPRySyx5lAlP3TmLsvE4coIW2y1xA%2FN1VFIlorBaxWpzgbINEVP8og4yg0SuQBHyo2awcSovBGN3UnDLc08cxtQbM4JZN1W97TsHg%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1ba9ea2f7f-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=1671&min_rtt=1592&rtt_var=516&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2830&recv_bytes=1061&delivery_rate=1810000&cwnd=251&unsent_bytes=0&cid=b3d2d767355a4bf7&ts=437&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464594/Superman-2025-720p-AMZN-WEB-DL-DDP5-1-HEVC-KyoGo/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=7rABG78CoaCRJ2icCCN%2BZFRyZ0%2Bxyyqv3H%2FJezx2o9adifE3ndVyEZ%2BrivHCaA67OMh1%2BP8XIZ3COjNdf2FvCY%2Fb2qICv8lnNr5CQl%2FxE8MH6eI2hL%2FjVOWl2A%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1bcbb62eba-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=1361&min_rtt=838&rtt_var=597&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2829&recv_bytes=1051&delivery_rate=2549295&cwnd=252&unsent_bytes=0&cid=3d6d42fd10fbafd7&ts=479&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6447164/Superman-2025-1080p-TS-READNFO-x264-AC3-AOC/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=A4trC1CSEcQlCAfPoDgvwVRfKwT%2FNjyeboNqJ2XORTG8TvjiN87g51%2Fjk5C34W%2BqcR%2FBKKjcX1esUEU5pQK6RZobjLVO5n10Xuv12dzaZLHDllYLw9clumnzeA%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1d4c397c68-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=884&min_rtt=863&rtt_var=280&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2830&recv_bytes=1046&delivery_rate=3019812&cwnd=251&unsent_bytes=0&cid=421e4cac6564eedd&ts=273&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:42] [DEBUG] send_request_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464691/Superman-2025-1080p-WEBRip-AAC5-1-10bits-x265-Rapta/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.1080p.WEBRip.AAC5.1.10bits.x265-Rapta Torrent | 1337'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464639/Superman-2025-1080p-WEB-DL-HEVC-x265-5-1-BONE/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=WW1qL2AIOZb%2FKSyv90DHwNVJaMHkLqbfbCz5sev%2BpyCjJIcmabe8MZyDp9I%2Fh4e2jDeqZwEGwxpREHoFU8bGTWrGl%2BaLR8V3dsJks93lyMlNWQi3z88lbUc87w%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1bb9657c33-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=853&min_rtt=803&rtt_var=267&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2829&recv_bytes=1048&delivery_rate=3566502&cwnd=251&unsent_bytes=0&cid=2016164c41fcd68b&ts=587&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464594/Superman-2025-720p-AMZN-WEB-DL-DDP5-1-HEVC-KyoGo/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.720p.AMZN.WEB-DL.DDP5.1.HEVC-KyoGo Torrent | 1337x</'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6464757/Superman-2025-1080p-iT-WEB-DL-DDP5-1-Atmos-H264-AZO/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=A%2FYS27BB4ctk84Hi2NZ5WIhw3%2FNWP8FkVgFMAv7l7fTkkTCxWiDpdCyw6IhugqbFjE4ZKTWJ66lKjJyzB5fQW%2B9qPPUi6jjaGftJCI2uEqk7aD27uEvGzb12gg%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1d5bbe69c8-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=1306&min_rtt=1286&rtt_var=397&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2830&recv_bytes=1054&delivery_rate=2101596&cwnd=251&unsent_bytes=0&cid=22827e128198d801&ts=423&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6469331/Superman-2025-1080p-WEBRip-x265-KONTRAST/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=56BY1ux9sVG5JKfY61E6mQ2SRbP4%2FMV8CKHf4tcdHnWJqsXudKtZrbRxIsCE2PQRwGLJlBTq%2F9dm9fwDsT09iG%2BUbWzRJrButFSm%2BJaQI5R5beoUeWfUwnpogg%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1d5a4b08ca-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=1050&min_rtt=1002&rtt_var=366&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2828&recv_bytes=1043&delivery_rate=2389438&cwnd=251&unsent_bytes=0&cid=e66fc73c43f2d3cd&ts=430&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6447164/Superman-2025-1080p-TS-READNFO-x264-AC3-AOC/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.1080p.TS.READNFO.x264.AC3-AOC Torrent | 1337x</title'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464639/Superman-2025-1080p-WEB-DL-HEVC-x265-5-1-BONE/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman 2025 1080p WEB-DL HEVC x265 5.1 BONE Torrent | 1337x</tit'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464762/Superman-2025-WEB-DL-2160p-HDR10-HEVC-DDP-Atmos-5-1-x265-E/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman 2025 WEB-DL 2160p HDR10+ HEVC DDP Atmos 5.1 x265-E Torren'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6469331/Superman-2025-1080p-WEBRip-x265-KONTRAST/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.1080p.WEBRip.x265-KONTRAST Torrent | 1337x</title>\r\n'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6464757/Superman-2025-1080p-iT-WEB-DL-DDP5-1-Atmos-H264-AZO/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.1080p.iT.WEB-DL.DDP5.1.Atmos.H264-AZO Torrent | 1337'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6465150/Superman-2025-Hybrid-2160p-WEB-DL-DV-HDR-DDP5-1-Atmos-H265-AOC/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=u1LWSZis3MhMri7Q5R3EJQkDgNtfF%2FhO4oOSKT6pMY78BAJW%2BzDi%2BqzBXB6V1%2B2G2RLrx10SV4olHGseTXyOpWHkHz4Wdk14TvzTj4As3DL5wikrJg2fuL80fQ%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1bc93dc3a8-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=1491&min_rtt=1323&rtt_var=521&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2830&recv_bytes=1065&delivery_rate=2180722&cwnd=251&unsent_bytes=0&cid=718110be74f1f43b&ts=886&x=0"')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:43 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'cloudflare'), (b'Nel', b'{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'), (b'Vary', b'Accept-Encoding'), (b'Expires', b'Thu, 19 Nov 1981 08:52:00 GMT'), (b'Cache-Control', b'no-store, no-cache, must-revalidate'), (b'Pragma', b'no-cache'), (b'Content-Encoding', b'gzip'), (b'X-Varnish', b'7277048'), (b'Age', b'0'), (b'Via', b'1.1 varnish (Varnish/5.2)'), (b'Accept-Ranges', b'bytes'), (b'Strict-Transport-Security', b'max-age=0; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Frame-Options', b'DENY'), (b'X-Content-Type-Options', b'nosniff'), (b'Cf-Cache-Status', b'DYNAMIC'), (b'Speculation-Rules', b'"/cdn-cgi/speculation"'), (b'Report-To', b'{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=yE1tleFncEr9e8JoraKCiySW8kBNT%2B02IVfsoBcaH21yodKpN%2F1w0dNzKCXiAw2eZ4F9Z5HLBksRxk3t6LkrCIYcO5YN"}]}'), (b'CF-RAY', b'97595b1eb93c7c01-LAX'), (b'alt-svc', b'h3=":443"; ma=86400')])
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [INFO] [SCRAPER] YTS API scrape finished. Found 2 matching torrents.
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:42] [DEBUG] response_closed.started
+[2025-08-26 23:01:42] [DEBUG] response_closed.complete
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6465150/Superman-2025-Hybrid-2160p-WEB-DL-DV-HDR-DDP5-1-Atmos-H265-AOC/ -> 200
+[2025-08-26 23:01:42] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.Hybrid.2160p.WEB-DL.DV.HDR.DDP5.1.Atmos.H265-AOC Tor'
+[2025-08-26 23:01:42] [DEBUG] close.started
+[2025-08-26 23:01:42] [DEBUG] close.complete
+[2025-08-26 23:01:42] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 27 Aug 2025 06:01:44 GMT'), (b'Content-Type', b'text/html'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'Vary', b'Accept-Encoding'), (b'X-Frame-Options', b'DENY'), (b'Onion-Location', b'http://l337xdarkkaqfwzntnfk5bmoaroivtl6xsbatabvlb52umg6v3ch44yd.onion/torrent/6465149/Superman-2025-2160p-WEB-DL-DDP5-1-Atmos-SDR-H265-AOC/'), (b'cf-cache-status', b'DYNAMIC'), (b'Report-To', b'{"endpoints":[{"url":"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=SA0muRV0ZNdy7ZJLjKzArFwYpqqSzoD8matCYOBjkIti6sidRtS02G1YUc4c9fynn2JuS68mbgIEae6NZOfuEUGpQLt4nLP6rUFjGc64QAxaNthglEWclsVPig%3D%3D"}],"group":"cf-nel","max_age":604800}'), (b'NEL', b'{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'), (b'Server', b'cloudflare'), (b'CF-RAY', b'97595b1d59237cce-LAX'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'server-timing', b'cfL4;desc="?proto=TCP&rtt=942&min_rtt=884&rtt_var=298&sent=5&recv=7&lost=0&retrans=0&sent_bytes=2829&recv_bytes=1055&delivery_rate=3253932&cwnd=251&unsent_bytes=0&cid=97a0afc1581cc334&ts=905&x=0"')])
+[2025-08-26 23:01:43] [DEBUG] receive_response_body.started request=<Request [b'GET']>
+[2025-08-26 23:01:43] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:43] [DEBUG] response_closed.started
+[2025-08-26 23:01:43] [DEBUG] response_closed.complete
+[2025-08-26 23:01:43] [DEBUG] [SCRAPER] 1337x: GET https://1337x.to/torrent/6465149/Superman-2025-2160p-WEB-DL-DDP5-1-Atmos-SDR-H265-AOC/ -> 200
+[2025-08-26 23:01:43] [DEBUG] [SCRAPER] 1337x: Response snippet: '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset = "utf-8">\r\n<meta http-equiv = "X-UA-Compatible" content = "IE=edge">\r\n<title>Download Superman.2025.2160p.WEB-DL.DDP5.1.Atmos.SDR.H265-AOC Torrent | 133'
+[2025-08-26 23:01:43] [DEBUG] close.started
+[2025-08-26 23:01:43] [DEBUG] close.complete
+[2025-08-26 23:01:43] [INFO] [SCRAPER] 1337x: Parsed 9 torrents for 'Superman 2025'
+[2025-08-26 23:01:43] [INFO] [SCRAPER] 1337x: Found 9 torrents for query 'Superman 2025'.
+[2025-08-26 23:01:43] [INFO] [SEARCH] Orchestration complete. Returning 11 sorted results.
+[2025-08-26 23:01:43] [DEBUG] Calling Bot API endpoint `editMessageText` with parameters `{'text': 'Found 7 valid result\\(s\\) for *Superman \\(2025\\) \\[1080p\\]*\\. Please select one to download:', 'chat_id': 7772565881, 'message_id': 2915, 'parse_mode': <ParseMode.MARKDOWN_V2>, 'reply_markup': InlineKeyboardMarkup(inline_keyboard=((InlineKeyboardButton(callback_data='search_select_0', text='x265 | S: 7987 | 1.90 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_1', text='x265 | S: 814 | 2.20 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_2', text='x264 | S: 347 | 3.10 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_3', text='x265 | S: 222 | 2.90 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_4', text='None | S: 142 | 9.60 GB | [1337x]'),), (InlineKeyboardButton(callback_data='cancel_operation', text='\u274c Cancel'),)))}`
+[2025-08-26 23:01:43] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:43] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:43] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:43] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:43] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:43] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:44 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'941'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:43] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:43] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:43] [DEBUG] response_closed.started
+[2025-08-26 23:01:43] [DEBUG] response_closed.complete
+[2025-08-26 23:01:43] [DEBUG] Call to Bot API endpoint `editMessageText` finished with return value `{'message_id': 2915, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274469, 'edit_date': 1756274504, 'text': 'Found 7 valid result(s) for Superman (2025) [1080p]. Please select one to download:', 'entities': [{'offset': 28, 'length': 23, 'type': 'bold'}], 'reply_markup': {'inline_keyboard': [[{'text': 'x265 | S: 7987 | 1.90 GB | [1337x]', 'callback_data': 'search_select_0'}], [{'text': 'x265 | S: 814 | 2.20 GB | [1337x]', 'callback_data': 'search_select_1'}], [{'text': 'x264 | S: 347 | 3.10 GB | [1337x]', 'callback_data': 'search_select_2'}], [{'text': 'x265 | S: 222 | 2.90 GB | [1337x]', 'callback_data': 'search_select_3'}], [{'text': 'None | S: 142 | 9.60 GB | [1337x]', 'callback_data': 'search_select_4'}], [{'text': '\u274c Cancel', 'callback_data': 'cancel_operation'}]]}}`
+[2025-08-26 23:01:47] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:48 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'23'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:47] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:47] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:47] [DEBUG] response_closed.started
+[2025-08-26 23:01:47] [DEBUG] response_closed.complete
+[2025-08-26 23:01:47] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[]`
+[2025-08-26 23:01:47] [DEBUG] No new updates found.
+[2025-08-26 23:01:47] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451312, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:47] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:47] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:47] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:47] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:47] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:48] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:49 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'1214'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:48] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:48] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:48] [DEBUG] response_closed.started
+[2025-08-26 23:01:48] [DEBUG] response_closed.complete
+[2025-08-26 23:01:48] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[{'update_id': 739451312, 'callback_query': {'id': '5712800156720872612', 'from': {'id': 7772565881, 'is_bot': False, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'language_code': 'en'}, 'message': {'message_id': 2915, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274469, 'edit_date': 1756274504, 'text': 'Found 7 valid result(s) for Superman (2025) [1080p]. Please select one to download:', 'entities': [{'offset': 28, 'length': 23, 'type': 'bold'}], 'reply_markup': {'inline_keyboard': [[{'text': 'x265 | S: 7987 | 1.90 GB | [1337x]', 'callback_data': 'search_select_0'}], [{'text': 'x265 | S: 814 | 2.20 GB | [1337x]', 'callback_data': 'search_select_1'}], [{'text': 'x264 | S: 347 | 3.10 GB | [1337x]', 'callback_data': 'search_select_2'}], [{'text': 'x265 | S: 222 | 2.90 GB | [1337x]', 'callback_data': 'search_select_3'}], [{'text': 'None | S: 142 | 9.60 GB | [1337x]', 'callback_data': 'search_select_4'}], [{'text': '\u274c Cancel', 'callback_data': 'cancel_operation'}]]}}, 'chat_instance': '4884005105768554674', 'data': 'cancel_operation'}}]`
+[2025-08-26 23:01:48] [DEBUG] Getting updates: [739451312]
+[2025-08-26 23:01:48] [DEBUG] Processing update Update(callback_query=CallbackQuery(chat_instance='4884005105768554674', data='cancel_operation', from_user=User(first_name='Ryan', id=7772565881, is_bot=False, language_code='en', last_name='Oswalt', username='rumhamryan'), id='5712800156720872612', message=Message(channel_chat_created=False, chat=Chat(first_name='Ryan', id=7772565881, last_name='Oswalt', type=<ChatType.PRIVATE>, username='rumhamryan'), date=datetime.datetime(2025, 8, 27, 6, 1, 9, tzinfo=datetime.timezone.utc), delete_chat_photo=False, edit_date=datetime.datetime(2025, 8, 27, 6, 1, 44, tzinfo=datetime.timezone.utc), entities=(MessageEntity(length=23, offset=28, type=<MessageEntityType.BOLD>),), from_user=User(first_name='Plex-o-Tron Workbench', id=8464176097, is_bot=True, username='win_down_bot'), group_chat_created=False, message_id=2915, reply_markup=InlineKeyboardMarkup(inline_keyboard=((InlineKeyboardButton(callback_data='search_select_0', text='x265 | S: 7987 | 1.90 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_1', text='x265 | S: 814 | 2.20 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_2', text='x264 | S: 347 | 3.10 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_3', text='x265 | S: 222 | 2.90 GB | [1337x]'),), (InlineKeyboardButton(callback_data='search_select_4', text='None | S: 142 | 9.60 GB | [1337x]'),), (InlineKeyboardButton(callback_data='cancel_operation', text='\u274c Cancel'),))), supergroup_chat_created=False, text='Found 7 valid result(s) for Superman (2025) [1080p]. Please select one to download:')), update_id=739451312)
+[2025-08-26 23:01:48] [DEBUG] Calling Bot API endpoint `answerCallbackQuery` with parameters `{'callback_query_id': '5712800156720872612'}`
+[2025-08-26 23:01:48] [DEBUG] close.started
+[2025-08-26 23:01:48] [DEBUG] close.complete
+[2025-08-26 23:01:48] [DEBUG] connect_tcp.started host='api.telegram.org' port=443 local_address=None timeout=5.0 socket_options=None
+[2025-08-26 23:01:48] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(seconds=10), 'offset': 739451313, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:48] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:48] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:48] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:48] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:48] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:48] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2E570B90>
+[2025-08-26 23:01:48] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2B85F750> server_hostname='api.telegram.org' timeout=5.0
+[2025-08-26 23:01:49] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2E5715E0>
+[2025-08-26 23:01:49] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:49] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:49] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:49] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:49] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:49] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:50 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'25'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:49] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:49] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:49] [DEBUG] response_closed.started
+[2025-08-26 23:01:49] [DEBUG] response_closed.complete
+[2025-08-26 23:01:49] [DEBUG] Call to Bot API endpoint `answerCallbackQuery` finished with return value `True`
+[2025-08-26 23:01:49] [DEBUG] Calling Bot API endpoint `editMessageText` with parameters `{'text': 'Operation cancelled.', 'chat_id': 7772565881, 'message_id': 2915}`
+[2025-08-26 23:01:49] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:49] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:49] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:49] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:49] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:50] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:51 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'320'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:50] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:50] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:50] [DEBUG] response_closed.started
+[2025-08-26 23:01:50] [DEBUG] response_closed.complete
+[2025-08-26 23:01:50] [DEBUG] Call to Bot API endpoint `editMessageText` finished with return value `{'message_id': 2915, 'from': {'id': 8464176097, 'is_bot': True, 'first_name': 'Plex-o-Tron Workbench', 'username': 'win_down_bot'}, 'chat': {'id': 7772565881, 'first_name': 'Ryan', 'last_name': 'Oswalt', 'username': 'rumhamryan', 'type': 'private'}, 'date': 1756274469, 'edit_date': 1756274510, 'text': 'Operation cancelled.'}`
+[2025-08-26 23:01:51] [DEBUG] Application received stop signal. Shutting down.
+[2025-08-26 23:01:51] [DEBUG] Stopping Updater
+[2025-08-26 23:01:51] [DEBUG] Waiting background polling task to finish up.
+[2025-08-26 23:01:51] [DEBUG] Network Retry Loop (Polling Updates): Cancelled
+[2025-08-26 23:01:51] [DEBUG] receive_response_headers.failed exception=CancelledError()
+[2025-08-26 23:01:51] [DEBUG] response_closed.started
+[2025-08-26 23:01:51] [DEBUG] Calling `get_updates` one more time to mark all fetched updates as read.
+[2025-08-26 23:01:51] [DEBUG] Calling Bot API endpoint `getUpdates` with parameters `{'timeout': datetime.timedelta(0), 'offset': 739451313, 'allowed_updates': [<UpdateType.MESSAGE>, <UpdateType.EDITED_MESSAGE>, <UpdateType.CHANNEL_POST>, <UpdateType.EDITED_CHANNEL_POST>, <UpdateType.INLINE_QUERY>, <UpdateType.CHOSEN_INLINE_RESULT>, <UpdateType.CALLBACK_QUERY>, <UpdateType.SHIPPING_QUERY>, <UpdateType.PRE_CHECKOUT_QUERY>, <UpdateType.POLL>, <UpdateType.POLL_ANSWER>, <UpdateType.MY_CHAT_MEMBER>, <UpdateType.CHAT_MEMBER>, <UpdateType.CHAT_JOIN_REQUEST>, <UpdateType.CHAT_BOOST>, <UpdateType.REMOVED_CHAT_BOOST>, <UpdateType.MESSAGE_REACTION>, <UpdateType.MESSAGE_REACTION_COUNT>, <UpdateType.BUSINESS_CONNECTION>, <UpdateType.BUSINESS_MESSAGE>, <UpdateType.EDITED_BUSINESS_MESSAGE>, <UpdateType.DELETED_BUSINESS_MESSAGES>, <UpdateType.PURCHASED_PAID_MEDIA>]}`
+[2025-08-26 23:01:51] [DEBUG] response_closed.complete
+[2025-08-26 23:01:51] [DEBUG] connect_tcp.started host='api.telegram.org' port=443 local_address=None timeout=5.0 socket_options=None
+[2025-08-26 23:01:51] [DEBUG] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2E571250>
+[2025-08-26 23:01:51] [DEBUG] start_tls.started ssl_context=<ssl.SSLContext object at 0x0000024F2B85F8D0> server_hostname='api.telegram.org' timeout=5.0
+[2025-08-26 23:01:51] [DEBUG] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x0000024F2E571550>
+[2025-08-26 23:01:51] [DEBUG] send_request_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:51] [DEBUG] send_request_headers.complete
+[2025-08-26 23:01:51] [DEBUG] send_request_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:51] [DEBUG] send_request_body.complete
+[2025-08-26 23:01:51] [DEBUG] receive_response_headers.started request=<Request [b'POST']>
+[2025-08-26 23:01:55] [DEBUG] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx/1.18.0'), (b'Date', b'Wed, 27 Aug 2025 06:01:56 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'23'), (b'Connection', b'keep-alive'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubDomains; preload'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Methods', b'GET, POST, OPTIONS'), (b'Access-Control-Expose-Headers', b'Content-Length,Content-Type,Date,Server,Connection')])
+[2025-08-26 23:01:55] [DEBUG] receive_response_body.started request=<Request [b'POST']>
+[2025-08-26 23:01:55] [DEBUG] receive_response_body.complete
+[2025-08-26 23:01:55] [DEBUG] response_closed.started
+[2025-08-26 23:01:55] [DEBUG] response_closed.complete
+[2025-08-26 23:01:55] [DEBUG] Call to Bot API endpoint `getUpdates` finished with return value `[]`
+[2025-08-26 23:01:55] [DEBUG] No new updates found.
+[2025-08-26 23:01:55] [DEBUG] Updater.stop() is complete
+[2025-08-26 23:01:55] [INFO] Application is stopping. This might take a moment.
+[2025-08-26 23:01:55] [DEBUG] Waiting for update_queue to join
+[2025-08-26 23:01:55] [DEBUG] Application stopped fetching of updates.
+[2025-08-26 23:01:55] [DEBUG] Waiting for `create_task` calls to be processed
+[2025-08-26 23:01:55] [INFO] Application.stop() complete
+[2025-08-26 23:01:55] [DEBUG] close.started
+[2025-08-26 23:01:55] [DEBUG] close.started
+[2025-08-26 23:01:55] [DEBUG] close.complete
+[2025-08-26 23:01:55] [DEBUG] close.complete
+[2025-08-26 23:01:55] [DEBUG] This Bot is already shut down. Returning.
+[2025-08-26 23:01:55] [DEBUG] Shut down of Updater complete
+[2025-08-26 23:01:55] [INFO] --- Shutting down: Signalling active tasks to stop ---
+[2025-08-26 23:01:55] [INFO] No active tasks to stop.
+[2025-08-26 23:01:55] [INFO] Saved state: 0 active, 0 queued downloads.
+[2025-08-26 23:01:55] [INFO] --- All active tasks stopped. Shutdown complete. ---
