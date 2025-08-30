@@ -12,6 +12,21 @@ from telegram_bot.services import scraping_service
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 
+# Ensure per-test isolation by clearing any module-level caches used by the
+# scraping_service. This prevents earlier tests from influencing later ones
+# (e.g., Wikipedia title caches across the same show/season).
+@pytest.fixture(autouse=True)
+def _clear_wiki_caches():
+    try:
+        scraping_service._WIKI_TITLES_CACHE.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    try:
+        scraping_service._WIKI_SOUP_CACHE.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 class DummyResponse:
     def __init__(self, text="", json_data=None, status_code=200):
         self.text = text

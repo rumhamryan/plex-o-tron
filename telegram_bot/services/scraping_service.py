@@ -19,6 +19,12 @@ from .search_logic import _parse_codec, score_torrent_result
 from ..utils import extract_first_int, parse_torrent_name
 from .generic_torrent_scraper import GenericTorrentScraper, load_site_config
 
+# --- Wikipedia caching (per-process) ---
+# Caches per-season episode titles and corrected show title to avoid repeated
+# network requests and HTML parsing during season workflows.
+_WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], str | None]] = {}
+_WIKI_SOUP_CACHE: dict[str, BeautifulSoup] = {}
+
 
 # --- Helper Functions ---
 
@@ -50,6 +56,13 @@ async def fetch_episode_title_from_wikipedia(
         returned if Wikipedia redirects the initial search.
     """
     corrected_show_title: str | None = None
+    cache_key = (show_title.strip().lower(), season)
+
+    # Fast path: return from cache if available
+    cached = _WIKI_TITLES_CACHE.get(cache_key)
+    if cached:
+        titles_map, corrected = cached
+        return titles_map.get(episode), corrected
     canonical_title = show_title
     main_page_url: str | None = None
 
@@ -123,7 +136,11 @@ async def fetch_episode_title_from_wikipedia(
 
     # --- Step 3: Parse the HTML to find the episode title ---
     soup = BeautifulSoup(html_to_scrape, "lxml")
-    episode_title = await _parse_episode_tables(soup, season, episode)
+    # Populate cache for the whole season while we’re here
+    titles_map = await _extract_titles_for_season(soup, season)
+    if titles_map:
+        _WIKI_TITLES_CACHE[cache_key] = (titles_map, corrected_show_title)
+    episode_title = titles_map.get(episode) if titles_map else None
 
     if not episode_title:
         logger.warning(
@@ -131,6 +148,62 @@ async def fetch_episode_title_from_wikipedia(
         )
 
     return episode_title, corrected_show_title
+
+
+async def fetch_episode_titles_for_season(
+    show_title: str, season: int
+) -> tuple[dict[int, str], str | None]:
+    """Fetch all episode titles for a given season in one pass.
+
+    Returns a mapping of episode number to title and an optional corrected
+    show title if Wikipedia redirects.
+    Results are cached per (show_title, season).
+    """
+    cache_key = (show_title.strip().lower(), season)
+    cached = _WIKI_TITLES_CACHE.get(cache_key)
+    if cached:
+        return cached[0], cached[1]
+
+    corrected_show_title: str | None = None
+    canonical_title = show_title
+    main_page_url: str | None = None
+
+    # Step 1: Resolve main show page to get canonical title
+    try:
+        search_results = await asyncio.to_thread(wikipedia.search, show_title)
+        if not search_results:
+            return {}, None
+        main_page_title = search_results[0]
+        main_page = await asyncio.to_thread(
+            wikipedia.page, main_page_title, auto_suggest=False, redirect=True
+        )
+        main_page_url = main_page.url
+        if main_page.title != show_title:
+            corrected_show_title = main_page.title
+            canonical_title = main_page.title
+    except Exception:
+        return {}, None
+
+    # Step 2: Prefer dedicated list page; fallback to main page
+    html_to_scrape: str | None = None
+    try:
+        direct_query = f"List of {canonical_title} episodes"
+        list_page = await asyncio.to_thread(
+            wikipedia.page, direct_query, auto_suggest=False, redirect=True
+        )
+        html_to_scrape = await _get_page_html(list_page.url)
+    except Exception:
+        if main_page_url:
+            html_to_scrape = await _get_page_html(main_page_url)
+
+    if not html_to_scrape:
+        return {}, corrected_show_title
+
+    soup = BeautifulSoup(html_to_scrape, "lxml")
+    titles_map = await _extract_titles_for_season(soup, season)
+    if titles_map:
+        _WIKI_TITLES_CACHE[cache_key] = (titles_map, corrected_show_title)
+    return titles_map, corrected_show_title
 
 
 async def _parse_episode_tables(
@@ -178,6 +251,89 @@ async def _parse_episode_tables(
         f"[WIKI] All parsing strategies failed to find S{season:02d}E{episode:02d}."
     )
     return None
+
+
+async def _extract_titles_for_season(
+    soup: BeautifulSoup, season: int
+) -> dict[int, str]:
+    """Extracts a mapping of episode number -> title for a given season.
+
+    Uses the same heuristics as _parse_episode_tables, but returns all titles
+    for the season in one pass.
+    """
+    results: dict[int, str] = {}
+
+    # Strategy 1: dedicated season table under a specific Season header
+    season_header_pattern = re.compile(rf"Season\s+{season}", re.IGNORECASE)
+    header_tag = soup.find(
+        lambda tag: tag.name in ["h2", "h3"]
+        and bool(season_header_pattern.search(tag.get_text()))
+    )
+    if isinstance(header_tag, Tag):
+        target_table = header_tag.find_next("table", class_="wikitable")
+        if isinstance(target_table, Tag):
+            for row in target_table.find_all("tr")[1:]:
+                if not isinstance(row, Tag):
+                    continue
+                cells = row.find_all(["th", "td"])
+                if len(cells) < 3:
+                    continue
+                try:
+                    ep_num = extract_first_int(cells[1].get_text(strip=True))
+                    if not ep_num:
+                        continue
+                    title_cell = cells[2]
+                    if not isinstance(title_cell, Tag):
+                        continue
+                    found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+                    if found_text:
+                        results[ep_num] = str(found_text).strip().strip('"')
+                        continue
+                    italic_text = title_cell.find("i")
+                    if italic_text:
+                        results[ep_num] = italic_text.get_text(strip=True)
+                        continue
+                    results[ep_num] = title_cell.get_text(strip=True).strip('"')
+                except Exception:
+                    continue
+            if results:
+                return results
+
+    # Strategy 2: simpler embedded episodes table under a generic header
+    episodes_header_pattern = re.compile(r"Episodes", re.IGNORECASE)
+    episodes_header_tag = soup.find(
+        lambda tag: tag.name in ["h2", "h3"]
+        and bool(episodes_header_pattern.search(tag.get_text()))
+    )
+    if isinstance(episodes_header_tag, Tag):
+        target_table = episodes_header_tag.find_next("table", class_="wikitable")
+        if isinstance(target_table, Tag):
+            for row in target_table.find_all("tr")[1:]:
+                if not isinstance(row, Tag):
+                    continue
+                cells = row.find_all(["td", "th"])
+                if len(cells) < 2:
+                    continue
+                try:
+                    ep_num = extract_first_int(cells[0].get_text(strip=True))
+                    if not ep_num:
+                        continue
+                    title_cell = cells[1]
+                    if not isinstance(title_cell, Tag):
+                        continue
+                    found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
+                    if found_text:
+                        results[ep_num] = str(found_text).strip().strip('"')
+                        continue
+                    italic_text = title_cell.find("i")
+                    if italic_text:
+                        results[ep_num] = italic_text.get_text(strip=True)
+                        continue
+                    results[ep_num] = title_cell.get_text(strip=True).strip('"')
+                except Exception:
+                    continue
+
+    return results
 
 
 async def _extract_title_from_dedicated_table(

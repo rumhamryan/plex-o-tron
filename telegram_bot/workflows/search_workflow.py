@@ -731,6 +731,17 @@ async def _perform_tv_season_search_with_resolution(
     else:
         # Fallback: search for each episode individually
         episode_count = int(context.user_data.get("season_episode_count") or 0)
+        # Fetch all episode titles once to avoid per-episode Wikipedia lookups
+        titles_map: dict[int, str] = {}
+        corrected_title: str | None = None
+        try:
+            (
+                titles_map,
+                corrected_title,
+            ) = await scraping_service.fetch_episode_titles_for_season(title, season)
+        except Exception:
+            titles_map, corrected_title = {}, None
+
         for ep in range(1, episode_count + 1):
             search_term = f"{title} S{season:02d}E{ep:02d}"
             ep_results = await search_logic.orchestrate_searches(
@@ -749,16 +760,10 @@ async def _perform_tv_season_search_with_resolution(
             parsed_info["episode"] = ep
             parsed_info["type"] = "tv"
 
-            # Fetch the episode title from Wikipedia before queueing.
-            (
-                episode_title,
-                corrected_show_title,
-            ) = await scraping_service.fetch_episode_title_from_wikipedia(
-                show_title=title, season=season, episode=ep
-            )
-            parsed_info["episode_title"] = episode_title
-            if corrected_show_title:
-                parsed_info["title"] = corrected_show_title
+            # Use pre-fetched episode titles from Wikipedia (cached per season)
+            parsed_info["episode_title"] = titles_map.get(ep)
+            if corrected_title:
+                parsed_info["title"] = corrected_title
 
             torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
 
