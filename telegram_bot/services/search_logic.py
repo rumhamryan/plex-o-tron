@@ -81,41 +81,53 @@ async def orchestrate_searches(
 
             scraper_func = scraper_map.get(site_name)
 
-            if scraper_func:
+            # Allow callers to override the string used for fuzzy filtering.
+            base_filter = kwargs.get("base_query_for_filter", query)
+            extra_kwargs = {
+                k: v for k, v in kwargs.items() if k != "base_query_for_filter"
+            }
+
+            if site_name == "1337x" and scraper_func is not None:
                 logger.info(
                     f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
                 )
-
-                # Allow callers to override the string used for fuzzy filtering. This
-                # is useful for episode-specific searches where the query contains
-                # season/episode tokens that would otherwise reduce the match score.
-                base_filter = kwargs.get("base_query_for_filter", query)
-                extra_kwargs = {
-                    k: v for k, v in kwargs.items() if k != "base_query_for_filter"
-                }
-
-                if site_name == "1337x":
-                    task = asyncio.create_task(
-                        scraper_func(
-                            search_query,
-                            media_type,
-                            site_url,
-                            context,
-                            base_query_for_filter=base_filter,
-                            **extra_kwargs,
-                        )
+                task = asyncio.create_task(
+                    scraper_func(
+                        search_query,
+                        media_type,
+                        site_url,
+                        context,
+                        base_query_for_filter=base_filter,
+                        **extra_kwargs,
                     )
-                else:
-                    task = asyncio.create_task(
-                        scraper_func(
-                            search_query, media_type, site_url, context, **extra_kwargs
-                        )
+                )
+                tasks.append(task)
+            elif scraper_func is not None:
+                logger.info(
+                    f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
+                )
+                task = asyncio.create_task(
+                    scraper_func(
+                        search_query, media_type, site_url, context, **extra_kwargs
                     )
+                )
                 tasks.append(task)
             else:
-                logger.warning(
-                    f"[SEARCH] Configured site '{site_name}' has no corresponding scraper function. It will be ignored."
+                # Fallback: try YAML-backed generic scraper by site name
+                logger.info(
+                    f"[SEARCH] Creating search task for '{site_name}' (YAML) with query: '{query}'"
                 )
+                task = asyncio.create_task(
+                    scraping_service.scrape_yaml_site(
+                        search_query,
+                        media_type,
+                        site_url,
+                        context,
+                        site_name=site_name,
+                        base_query_for_filter=base_filter,
+                    )
+                )
+                tasks.append(task)
 
     if not tasks:
         logger.warning("[SEARCH] No enabled search sites found to orchestrate.")
