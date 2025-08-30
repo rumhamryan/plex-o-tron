@@ -35,7 +35,7 @@ search_path: "{search_path}"
 results_page_selectors:
   # The table body contains all search results. Limiting the scope avoids
   # parsing unrelated parts of the page.
-  results_container: "{results_container}"
+  results_container: {results_container_literal}
   # Each <tr> inside the container represents a single torrent result.
   result_row: "{result_row}"
   # Granular selectors used by the scraper when extracting data from a row.
@@ -43,9 +43,9 @@ results_page_selectors:
   # If this points to a detail page, the scraper will fetch it to resolve a magnet.
   magnet: "{magnet_selector}"
   seeders: "{seeders_selector}"
-  leechers: "{leechers_selector}"
+  leechers: {leechers_selector_literal}
   size: "{size_selector}"
-  uploader: "{uploader_selector}"
+  uploader: {uploader_selector_literal}
 
 # Selectors for elements on the torrent detail page
 details_page_selectors:
@@ -111,11 +111,44 @@ def build_content(args: argparse.Namespace) -> str:
             "",
         )
     if not example_term:
-        # Try to guess a default example term from the last path segment
+        # Try to guess a default example term from the path segments
+        def _guess_term_from_path(path: str) -> str:
+            try:
+                segs = [s for s in path.split("/") if s]
+            except Exception:
+                return ""
+            # Common non-term segments to skip
+            blacklist = {
+                "search",
+                "category-search",
+                "browse",
+                "torrent",
+                "torrents",
+                "tv",
+                "movie",
+                "movies",
+                "shows",
+                "show",
+                "list",
+                "page",
+            }
+            candidates: list[str] = []
+            for s in segs:
+                sl = s.lower()
+                if sl in blacklist:
+                    continue
+                if sl.isdigit():
+                    continue
+                # Prefer segments that contain letters and are reasonably long
+                if any(c.isalpha() for c in sl):
+                    candidates.append(s)
+            # Heuristic: pick the longest remaining segment
+            best = max(candidates, key=len, default="")
+            return best.replace("-", " ").replace("_", " ").replace("+", " ")
+
         try:
             parsed_tmp = urlparse.urlparse(example_url)
-            last_seg = (parsed_tmp.path.rstrip("/").split("/") or [""])[-1]
-            default_term = last_seg.replace("-", " ").replace("_", " ")
+            default_term = _guess_term_from_path(parsed_tmp.path or "")
         except Exception:
             default_term = ""
         example_term = _prompt(
@@ -127,11 +160,24 @@ def build_content(args: argparse.Namespace) -> str:
     )
     if derived_base:
         base_url = derived_base.rstrip("/")
-    search_path_manual = derived_path
+    # Decide whether to generalize category/page placeholders based on the example
+    # Only upgrade 1337x-like paths (e.g., '/category-search/.../<cat>/<page>/')
+    site_host = ""
+    try:
+        site_host = (urlparse.urlparse(base_url).netloc or "").lower()
+    except Exception:
+        site_host = ""
+    path_lc = (derived_path or "").lower()
+    if "category-search" in path_lc or "1337x" in site_host:
+        search_path_manual = _upgrade_template_with_placeholders(derived_path)
+    else:
+        search_path_manual = derived_path
 
     # 2) Attempt to discover a working search path and selectors (unless provided)
     detection = None
-    if search_path_manual is None and not any(
+    # Even if a manual/example path is provided, infer selectors unless
+    # the user supplied explicit selector overrides.
+    if not any(
         [
             args.search_path,
             args.results_container,
@@ -203,6 +249,40 @@ def build_content(args: argparse.Namespace) -> str:
         or "a[href^='magnet:']"
     )
 
+    # --- Site-specific overrides to improve accuracy on known layouts ---
+    site_lc = (site_name or "").lower()
+    base_lc = (base_url or "").lower()
+
+    # EZTV (eztvx.to / eztv.*): releases are in scattered tables; rows marked with name='hover'
+    if ("eztv" in site_lc) or ("eztv" in base_lc) or ("eztvx.to" in base_lc):
+        # Keep base_url and search_path as derived; fix selectors
+        results_container = None  # expand scope to whole page
+        result_row = "tr.forum_header_border[name='hover']"
+        name_selector = "a.epinfo"
+        magnet_selector = (
+            "a.epinfo"  # detail page; magnets resolved via details selectors
+        )
+        # Stable across optional Dload column: seeds is last TD with this class
+        seeders_selector = "td.forum_thread_post_end"
+        leechers_selector = None
+        # Size is consistently the third-from-last TD
+        size_selector = "td:nth-last-of-type(3)"
+        uploader_selector = None
+
+    # Prepare YAML literals for fields that may be null (avoid type-check noise)
+    def _yaml_quote(val: str) -> str:
+        return '"' + val.replace('"', '\\"') + '"'
+
+    results_container_literal = (
+        "null" if results_container is None else _yaml_quote(str(results_container))
+    )
+    leechers_selector_literal = (
+        "null" if leechers_selector is None else _yaml_quote(str(leechers_selector))
+    )
+    uploader_selector_literal = (
+        "null" if uploader_selector is None else _yaml_quote(str(uploader_selector))
+    )
+
     matching_block = DEFAULT_MATCHING_BLOCK
     if args.matching is not None:
         matching_block = dedent(args.matching).strip() or DEFAULT_MATCHING_BLOCK
@@ -213,14 +293,14 @@ def build_content(args: argparse.Namespace) -> str:
         movie_category=movie_category,
         tv_category=tv_category,
         search_path=search_path,
-        results_container=results_container,
+        results_container_literal=results_container_literal,
         result_row=result_row,
         name_selector=name_selector,
         magnet_selector=magnet_selector,
         seeders_selector=seeders_selector,
-        leechers_selector=leechers_selector,
+        leechers_selector_literal=leechers_selector_literal,
         size_selector=size_selector,
-        uploader_selector=uploader_selector,
+        uploader_selector_literal=uploader_selector_literal,
         details_magnet_selector=details_magnet_selector,
         matching_block=matching_block,
     )
@@ -361,8 +441,10 @@ def main() -> None:
 KNOWN_SITES: dict[str, str] = {
     "1337x": "https://1337x.to",
     "1337x.to": "https://1337x.to",
-    "eztv": "https://eztv.re",
-    "eztv.re": "https://eztv.re",
+    "eztv": "https://eztvx.to",
+    "eztvx": "https://eztvx.to",
+    "eztvx.to": "https://eztvx.to",
+    "eztv.re": "https://eztvx.to",
     "yts": "https://yts.mx",
     "yts.mx": "https://yts.mx",
     "torrentgalaxy": "https://torrentgalaxy.to",
@@ -536,17 +618,25 @@ def _get(url: str) -> Optional[str]:
 
 
 def _looks_like_results_page(html: str) -> bool:
+    """Heuristics to identify a search results page across different layouts.
+
+    - Recognize presence of magnet anchors
+    - Look for header keywords in TH or known header TD classes
+    - Allow tables with a moderate number of rows (>= 5) to qualify
+    """
     soup = BeautifulSoup(html, "lxml")
-    # Fast heuristics: presence of many rows, numbers for seeds/leech, magnet anchors
+    # Direct magnet indicators
     if soup.select_one("a[href^='magnet:']"):
         return True
-    headers = " ".join(th.get_text(" ", strip=True).lower() for th in soup.select("th"))
-    if any(key in headers for key in ["seed", "leech", "size"]):
+    # Header text can be in TH (1337x) or TD with header classes (EZTV)
+    header_elems = soup.select("th, td.forum_thread_header")
+    headers = " ".join(el.get_text(" ", strip=True).lower() for el in header_elems)
+    if any(key in headers for key in ["seed", "seeds", "leech", "leeches", "size"]):
         return True
-    # Many rows in a table
+    # Tables with enough rows (EZTV often has 5-9 results)
     for table in soup.select("table"):
         rows = table.select("tr")
-        if len(rows) >= 10:
+        if len(rows) >= 5:
             return True
     return False
 
@@ -677,17 +767,15 @@ def _refine_with_pagination(
     from the template, it will be added. Supports both query-string (?page=1)
     and path-segment (/1/) styles.
     """
-    # Look for a next link
-    next_link = soup.select_one(
-        "a[rel='next'], a.next, a:contains('Next'), a:contains('>')"
-    )
+    # Look for a next link (avoid deprecated :contains in SoupSieve)
+    next_link = soup.select_one("a[rel='next'], a.next")
     if not isinstance(next_link, Tag):
         # Try common text variants
         for a in soup.find_all("a"):
             if not isinstance(a, Tag):
                 continue
             txt = a.get_text(strip=True).lower()
-            if txt in {"next", ">", "older"}:
+            if txt in {"next", ">", "older", "more"}:
                 next_link = a
                 break
     if not isinstance(next_link, Tag):
@@ -720,7 +808,8 @@ def _refine_with_pagination(
     # Path segment pagination (e.g., /search/{query}/1/)
     m2 = re.search(r"(/|%2F)(\d+)(/|%2F)?$", next_tpl)
     if m2 and not re.search(r"(/|%2F){\{page\}}", template):
-        tail = "/{page}/" if template.endswith("/") else "/{page}/"
+        had_trailing = template.endswith("/")
+        tail = "/{page}/" if had_trailing else "/{page}"
         return template.rstrip("/") + tail
 
     return template
@@ -760,7 +849,7 @@ def _css_for_table(table: Tag, soup: Optional[BeautifulSoup] = None) -> str:
     if tid:
         return f"table#{tid}"
     if classes:
-        # Choose a minimal unique class among tables if possible
+        # Choose the rarest and most specific class among tables if possible
         if soup is not None:
             counts: list[tuple[int, str]] = []
             for c in classes:
@@ -769,7 +858,8 @@ def _css_for_table(table: Tag, soup: Optional[BeautifulSoup] = None) -> str:
                 except Exception:
                     count = 999
                 counts.append((count, c))
-            counts.sort(key=lambda x: (x[0], len(x[1])))
+            # Prefer lower count (rarer) and longer class name (more specific)
+            counts.sort(key=lambda x: (x[0], -len(x[1])))
             chosen = counts[0][1]
             return f"table.{chosen}"
         # Fallback: prefer the first class
@@ -916,19 +1006,27 @@ def _upgrade_template_with_placeholders(tpl: str) -> str:
     if "{category}" in tpl and "{page}" in tpl:
         return tpl
     # Handle common pattern '/{query}/<category-like>/<page-like>/'
-    m = re.search(r"\{query\}/[^/]+/\d+/", tpl)
+    had_trailing = tpl.endswith("/")
+    m = re.search(r"\{query\}/[^/]+/\d+/?", tpl)
     if m:
-        return re.sub(r"\{query\}/[^/]+/\d+/", "{query}/{category}/{page}/", tpl)
+        repl = (
+            "{query}/{category}/{page}/"
+            if had_trailing
+            else "{query}/{category}/{page}"
+        )
+        return re.sub(r"\{query\}/[^/]+/\d+/?", repl, tpl)
     # Handle '/{query}/<page-like>/'
-    m2 = re.search(r"\{query\}/\d+/", tpl)
+    m2 = re.search(r"\{query\}/\d+/?", tpl)
     if m2:
-        return re.sub(r"\{query\}/\d+/", "{query}/{page}/", tpl)
+        repl = "{query}/{page}/" if had_trailing else "{query}/{page}"
+        return re.sub(r"\{query\}/\d+/?", repl, tpl)
     # Query-string based search: do not inject extra parameters; rely on template
     if "?" in tpl:
         return tpl
     # Path-based default
-    tpl = tpl.rstrip("/")
-    return f"{tpl}/{{category}}/{{page}}/"
+    base = tpl.rstrip("/")
+    suffix = "/" if had_trailing else ""
+    return f"{base}/{{category}}/{{page}}{suffix}"
 
 
 def _get_attr_str(tag: Tag, attr: str) -> str:
@@ -989,19 +1087,29 @@ def _split_base_and_path(url: str) -> tuple[str, str]:
 
 
 def _slug_variants(term: str) -> list[str]:
-    t = term.strip()
-    variants = {t}
-    tl = t.lower()
+    """Return common textual variants for a search term.
+
+    Includes lowercased, hyphen/underscore/plus separated, and URL-encoded forms.
+    """
+    t: str = (term or "").strip()
+    if not t:
+        return [""]
+
+    variants: set[str] = set()
+    variants.add(t)
+    tl: str = t.lower()
     variants.add(tl)
-    # hyphen/underscore/plus-separated
-    words = [w for w in re.split(r"\s+", tl) if w]
+
+    # hyphen/underscore/plus-separated variants
+    words: list[str] = [w for w in re.split(r"\s+", tl) if w]
     if words:
-        variants.add("-".join(words))
-        variants.add("_".join(words))
-        variants.add("+".join(words))
+        for sep in ("-", "_", "+"):
+            variants.add(sep.join(words))
+
     # url-encoded forms
-    variants.add(urlparse.quote(tl))
-    variants.add(urlparse.quote_plus(tl))
+    variants.add(urlparse.quote(tl, safe=""))
+    variants.add(urlparse.quote_plus(tl, safe=""))
+
     return list(variants)
 
 
@@ -1055,6 +1163,7 @@ def _derive_template_from_example(
 
     # 2) Fallback to path segment replacement
     segs = [s for s in path.split("/") if s != ""]
+    had_trailing_slash = path.endswith("/")
     # Identify a segment that matches a variant; else choose last segment
     seg_idx = -1
     for i, s in enumerate(segs):
@@ -1069,6 +1178,10 @@ def _derive_template_from_example(
     else:
         # No segments; simple '/{query}'
         new_path = "/{query}"
+
+    # Preserve trailing slash from the example path, if present
+    if had_trailing_slash and not new_path.endswith("/"):
+        new_path += "/"
 
     # Reattach any constant query string
     if query:

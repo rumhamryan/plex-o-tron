@@ -13,14 +13,12 @@ search_path: "/category-search/{query}/{category}/{page}/"
 results_page_selectors:
   # The table body contains all search results. Limiting the scope avoids
   # parsing unrelated parts of the page.
-  results_container: "table.table-list tbody"
+  results_container: "table.table-responsive tbody"
   # Each <tr> inside the container represents a single torrent result.
   result_row: "tr"
   # Granular selectors used by the scraper when extracting data from a row.
   name: "td.name a:nth-of-type(2)"
-  # 1337x exposes only a link to a detail page on the search results. The
-  # scraper will treat this as a magnet link if it already uses the magnet
-  # scheme or as a detail page otherwise.
+  # If this points to a detail page, the scraper will fetch it to resolve a magnet.
   magnet: "td.name a[href^='/torrent/']"
   seeders: "td.seeds"
   leechers: "td.leeches"

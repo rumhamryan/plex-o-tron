@@ -11,19 +11,18 @@ search_path: "/search/{query}"
 
 # CSS selectors for parsing the initial results page
 results_page_selectors:
-  # The main EZTV results table
-  results_container: "table.forum_header_border tbody"
-  # Each result row
-  result_row: "tr"
-  # Column/anchor selectors
+  # The table body contains all search results. Limiting the scope avoids
+  # parsing unrelated parts of the page.
+  results_container: null
+  # Each <tr> inside the container represents a single torrent result.
+  result_row: "tr.forum_header_border[name='hover']"
+  # Granular selectors used by the scraper when extracting data from a row.
   name: "a.epinfo"
-  # EZTV provides a direct magnet link on the results page
-  magnet: "a.magnet"
-  # Typical EZTV column ordering: Size (4), Seeds (6), Peers (7)
-  seeders: "td:nth-of-type(6)"
-  leechers: "td:nth-of-type(7)"
-  size: "td:nth-of-type(4)"
-  # EZTV doesn't expose uploader on results; leave empty fallback
+  # If this points to a detail page, the scraper will fetch it to resolve a magnet.
+  magnet: "a.epinfo"
+  seeders: "td.forum_thread_post_end"
+  leechers: null
+  size: "td:nth-last-of-type(3)"
   uploader: null
 
 # Selectors for elements on the torrent detail page
