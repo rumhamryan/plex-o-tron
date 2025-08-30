@@ -345,8 +345,17 @@ async def _handle_resolution_button(query, context):
             search_title, "movie", context, year=year, resolution=resolution
         )
         filtered_results = _filter_results_by_resolution(results, resolution)
+
+        # Allow larger sizes for 4K movie releases so viable results (e.g., 1337x)
+        # aren’t dropped by the generic size cap used for smaller content.
+        max_size_override = 30.0 if resolution == "2160p" else None
+
         await _present_search_results(
-            query.message, context, filtered_results, f"{final_title} [{resolution}]"
+            query.message,
+            context,
+            filtered_results,
+            f"{final_title} [{resolution}]",
+            max_size_gb=max_size_override,
         )
         return
 
@@ -772,7 +781,9 @@ def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[
     ]
 
 
-async def _present_search_results(message, context, results, query_str):
+async def _present_search_results(
+    message, context, results, query_str, *, max_size_gb: float | None = None
+):
     """Formats and displays the final list of search results, pre-filtered by size."""
     _clear_search_context(context)
 
@@ -787,9 +798,13 @@ async def _present_search_results(message, context, results, query_str):
         return
 
     # Filter the results list to exclude torrents larger than the configured limit
+    # Optionally allow a per-call override (e.g., for 4K movies which are larger).
+    size_cap = (
+        max_size_gb if isinstance(max_size_gb, (int, float)) else MAX_TORRENT_SIZE_GB
+    )
     original_count = len(results)
     filtered_results = [
-        r for r in results if r.get("size_gb", float("inf")) <= MAX_TORRENT_SIZE_GB
+        r for r in results if r.get("size_gb", float("inf")) <= size_cap
     ]
 
     # Handle the case where all found results were too large
