@@ -11,6 +11,7 @@ from ..services.download_manager import (
     add_season_to_queue,
     handle_cancel_request,
     handle_pause_resume,
+    handle_cancel_all,
 )
 from ..workflows.delete_workflow import handle_delete_buttons
 from ..workflows.search_workflow import handle_search_buttons
@@ -49,9 +50,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await handle_pause_resume(update, context)
 
     elif action.startswith("cancel_"):
-        # Handles cancel_operation, cancel_download, and confirm_cancel
+        # Handles cancel_operation; single cancel flow; and cancel-all flow
         if action == "cancel_operation":
             await query.edit_message_text(text="Operation cancelled.")
+        elif action in {"cancel_all", "cancel_all_confirm", "cancel_all_deny"}:
+            await handle_cancel_all(update, context)
         else:
             await handle_cancel_request(update, context)
 

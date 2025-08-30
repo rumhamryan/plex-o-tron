@@ -98,32 +98,33 @@ class ProgressReporter:
             )
 
             # Use a single toggle button for both pause and resume actions.
+            # Build control row and conditionally add "Cancel All" if there is a queue
+            controls_row = []
             if is_paused:
-                reply_markup = InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton(
-                                "▶️ Resume", callback_data="pause_resume"
-                            ),
-                            InlineKeyboardButton(
-                                "⏹️ Cancel", callback_data="cancel_download"
-                            ),
-                        ]
-                    ]
+                controls_row.append(
+                    InlineKeyboardButton("▶️ Resume", callback_data="pause_resume")
                 )
             else:
-                reply_markup = InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton(
-                                "⏸️ Pause", callback_data="pause_resume"
-                            ),
-                            InlineKeyboardButton(
-                                "⏹️ Cancel", callback_data="cancel_download"
-                            ),
-                        ]
-                    ]
+                controls_row.append(
+                    InlineKeyboardButton("⏸️ Pause", callback_data="pause_resume")
                 )
+            controls_row.append(
+                InlineKeyboardButton("⏹️ Cancel", callback_data="cancel_download")
+            )
+
+            # If user has at least 1 queued download, expose "Cancel All"
+            try:
+                dq = self.application.bot_data.get("download_queues", {})
+                if dq.get(str(self.chat_id)):
+                    controls_row.append(
+                        InlineKeyboardButton(
+                            "🧹 Cancel All", callback_data="cancel_all"
+                        )
+                    )
+            except Exception:
+                pass
+
+            reply_markup = InlineKeyboardMarkup([controls_row])
 
             # --- FIX: Add a try/except block to prevent UI errors from crashing the download ---
             try:
@@ -459,9 +460,16 @@ async def _start_download_task(download_data: dict, application: Application):
 
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
 
-    reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")]]
-    )
+    # Build initial controls and include "Cancel All" if queue exists for this user
+    controls_row = [
+        InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")
+    ]
+    dq = application.bot_data.get("download_queues", {})
+    if dq.get(chat_id_str):
+        controls_row.append(
+            InlineKeyboardButton("🧹 Cancel All", callback_data="cancel_all")
+        )
+    reply_markup = InlineKeyboardMarkup([controls_row])
     await safe_edit_message(
         application.bot,
         chat_id=download_data["chat_id"],
@@ -681,3 +689,87 @@ async def handle_cancel_request(update, context):
         elif query.data == "cancel_deny":
             # User opted not to cancel; remove the flag so updates resume.
             download_data.pop("cancellation_pending", None)
+
+
+async def handle_cancel_all(update, context):
+    """Two-step cancel-all: confirm, then clear queue and cancel active."""
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    chat_id_str = str(chat_id)
+
+    action = query.data or ""
+    active_downloads = context.bot_data.get("active_downloads", {})
+    download_queues = context.bot_data.get("download_queues", {})
+
+    # When initiating, set pending flag and ask for confirmation
+    if action == "cancel_all":
+        if chat_id_str in active_downloads:
+            dd = active_downloads[chat_id_str]
+            async with dd["lock"]:
+                dd["cancellation_pending"] = True
+
+        message_text = (
+            "Are you sure you want to cancel the current download "
+            "and clear all queued downloads?"
+        )
+        reply_markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✅ Yes, Cancel All", callback_data="cancel_all_confirm"
+                    ),
+                    InlineKeyboardButton(
+                        "❌ No, Continue", callback_data="cancel_all_deny"
+                    ),
+                ]
+            ]
+        )
+        await safe_edit_message(
+            query.message,
+            text=message_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=reply_markup,
+        )
+        return
+
+    # Confirm: clear queue and cancel active
+    if action == "cancel_all_confirm":
+        # Clear all queued downloads for this user
+        if chat_id_str in download_queues:
+            removed = len(download_queues.get(chat_id_str, []))
+            del download_queues[chat_id_str]
+            logger.info(f"Cleared {removed} queued downloads for user {chat_id_str}.")
+
+        # Cancel the active download task if present
+        if chat_id_str in active_downloads:
+            dd = active_downloads[chat_id_str]
+            async with dd["lock"]:
+                dd.pop("cancellation_pending", None)
+                task = dd.get("task")
+                if task and not task.done():
+                    logger.info(f"Cancelling active download for user {chat_id_str}.")
+                    task.cancel()
+
+        # Persist state after clearing the queue
+        save_state(PERSISTENCE_FILE, active_downloads, download_queues)
+
+        # Acknowledge; the active task will finalize its own message text
+        try:
+            await safe_edit_message(
+                query.message,
+                text="⏹️ Cancelled all downloads for this chat\\.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+        return
+
+    # Deny: remove pending flag and resume updates
+    if action == "cancel_all_deny":
+        if chat_id_str in active_downloads:
+            dd = active_downloads[chat_id_str]
+            async with dd["lock"]:
+                dd.pop("cancellation_pending", None)
+        # No immediate re-render; progress updates will resume naturally
+        return
