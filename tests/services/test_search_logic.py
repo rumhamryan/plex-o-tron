@@ -16,6 +16,16 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
         ("Some.Movie.x265", "x265"),
         ("Another HEVC release", "x265"),
         ("Film X264 edition", "x264"),
+        ("AV1 Showcase 1080p", "av1"),
+        ("H.265 encode", "x265"),
+        ("H 265 Hybrid", "x265"),
+        ("H264 remux", "x264"),
+        ("H 264-FLUX", "x264"),
+        ("Rick and Morty S08E01 1080p WEB H264-LAZYCUNTS [eztv]", "x264"),
+        (
+            "Rick and Morty S08E01 Summer of All Fears 720p MAX WEB-DL DDP5 1 H 264-FLUX [eztv]",
+            "x264",
+        ),
         ("No codec here", None),
     ],
 )

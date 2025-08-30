@@ -177,13 +177,27 @@ def score_torrent_result(
     return score
 
 
+_CODEC_PATTERNS = {
+    # Prefer more specific/modern codecs first
+    "av1": re.compile(r"(?i)\bav1\b"),
+    # x265 / HEVC / H.265 with common variants (spaces/dots)
+    "x265": re.compile(r"(?i)\b(?:x\s*265|h\s*[.\s]?265|hevc)\b"),
+    # x264 / AVC / H.264 with common variants (spaces/dots)
+    "x264": re.compile(r"(?i)\b(?:x\s*264|h\s*[.\s]?264|h264|avc)\b"),
+}
+
+
 def _parse_codec(title: str) -> str | None:
-    """Extracts codec information like 'x265' or 'x264' from a torrent title."""
-    title_lower = title.lower()
-    if "x265" in title_lower or "hevc" in title_lower:
-        return "x265"
-    if "x264" in title_lower:
-        return "x264"
+    """Extracts codec information from a torrent title.
+
+    Handles common variants and spacing/punctuation, e.g.:
+    - "H264", "H.264", "H 264", "x264", "AVC" -> "x264"
+    - "H265", "H.265", "H 265", "x265", "HEVC" -> "x265"
+    - "AV1" -> "av1"
+    """
+    for normalized, pattern in _CODEC_PATTERNS.items():
+        if pattern.search(title):
+            return normalized
     return None
 
 
