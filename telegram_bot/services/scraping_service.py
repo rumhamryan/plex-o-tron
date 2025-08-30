@@ -162,6 +162,9 @@ async def fetch_episode_titles_for_season(
     cache_key = (show_title.strip().lower(), season)
     cached = _WIKI_TITLES_CACHE.get(cache_key)
     if cached:
+        logger.info(
+            f"[WIKI] Cache hit for episode titles: '{show_title}' S{season:02d}."
+        )
         return cached[0], cached[1]
 
     corrected_show_title: str | None = None
@@ -170,8 +173,12 @@ async def fetch_episode_titles_for_season(
 
     # Step 1: Resolve main show page to get canonical title
     try:
+        logger.info(
+            f"[WIKI] Resolving main show page for '{show_title}' to determine canonical title."
+        )
         search_results = await asyncio.to_thread(wikipedia.search, show_title)
         if not search_results:
+            logger.warning(f"[WIKI] No Wikipedia search results for '{show_title}'.")
             return {}, None
         main_page_title = search_results[0]
         main_page = await asyncio.to_thread(
@@ -181,27 +188,45 @@ async def fetch_episode_titles_for_season(
         if main_page.title != show_title:
             corrected_show_title = main_page.title
             canonical_title = main_page.title
+            logger.info(
+                f"[WIKI] Title corrected: '{show_title}' -> '{canonical_title}'."
+            )
+        logger.debug(f"[WIKI] Main page URL: {main_page_url}")
     except Exception:
+        logger.error(
+            f"[WIKI] Failed resolving main page for '{show_title}'. Continuing without correction."
+        )
         return {}, None
 
     # Step 2: Prefer dedicated list page; fallback to main page
     html_to_scrape: str | None = None
     try:
         direct_query = f"List of {canonical_title} episodes"
+        logger.info(f"[WIKI] Attempting dedicated list page lookup: '{direct_query}'.")
         list_page = await asyncio.to_thread(
             wikipedia.page, direct_query, auto_suggest=False, redirect=True
         )
+        logger.debug(f"[WIKI] List page URL: {list_page.url}")
         html_to_scrape = await _get_page_html(list_page.url)
     except Exception:
         if main_page_url:
+            logger.info(
+                f"[WIKI] Dedicated list page not found. Falling back to main page for '{canonical_title}'."
+            )
             html_to_scrape = await _get_page_html(main_page_url)
 
     if not html_to_scrape:
+        logger.warning(
+            f"[WIKI] No HTML retrieved for '{canonical_title}'. Returning empty titles."
+        )
         return {}, corrected_show_title
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
     titles_map = await _extract_titles_for_season(soup, season)
     if titles_map:
+        logger.info(
+            f"[WIKI] Parsed {len(titles_map)} episode titles for '{canonical_title}' S{season:02d}."
+        )
         _WIKI_TITLES_CACHE[cache_key] = (titles_map, corrected_show_title)
     return titles_map, corrected_show_title
 
@@ -420,22 +445,33 @@ async def fetch_season_episode_count_from_wikipedia(
     show_title: str, season: int
 ) -> int | None:
     """Fetches the number of episodes for a given season from Wikipedia."""
+    logger.info(
+        f"[WIKI] Fetching episode count for '{show_title}' S{season:02d} from Wikipedia."
+    )
     html_to_scrape = None
     try:
         # Attempt to get the dedicated "List of..." page first
+        logger.debug(
+            f"[WIKI] Trying dedicated list page for '{show_title}': 'List of {show_title} episodes'."
+        )
         list_page = await asyncio.to_thread(
             wikipedia.page,
             f"List of {show_title} episodes",
             auto_suggest=False,
             redirect=True,
         )
+        logger.debug(f"[WIKI] List page URL: {list_page.url}")
         html_to_scrape = await _get_page_html(list_page.url)
     except wikipedia.exceptions.PageError:
         # Fallback to the main show page if the list page doesn't exist
         try:
+            logger.debug(
+                f"[WIKI] Dedicated list page missing. Falling back to main page for '{show_title}'."
+            )
             main_page = await asyncio.to_thread(
                 wikipedia.page, show_title, auto_suggest=True, redirect=True
             )
+            logger.debug(f"[WIKI] Main page URL: {main_page.url}")
             html_to_scrape = await _get_page_html(main_page.url)
         except Exception as e:
             logger.error(f"[WIKI] Failed to fetch page for '{show_title}': {e}")
@@ -445,6 +481,9 @@ async def fetch_season_episode_count_from_wikipedia(
         return None
 
     if not html_to_scrape:
+        logger.warning(
+            f"[WIKI] No HTML retrieved for '{show_title}' S{season:02d}. Unable to determine episode count."
+        )
         return None
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
@@ -466,11 +505,15 @@ async def fetch_season_episode_count_from_wikipedia(
             break
 
     if not isinstance(overview_table, Tag):
+        logger.debug(f"[WIKI] 'Series overview' table not found for '{show_title}'.")
         return None
 
     # Find the column index for "Episodes"
     header_row = overview_table.find("tr")
     if not isinstance(header_row, Tag):
+        logger.debug(
+            f"[WIKI] Header row not found in overview table for '{show_title}'."
+        )
         return None
 
     header_cells = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
@@ -481,6 +524,9 @@ async def fetch_season_episode_count_from_wikipedia(
             break
 
     if episodes_col_index == -1:
+        logger.debug(
+            f"[WIKI] Could not locate 'Episodes' column in overview table for '{show_title}'."
+        )
         return None
 
     # Find the specific season in the table
@@ -498,6 +544,9 @@ async def fetch_season_episode_count_from_wikipedia(
         if season_num == season:
             ep_text = cells[episodes_col_index].get_text(strip=True)
             count = extract_first_int(ep_text)
+            logger.info(
+                f"[WIKI] Episode count for '{show_title}' S{season:02d}: {count}"
+            )
             return count  # Return the extracted episode count
 
     return None

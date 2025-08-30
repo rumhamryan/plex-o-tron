@@ -256,6 +256,10 @@ async def _handle_tv_scope_selection(
         return
 
     if query.data == "search_tv_scope_season":
+        # Log at INFO that we are about to consult Wikipedia for season details
+        logger.info(
+            f"[WIKI] Verifying season details on Wikipedia for '{title}' S{int(season):02d}."
+        )
         await safe_edit_message(
             query.message,
             "Verifying season details on Wikipedia\\.\\.\\.",
@@ -265,6 +269,9 @@ async def _handle_tv_scope_selection(
             await scraping_service.fetch_season_episode_count_from_wikipedia(
                 title, season
             )
+        )
+        logger.info(
+            f"[WIKI] Episode count lookup complete for '{title}' S{int(season):02d}: {episode_count}."
         )
         if not episode_count:
             await safe_edit_message(
@@ -735,10 +742,27 @@ async def _perform_tv_season_search_with_resolution(
         titles_map: dict[int, str] = {}
         corrected_title: str | None = None
         try:
+            logger.info(
+                f"[WIKI] Fetching episode titles from Wikipedia for '{title}' S{season:02d}."
+            )
             (
                 titles_map,
                 corrected_title,
             ) = await scraping_service.fetch_episode_titles_for_season(title, season)
+            logger.info(
+                f"[WIKI] Retrieved {len(titles_map)} episode titles for '{title}' S{season:02d}."
+            )
+            if corrected_title and corrected_title != title:
+                logger.info(
+                    f"[WIKI] Title corrected by Wikipedia: '{title}' -> '{corrected_title}'."
+                )
+            else:
+                logger.debug(
+                    f"[WIKI] No title correction for '{title}'. Using original."
+                )
+            logger.debug(
+                f"[WIKI] Episode title keys available: {sorted(list(titles_map.keys()))}"
+            )
         except Exception:
             titles_map, corrected_title = {}, None
 
