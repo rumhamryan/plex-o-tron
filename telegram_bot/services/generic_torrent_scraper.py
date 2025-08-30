@@ -376,4 +376,7 @@ class GenericTorrentScraper:
 
     def _extract_int(self, root: Tag, selector: Any) -> int:
         text = self._extract_text(root, selector)
-        return int(text) if text.isdigit() else 0
+        # Some sites format counts with thousand separators (e.g., "1,927" or "2.141").
+        # Strip all non-digit characters to robustly parse these values.
+        cleaned = re.sub(r"[^\d]", "", text)
+        return int(cleaned) if cleaned else 0

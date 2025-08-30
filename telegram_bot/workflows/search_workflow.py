@@ -107,7 +107,7 @@ async def _handle_movie_title_reply(chat_id, query, context):
         title_part = re.sub(r"[^\w\s]", "", query[: year_match.start()]).strip()
         full_title = f"{title_part} ({year})"
         context.user_data["search_media_type"] = "movie"
-        await _prompt_for_resolution(chat_id, context, full_title)
+        await _prompt_for_resolution(chat_id, context, full_title, media_type="movie")
     else:
         title = re.sub(r"[^\w\s]", "", query).strip()
         context.user_data["search_query_title"] = title
@@ -142,7 +142,7 @@ async def _handle_movie_year_reply(chat_id, query, context):
 
     full_title = f"{title} ({query})"
     context.user_data["search_media_type"] = "movie"
-    await _prompt_for_resolution(chat_id, context, full_title)
+    await _prompt_for_resolution(chat_id, context, full_title, media_type="movie")
 
 
 async def _handle_tv_title_reply(chat_id, query, context):
@@ -196,7 +196,7 @@ async def _handle_tv_season_reply(chat_id, query, context):
 
 
 async def _handle_tv_episode_reply(chat_id, query, context):
-    """Handles user reply for an episode number and triggers the search."""
+    """Handles user reply for an episode number. Then prompts for quality."""
     if context.user_data.get("next_action") != "search_tv_get_episode":
         return
 
@@ -210,17 +210,12 @@ async def _handle_tv_episode_reply(chat_id, query, context):
 
     episode = int(query)
     full_search_term = f"{title} S{season:02d}E{episode:02d}"
-    status_message = await context.bot.send_message(
-        chat_id,
-        f"🔎 Searching all sources for *{escape_markdown(full_search_term, version=2)}*\\.\\.\\.",
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
 
-    # Pass the base show title so the fuzzy filter doesn't drop episode results
-    results = await search_logic.orchestrate_searches(
-        full_search_term, "tv", context, base_query_for_filter=title
-    )
-    await _present_search_results(status_message, context, results, full_search_term)
+    # Store TV search context, then prompt for resolution (1080p/720p)
+    context.user_data["search_media_type"] = "tv"
+    context.user_data["tv_scope"] = "single"
+    context.user_data["tv_base_title"] = title
+    await _prompt_for_resolution(chat_id, context, full_search_term, media_type="tv")
 
 
 # --- Scope Selection Logic ---
@@ -279,87 +274,13 @@ async def _handle_tv_scope_selection(
             )
             return
 
+        # Store details and prompt for TV quality (1080p/720p), then search
         context.user_data["season_episode_count"] = episode_count
-        season_queries = [f"{title} S{season:02d}", f"{title} Season {season}"]
-        found_results: list[dict[str, Any]] = []
-        for q in season_queries:
-            res = await search_logic.orchestrate_searches(q, "tv", context)
-            if res:
-                found_results.extend(res)
-            if len(found_results) >= 3:
-                break
-
-        torrents_to_queue: list[dict[str, Any]] = []
-
-        # --- Primary strategy: look for an actual season pack ---
-        season_token = f"s{season:02d} "
-        pack_candidates = []
-        for item in found_results:
-            title_lower = item.get("title", "").lower()
-            if (
-                any(k in title_lower for k in ["complete", "collection", "season pack"])
-                or season_token in title_lower
-            ):
-                if not re.search(r"s\d{1,2}e\d{1,2}", title_lower):
-                    pack_candidates.append(item)
-
-        season_pack_torrent = (
-            max(pack_candidates, key=lambda x: x.get("score", 0))
-            if pack_candidates
-            else None
-        )
-
-        if season_pack_torrent:
-            parsed_info = parse_torrent_name(season_pack_torrent.get("title", ""))
-            parsed_info.setdefault("title", title)
-            parsed_info.setdefault("season", season)
-            parsed_info["type"] = "tv"
-            parsed_info["is_season_pack"] = True
-            torrents_to_queue.append(
-                {
-                    "link": season_pack_torrent.get("page_url"),
-                    "parsed_info": parsed_info,
-                }
-            )
-        else:
-            # --- Fallback: search for each episode individually ---
-            for ep in range(1, episode_count + 1):
-                search_term = f"{title} S{season:02d}E{ep:02d}"
-                # Reuse single-episode search logic and filter using only the show title
-                ep_results = await search_logic.orchestrate_searches(
-                    search_term, "tv", context, base_query_for_filter=title
-                )
-                if not ep_results:
-                    continue
-                best = ep_results[0]
-                link = best.get("page_url")
-                if not link:
-                    continue
-                parsed_info = parse_torrent_name(best.get("title", ""))
-                # Use the title and season from the user's search for consistency.
-                parsed_info["title"] = title
-                parsed_info["season"] = season
-                parsed_info["episode"] = ep
-                parsed_info["type"] = "tv"
-
-                # Fetch the episode title from Wikipedia before queueing.
-                (
-                    episode_title,
-                    corrected_show_title,
-                ) = await scraping_service.fetch_episode_title_from_wikipedia(
-                    show_title=title, season=season, episode=ep
-                )
-
-                # Add the fetched title to the dictionary.
-                parsed_info["episode_title"] = episode_title
-                if corrected_show_title:
-                    # If Wikipedia found a better title (e.g., "It's" vs "Its"), use it.
-                    parsed_info["title"] = corrected_show_title
-
-                torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
-
-        await _present_season_download_confirmation(
-            query.message, context, torrents_to_queue
+        context.user_data["search_media_type"] = "tv"
+        context.user_data["tv_scope"] = "season"
+        context.user_data["tv_base_title"] = title
+        await _prompt_for_resolution(
+            query.message, context, f"{title} S{season:02d}", media_type="tv"
         )
 
 
@@ -388,12 +309,19 @@ async def _handle_start_button(query, context):
 
 
 async def _handle_resolution_button(query, context):
-    """Handles the resolution selection and triggers the movie search."""
-    resolution = "2160p" if "2160p" in query.data or "4k" in query.data else "1080p"
+    """Handles the resolution selection and triggers the appropriate search."""
+    # Determine resolution based on callback data
+    if any(x in query.data for x in ("2160p", "4k")):
+        resolution = "2160p"
+    elif "720p" in query.data:
+        resolution = "720p"
+    else:
+        resolution = "1080p"
+
     final_title = context.user_data.get("search_final_title")
     media_type = context.user_data.get("search_media_type")
 
-    if not final_title or media_type != "movie":
+    if not final_title or not media_type:
         await safe_edit_message(
             query.message,
             "❌ Search context has expired\\. Please start over\\.",
@@ -401,22 +329,71 @@ async def _handle_resolution_button(query, context):
         )
         return
 
+    # Movies: keep existing behavior
+    if media_type == "movie":
+        await safe_edit_message(
+            query.message,
+            text=f"🔎 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+        year_match = re.search(r"\((\d{4})\)", final_title)
+        year = year_match.group(1) if year_match else None
+        search_title = final_title.split("(")[0].strip()
+
+        results = await search_logic.orchestrate_searches(
+            search_title, "movie", context, year=year, resolution=resolution
+        )
+        filtered_results = _filter_results_by_resolution(results, resolution)
+        await _present_search_results(
+            query.message, context, filtered_results, f"{final_title} [{resolution}]"
+        )
+        return
+
+    # TV: branch based on scope
+    if media_type == "tv":
+        tv_scope = context.user_data.get("tv_scope")
+        title = context.user_data.get("tv_base_title")
+        season = context.user_data.get("search_season_number")
+
+        if tv_scope == "single":
+            await safe_edit_message(
+                query.message,
+                text=f"🔎 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            # Use base title for fuzzy filter to avoid dropping episode results
+            results = await search_logic.orchestrate_searches(
+                final_title, "tv", context, base_query_for_filter=title
+            )
+            filtered_results = _filter_results_by_resolution(results, resolution)
+            await _present_search_results(
+                query.message,
+                context,
+                filtered_results,
+                f"{final_title} [{resolution}]",
+            )
+            return
+
+        if tv_scope == "season" and title and season:
+            await safe_edit_message(
+                query.message,
+                text=(
+                    f"🔎 Searching for Season {escape_markdown(str(season), version=2)} "
+                    f"of *{escape_markdown(title, version=2)}* in *{resolution}*\\.\\.\\."
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            await _perform_tv_season_search_with_resolution(
+                query.message, context, title, int(season), resolution
+            )
+            return
+
+    # Fallback
     await safe_edit_message(
         query.message,
-        text=f"🔎 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
+        "❌ Search context has expired\\. Please start over\\.",
         parse_mode=ParseMode.MARKDOWN_V2,
-    )
-
-    year_match = re.search(r"\((\d{4})\)", final_title)
-    year = year_match.group(1) if year_match else None
-    search_title = final_title.split("(")[0].strip()
-
-    results = await search_logic.orchestrate_searches(
-        search_title, "movie", context, year=year, resolution=resolution
-    )
-    filtered_results = _filter_results_by_resolution(results, resolution)
-    await _present_search_results(
-        query.message, context, filtered_results, f"{final_title} [{resolution}]"
     )
 
 
@@ -515,7 +492,9 @@ async def _handle_year_selection_button(
         context.user_data["search_final_title"] = full_title
         context.user_data["search_media_type"] = "movie"
 
-        await _prompt_for_resolution(query.message, context, full_title)
+        await _prompt_for_resolution(
+            query.message, context, full_title, media_type="movie"
+        )
 
     except IndexError:
         logger.error(f"Could not parse year from callback data: {query.data}")
@@ -620,7 +599,11 @@ async def _present_season_download_confirmation(
 
 
 async def _prompt_for_resolution(
-    target: Message | int, context: ContextTypes.DEFAULT_TYPE, full_title: str
+    target: Message | int,
+    context: ContextTypes.DEFAULT_TYPE,
+    full_title: str,
+    *,
+    media_type: str = "movie",
 ) -> None:
     """
     Asks the user to select a resolution, either by sending a new message
@@ -645,15 +628,26 @@ async def _prompt_for_resolution(
         return
 
     context.user_data["search_final_title"] = full_title
-    context.user_data["search_media_type"] = "movie"
+    context.user_data["search_media_type"] = media_type
 
-    keyboard = [
-        [
-            InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
-            InlineKeyboardButton("4K (2160p)", callback_data="search_resolution_4k"),
-        ],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-    ]
+    if media_type == "tv":
+        keyboard = [
+            [
+                InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
+                InlineKeyboardButton("720p", callback_data="search_resolution_720p"),
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
+    else:
+        keyboard = [
+            [
+                InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
+                InlineKeyboardButton(
+                    "4K (2160p)", callback_data="search_resolution_4k"
+                ),
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     text = f"Got it: `{escape_markdown(full_title, version=2)}`\\. Now, please select your desired resolution:"
@@ -675,10 +669,104 @@ async def _prompt_for_resolution(
         context.user_data["prompt_message_id"] = prompt_message.message_id
 
 
+async def _perform_tv_season_search_with_resolution(
+    message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    title: str,
+    season: int,
+    resolution: str,
+) -> None:
+    """
+    Searches for a TV season pack or individual episodes, applying a resolution filter.
+    On success, presents a confirmation summary to queue the season download.
+    """
+    # Try a couple of season query variants first
+    season_queries = [f"{title} S{season:02d}", f"{title} Season {season}"]
+    found_results: list[dict[str, Any]] = []
+    for q in season_queries:
+        res = await search_logic.orchestrate_searches(q, "tv", context)
+        if res:
+            # Do not filter season packs by resolution; many packs omit it in the title
+            found_results.extend(res)
+        if len(found_results) >= 3:
+            break
+
+    torrents_to_queue: list[dict[str, Any]] = []
+
+    # Primary strategy: look for an actual season pack
+    season_token = f"s{season:02d} "
+    pack_candidates = []
+    for item in found_results:
+        title_lower = item.get("title", "").lower()
+        if (
+            any(k in title_lower for k in ["complete", "collection", "season pack"])
+            or season_token in title_lower
+        ) and not re.search(r"s\d{1,2}e\d{1,2}", title_lower):
+            pack_candidates.append(item)
+
+    season_pack_torrent = (
+        max(pack_candidates, key=lambda x: x.get("score", 0))
+        if pack_candidates
+        else None
+    )
+
+    if season_pack_torrent:
+        parsed_info = parse_torrent_name(season_pack_torrent.get("title", ""))
+        parsed_info.setdefault("title", title)
+        parsed_info.setdefault("season", season)
+        parsed_info["type"] = "tv"
+        parsed_info["is_season_pack"] = True
+        torrents_to_queue.append(
+            {"link": season_pack_torrent.get("page_url"), "parsed_info": parsed_info}
+        )
+    else:
+        # Fallback: search for each episode individually
+        episode_count = int(context.user_data.get("season_episode_count") or 0)
+        for ep in range(1, episode_count + 1):
+            search_term = f"{title} S{season:02d}E{ep:02d}"
+            ep_results = await search_logic.orchestrate_searches(
+                search_term, "tv", context, base_query_for_filter=title
+            )
+            # Do not filter by resolution for episodes in season fallback
+            if not ep_results:
+                continue
+            best = ep_results[0]
+            link = best.get("page_url")
+            if not link:
+                continue
+            parsed_info = parse_torrent_name(best.get("title", ""))
+            parsed_info["title"] = title
+            parsed_info["season"] = season
+            parsed_info["episode"] = ep
+            parsed_info["type"] = "tv"
+
+            # Fetch the episode title from Wikipedia before queueing.
+            (
+                episode_title,
+                corrected_show_title,
+            ) = await scraping_service.fetch_episode_title_from_wikipedia(
+                show_title=title, season=season, episode=ep
+            )
+            parsed_info["episode_title"] = episode_title
+            if corrected_show_title:
+                parsed_info["title"] = corrected_show_title
+
+            torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
+
+    await _present_season_download_confirmation(message, context, torrents_to_queue)
+
+
 def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[dict]:
     """Filters search results to only include entries matching the desired resolution."""
     res = resolution.lower()
-    patterns = ["2160p", "4k"] if res == "2160p" else ["1080p"]
+    if res == "2160p":
+        patterns = ["2160p", "4k"]
+    elif res == "1080p":
+        patterns = ["1080p"]
+    elif res == "720p":
+        patterns = ["720p"]
+    else:
+        patterns = [res]
     return [
         r for r in results if any(p in r.get("title", "").lower() for p in patterns)
     ]
@@ -751,6 +839,8 @@ def _clear_search_context(context):
         "search_media_type",
         "search_season_number",
         "season_episode_count",
+        "tv_scope",
+        "tv_base_title",
     ]
     for key in keys_to_clear:
         context.user_data.pop(key, None)
@@ -800,7 +890,9 @@ async def _process_preliminary_results(
             f"Found one unique year for '{title}': {year}. Proceeding to resolution selection."
         )
         full_title = f"{title} ({year})"
-        await _prompt_for_resolution(status_message, context, full_title)
+        await _prompt_for_resolution(
+            status_message, context, full_title, media_type="movie"
+        )
 
     else:
         logger.warning(

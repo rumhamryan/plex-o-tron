@@ -119,9 +119,20 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
     )
     assert context.user_data["next_action"] == "search_tv_get_episode"
 
-    # Episode step triggers search
+    # Episode step collects input and prompts for resolution
     await handle_search_workflow(
         Update(update_id=5, message=make_message("2")), context
+    )
+
+    # Select resolution to trigger the search
+    await handle_search_buttons(
+        Update(
+            update_id=6,
+            callback_query=make_callback_query(
+                "search_resolution_1080p", make_message()
+            ),
+        ),
+        context,
     )
     orchestrate_mock.assert_awaited_once_with(
         "My Show S01E02", "tv", context, base_query_for_filter="My Show"
@@ -258,11 +269,20 @@ async def test_handle_tv_scope_selection_season(
     )
     context.user_data["search_query_title"] = "Show"
     context.user_data["search_season_number"] = 1
+    # Select season scope
     update = Update(
         update_id=1,
         callback_query=make_callback_query("search_tv_scope_season", make_message()),
     )
     await handle_search_buttons(update, context)
+
+    # Resolution gating: select a resolution to trigger the search
+    res_update = Update(
+        update_id=2,
+        callback_query=make_callback_query("search_resolution_1080p", make_message()),
+    )
+    await handle_search_buttons(res_update, context)
+
     assert orch_mock.call_count == 2
     present_mock.assert_awaited_once()
     passed = present_mock.await_args.args[2]
@@ -294,11 +314,20 @@ async def test_handle_tv_scope_selection_season_fallback(
     )
     context.user_data["search_query_title"] = "Show"
     context.user_data["search_season_number"] = 1
+    # Select season scope
     update = Update(
         update_id=1,
         callback_query=make_callback_query("search_tv_scope_season", make_message()),
     )
     await handle_search_buttons(update, context)
+
+    # Resolution gating: select a resolution to trigger the search
+    res_update = Update(
+        update_id=2,
+        callback_query=make_callback_query("search_resolution_1080p", make_message()),
+    )
+    await handle_search_buttons(res_update, context)
+
     assert orch_mock.call_count == 4
 
     # Episode searches should use the plain title for fuzzy filtering
