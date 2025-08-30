@@ -114,8 +114,9 @@ def parse_torrent_name(name: str) -> dict[str, Any]:
     if year_match:
         year = year_match.group(1)
         title = cleaned_name[: year_match.start()].strip()
-        # Remove trailing hyphens or whitespace
-        title = re.sub(r"[\s-]+$", "", title).strip()
+        # Remove residual trailing separators or brackets before the year
+        # e.g., "Happy Gilmore 2 (" -> "Happy Gilmore 2"
+        title = title.rstrip(" _.-([").strip()
         return {"type": "movie", "title": title, "year": year}
 
     # Fallback for names that don't match standard patterns

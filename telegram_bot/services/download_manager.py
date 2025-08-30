@@ -531,7 +531,9 @@ async def add_download_to_queue(update, context):
         chat_id_str
     ].get("requeued")
     if is_truly_active:
-        message_text = f"✅ Download queued\\. You are position #{position} in line\\."
+        message_text = (
+            f"✅ Download queued\\. You are position \\#{position} in line\\."
+        )
     else:
         message_text = "✅ Your download is next in line and will begin shortly\\."
 
