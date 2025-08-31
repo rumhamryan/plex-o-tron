@@ -744,10 +744,20 @@ async def scrape_yts(
                     await asyncio.sleep(delay)
                     continue
 
-                movie_data = api_data.get("data", {}).get("movie")
-                torrents = movie_data.get("torrents", []) if movie_data else []
+                # Narrow JSON types with explicit isinstance checks for IDEs
+                _data_field = (
+                    api_data.get("data") if isinstance(api_data, dict) else None
+                )
+                movie_data = (
+                    _data_field.get("movie") if isinstance(_data_field, dict) else None
+                )
+                torrents = (
+                    movie_data.get("torrents", [])
+                    if isinstance(movie_data, dict)
+                    else []
+                )
                 conditions = []
-                status = api_data.get("status")
+                status = api_data.get("status") if isinstance(api_data, dict) else None
                 if status != "ok":
                     conditions.append(f"status != 'ok' (got {status!r})")
                 if not movie_data:
@@ -790,7 +800,11 @@ async def scrape_yts(
 
             # Stage 4: Parse the API response
             results: list[dict[str, Any]] = []
-            movie_title = movie_data.get("title_long", query)
+            movie_title = (
+                movie_data.get("title_long", query)
+                if isinstance(movie_data, dict)
+                else query
+            )
 
             for torrent in torrents:
                 quality = torrent.get("quality", "").lower()
@@ -809,13 +823,13 @@ async def scrape_yts(
                         )
                         magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(movie_title)}{trackers}"
 
-                        seeders_count = torrent.get("seeds", 0)  # <--- ADD THIS
+                        seeders_count = torrent.get("seeds", 0)
                         parsed_codec = (
                             _parse_codec(full_title) or "x264"  # Default YTS to x264
                         )
                         score = score_torrent_result(
                             full_title, "YTS", preferences, seeders=seeders_count
-                        )  # <--- CHANGE THIS
+                        )
 
                         results.append(
                             {
@@ -827,7 +841,11 @@ async def scrape_yts(
                                 "size_gb": size_gb,
                                 "codec": parsed_codec,
                                 "seeders": seeders_count,
-                                "year": movie_data.get("year"),  # <-- NEWLY ADDED
+                                "year": (
+                                    movie_data.get("year")
+                                    if isinstance(movie_data, dict)
+                                    else None
+                                ),
                             }
                         )
 

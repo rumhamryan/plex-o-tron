@@ -737,7 +737,8 @@ async def _perform_tv_season_search_with_resolution(
         )
     else:
         # Fallback: search for each episode individually
-        episode_count = int(context.user_data.get("season_episode_count") or 0)
+        # Guard for Optional user_data to satisfy type checkers/IDEs
+        episode_count = int((context.user_data or {}).get("season_episode_count") or 0)
         # Fetch all episode titles once to avoid per-episode Wikipedia lookups
         titles_map: dict[int, str] = {}
         corrected_title: str | None = None

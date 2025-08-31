@@ -228,11 +228,10 @@ async def download_with_progress(
         status = handle.status()
         await status_callback(status)
 
-        # Timeout logic for stalled torrents
-        if (
-            status.state == lt.torrent_status.downloading_metadata
-            and time.monotonic() - start_time > 60
-        ):  # type: ignore
+        # Timeout logic for stalled metadata fetch (avoid libtorrent enum reference)
+        if (not getattr(status, "has_metadata", False)) and (
+            time.monotonic() - start_time > 60
+        ):
             logger.warning(f"Metadata download timed out for {handle.name()}")
             return False, None
 
@@ -631,7 +630,8 @@ async def handle_pause_resume(update, context):
             )
             return
 
-        is_paused = bool(handle.status().flags & lt.torrent_flags.paused)
+        # Use our tracked flag instead of libtorrent flags for compatibility
+        is_paused = bool(download_data.get("is_paused"))
         if is_paused:
             handle.resume()
             download_data["is_paused"] = False

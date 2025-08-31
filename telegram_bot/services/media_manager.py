@@ -109,7 +109,7 @@ def validate_torrent_files(ti: lt.torrent_info) -> str | None:  # type: ignore
 
 
 async def validate_and_enrich_torrent(
-    ti: lt.torrent_info,
+    ti: lt.torrent_info,  # type: ignore
     progress_message: Message,  # type: ignore
 ) -> tuple[str | None, dict[str, Any] | None]:
     """
