@@ -460,20 +460,68 @@ async def fetch_season_episode_count_from_wikipedia(
             auto_suggest=False,
             redirect=True,
         )
-        logger.debug(f"[WIKI] List page URL: {list_page.url}")
+        logger.debug(
+            f"[WIKI] List page resolved -> title: '{getattr(list_page, 'title', '?')}', url: {getattr(list_page, 'url', '?')}"
+        )
         html_to_scrape = await _get_page_html(list_page.url)
     except wikipedia.exceptions.PageError:
         # Fallback to the main show page if the list page doesn't exist
         try:
             logger.debug(
-                f"[WIKI] Dedicated list page missing. Falling back to main page for '{show_title}'."
+                f"[WIKI] Dedicated list page missing. Performing search-first fallback for '{show_title}'."
             )
+            # Search-first approach to avoid autosuggest mis-corrections like 'allen earth'
+            search_results = await asyncio.to_thread(wikipedia.search, show_title)
+            logger.debug(
+                f"[WIKI] Search results for '{show_title}': {search_results[:5] if search_results else '[]'}"
+            )
+            if not search_results:
+                logger.error(
+                    f"[WIKI] No search results for '{show_title}' during fallback."
+                )
+                return None
+
+            # Prefer the first search result; disable autosuggest for determinism
             main_page = await asyncio.to_thread(
-                wikipedia.page, show_title, auto_suggest=True, redirect=True
+                wikipedia.page, search_results[0], auto_suggest=False, redirect=True
             )
-            logger.debug(f"[WIKI] Main page URL: {main_page.url}")
+            logger.debug(
+                f"[WIKI] Fallback main page -> title: '{getattr(main_page, 'title', '?')}', url: {getattr(main_page, 'url', '?')}"
+            )
             html_to_scrape = await _get_page_html(main_page.url)
+        except wikipedia.exceptions.DisambiguationError as e:
+            # Pick the first disambiguation option deterministically and log choices
+            options_preview = e.options[:5] if hasattr(e, "options") else []
+            logger.debug(
+                f"[WIKI] Disambiguation for '{show_title}'. Options: {options_preview}"
+            )
+            try:
+                choice = e.options[0]
+                chosen_page = await asyncio.to_thread(
+                    wikipedia.page, choice, auto_suggest=False, redirect=True
+                )
+                logger.debug(
+                    f"[WIKI] Disambiguation choice -> title: '{getattr(chosen_page, 'title', '?')}', url: {getattr(chosen_page, 'url', '?')}"
+                )
+                html_to_scrape = await _get_page_html(chosen_page.url)
+            except Exception as e2:
+                logger.error(
+                    f"[WIKI] Failed to resolve disambiguation for '{show_title}': {e2}"
+                )
+                return None
         except Exception as e:
+            # Also attempt to log what autosuggest would have done for diagnostics
+            try:
+                auto_page = await asyncio.to_thread(
+                    wikipedia.page, show_title, auto_suggest=True, redirect=True
+                )
+                logger.debug(
+                    f"[WIKI] Autosuggest diagnostic -> title: '{getattr(auto_page, 'title', '?')}', url: {getattr(auto_page, 'url', '?')}"
+                )
+            except Exception as diag:
+                logger.debug(
+                    f"[WIKI] Autosuggest diagnostic raised: {type(diag).__name__}: {diag}"
+                )
             logger.error(f"[WIKI] Failed to fetch page for '{show_title}': {e}")
             return None
     except Exception as e:
@@ -487,6 +535,25 @@ async def fetch_season_episode_count_from_wikipedia(
         return None
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
+
+    # First, reuse the same robust episode-title extraction used by the
+    # single-episode path. If we can enumerate episode titles for the season,
+    # we can derive the count without depending on a 'Series overview' table.
+    try:
+        titles_map = await _extract_titles_for_season(soup, season)
+        if titles_map:
+            ep_numbers = sorted(titles_map.keys())
+            # Prefer the highest episode number seen; fallback to len
+            count = ep_numbers[-1] if ep_numbers else len(titles_map)
+            logger.info(
+                f"[WIKI] Episode count (from titles) for '{show_title}' S{season:02d}: {count}"
+            )
+            return count
+    except Exception as e:
+        logger.debug(
+            f"[WIKI] Title-based episode enumeration failed for '{show_title}' S{season:02d}: {e}"
+        )
+
     overview_table = None
 
     # Find the "Series overview" table
@@ -543,11 +610,11 @@ async def fetch_season_episode_count_from_wikipedia(
         season_num = extract_first_int(cells[0].get_text(strip=True))
         if season_num == season:
             ep_text = cells[episodes_col_index].get_text(strip=True)
-            count = extract_first_int(ep_text)
+            ep_count = extract_first_int(ep_text)
             logger.info(
-                f"[WIKI] Episode count for '{show_title}' S{season:02d}: {count}"
+                f"[WIKI] Episode count for '{show_title}' S{season:02d}: {ep_count}"
             )
-            return count  # Return the extracted episode count
+            return ep_count  # Return the extracted episode count
 
     return None
 
