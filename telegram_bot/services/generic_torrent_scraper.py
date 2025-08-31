@@ -213,6 +213,67 @@ class GenericTorrentScraper:
         best_name, _ = base_name_counts.most_common(1)[0]
         final_results = [r for r, base in strong_candidates if base == best_name]
 
+        # Additional precision filter: avoid overly broad matches for single-token queries.
+        # Example: when the query is "Superman", do not match "The Death of Superman".
+        try:
+
+            def _normalize(text: str) -> str:
+                t = re.sub(r"[^a-z0-9\s]", " ", text.lower())
+                t = re.sub(r"\s+", " ", t).strip()
+                return t
+
+            STOP_WORDS = {"the", "a", "an", "of", "and"}
+
+            def _tokens_no_stop(text: str) -> set[str]:
+                return {
+                    tok
+                    for tok in _normalize(text).split()
+                    if tok and tok not in STOP_WORDS
+                }
+
+            q_tokens = _tokens_no_stop(base_query_for_filter or query)
+            best_tokens = _tokens_no_stop(best_name)
+
+            # If user provided a single meaningful token and the chosen base name adds extra tokens,
+            # try to select a stricter alternative; otherwise, drop results.
+            if (
+                len(q_tokens) == 1
+                and q_tokens.issubset(best_tokens)
+                and len(best_tokens - q_tokens) >= 1
+            ):
+                # Find bases that equal the query tokens or are very close in full-string ratio
+                def _tier(base: str) -> int:
+                    b_tokens = _tokens_no_stop(base)
+                    b_norm = _normalize(base)
+                    q_norm = _normalize(base_query_for_filter or query)
+                    if b_tokens == q_tokens and b_tokens:
+                        return 3
+                    if b_norm == q_norm:
+                        return 3
+                    if q_tokens.issubset(b_tokens) and len(b_tokens - q_tokens) <= 1:
+                        return 2
+                    if fuzz.ratio(q_norm, b_norm) >= 90:
+                        return 2
+                    return 1
+
+                candidates_ok = [b for b in base_name_counts if _tier(b) >= 2]
+                if candidates_ok:
+                    # Choose the most precise, then most frequent
+                    new_best = max(
+                        candidates_ok, key=lambda b: (_tier(b), base_name_counts[b])
+                    )
+                    if new_best != best_name:
+                        best_name = new_best
+                        final_results = [
+                            r for r, base in strong_candidates if base == best_name
+                        ]
+                else:
+                    # No precise alternative; drop to avoid a misleading match
+                    final_results = []
+        except Exception:
+            # If anything goes wrong, keep the original selection rather than failing the search.
+            pass
+
         # Fetch magnet links for remaining results concurrently. Only results
         # that pass filtering trigger additional network requests, reducing
         # overall scraping time.

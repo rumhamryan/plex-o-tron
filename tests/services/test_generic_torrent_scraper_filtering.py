@@ -5,7 +5,7 @@ from telegram_bot.services.generic_torrent_scraper import GenericTorrentScraper
 
 
 @pytest.mark.asyncio
-async def test_two_stage_filtering_keeps_consensus_results(mocker):
+async def test_two_stage_filtering_prefers_precise_single_token_match(mocker):
     site_config = {
         "site_name": "TestSite",
         "base_url": "https://example.com",
@@ -45,5 +45,8 @@ async def test_two_stage_filtering_keeps_consensus_results(mocker):
     scraper = GenericTorrentScraper(site_config)
     results = await scraper.search("Dune", "movie")
 
-    assert len(results) == 2
-    assert all("Dune Part Two" in r.name for r in results)
+    # With the updated precision logic, a single-token query like "Dune"
+    # prefers exact token-equivalent titles over broader ones like
+    # "Dune Part Two". Therefore, only the base title match remains.
+    assert len(results) == 1
+    assert "Dune 1984" in results[0].name
