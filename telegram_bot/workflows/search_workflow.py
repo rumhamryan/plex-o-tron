@@ -766,6 +766,21 @@ async def _perform_tv_season_search_with_resolution(
         except Exception:
             titles_map, corrected_title = {}, None
 
+        # Progress feedback: update the message after each episode search
+        processed_eps = 0
+
+        def _progress_text(last_ep: int | None) -> str:
+            base = (
+                f"🔎 Searching for Season {escape_markdown(str(season), version=2)} "
+                f"of *{escape_markdown(title, version=2)}* in *{escape_markdown(resolution, version=2)}*\\.\\.\\."
+            )
+            if episode_count:
+                if last_ep is not None:
+                    # Escape parentheses for MarkdownV2
+                    return base + (f"\nProgress: {processed_eps}/{episode_count}")
+                return base + f"\nProgress: {processed_eps}/{episode_count}"
+            return base
+
         for ep in range(1, episode_count + 1):
             search_term = f"{title} S{season:02d}E{ep:02d}"
             ep_results = await search_logic.orchestrate_searches(
@@ -773,10 +788,22 @@ async def _perform_tv_season_search_with_resolution(
             )
             # Do not filter by resolution for episodes in season fallback
             if not ep_results:
+                processed_eps += 1
+                await safe_edit_message(
+                    message,
+                    text=_progress_text(ep),
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
                 continue
             best = ep_results[0]
             link = best.get("page_url")
             if not link:
+                processed_eps += 1
+                await safe_edit_message(
+                    message,
+                    text=_progress_text(ep),
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
                 continue
             parsed_info = parse_torrent_name(best.get("title", ""))
             parsed_info["title"] = title
@@ -790,6 +817,14 @@ async def _perform_tv_season_search_with_resolution(
                 parsed_info["title"] = corrected_title
 
             torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
+
+            # Update progress after successful episode processing
+            processed_eps += 1
+            await safe_edit_message(
+                message,
+                text=_progress_text(ep),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
 
     await _present_season_download_confirmation(message, context, torrents_to_queue)
 
