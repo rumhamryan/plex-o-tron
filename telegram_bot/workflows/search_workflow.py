@@ -18,7 +18,7 @@ from telegram.helpers import escape_markdown
 from ..config import logger, MAX_TORRENT_SIZE_GB
 from ..services import search_logic, torrent_service, scraping_service
 from ..services.media_manager import validate_and_enrich_torrent
-from ..utils import safe_edit_message, parse_torrent_name
+from ..utils import safe_edit_message, parse_torrent_name, safe_send_message
 from ..ui.views import send_confirmation_prompt
 
 
@@ -116,7 +116,8 @@ async def _handle_movie_title_reply(chat_id, query, context):
         title = title.title()
         context.user_data["search_query_title"] = title
 
-        status_message = await context.bot.send_message(
+        status_message = await safe_send_message(
+            context.bot,
             chat_id,
             f"🔎 Searching for available years for *{escape_markdown(title, version=2)}*\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -133,8 +134,8 @@ async def _handle_movie_year_reply(chat_id, query, context):
 
     title = context.user_data.get("search_query_title")
     if not title:
-        await context.bot.send_message(
-            chat_id, "❌ Search context was lost. Please start over."
+        await safe_send_message(
+            context.bot, chat_id, "❌ Search context was lost. Please start over."
         )
         return
 
@@ -191,7 +192,8 @@ async def _handle_tv_season_reply(chat_id, query, context):
         ],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
     ]
-    sent_message = await context.bot.send_message(
+    sent_message = await safe_send_message(
+        context.bot,
         chat_id,
         prompt_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -532,7 +534,8 @@ async def _handle_year_selection_button(
 
 async def _send_prompt(chat_id, context, text):
     """Sends a conversational prompt and stores its ID for later cleanup."""
-    prompt_message = await context.bot.send_message(
+    prompt_message = await safe_send_message(
+        context.bot,
         chat_id,
         text,
         reply_markup=InlineKeyboardMarkup(
@@ -642,7 +645,8 @@ async def _prompt_for_resolution(
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         elif isinstance(target, int):
-            await context.bot.send_message(
+            await safe_send_message(
+                context.bot,
                 target,
                 text="❌ An error occurred and your session was lost\\. Please start over\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
@@ -682,7 +686,8 @@ async def _prompt_for_resolution(
             parse_mode=ParseMode.MARKDOWN_V2,
         )
     elif isinstance(target, int):
-        prompt_message = await context.bot.send_message(
+        prompt_message = await safe_send_message(
+            context.bot,
             chat_id=target,
             text=text,
             reply_markup=reply_markup,

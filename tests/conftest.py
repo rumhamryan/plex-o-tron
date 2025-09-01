@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -5,7 +6,10 @@ from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from telegram import Update, Message, Chat, User, CallbackQuery, Bot
+
+# Set PTB timedelta before importing telegram types; keep imports at top via noqa
+os.environ.setdefault("PTB_TIMEDELTA", "1")
+from telegram import Update, Message, Chat, User, CallbackQuery, Bot  # noqa: E402
 
 # Ensure root path is available for imports
 sys.path.append(str(Path(__file__).resolve().parent.parent))

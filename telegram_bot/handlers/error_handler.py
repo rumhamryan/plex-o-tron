@@ -4,7 +4,6 @@ import html
 import json
 import traceback
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from ..config import logger
@@ -49,14 +48,14 @@ async def global_error_handler(
 
     # 5. Finally, inform the user that an error occurred, without exposing technical details.
     if isinstance(update, Update) and update.effective_message:
+        # Use plain text (no parse mode) to avoid Markdown/HTML escaping issues.
         error_text = (
             "❌ An unexpected error occurred.\n\n"
             "I'm sorry, but I encountered a problem while processing your request\\. "
             "The issue has been automatically logged for review\\. Please try again later\\."
         )
         try:
-            await update.effective_message.reply_text(
-                text=error_text, parse_mode=ParseMode.MARKDOWN_V2
-            )
+            # Force plain text to avoid Markdown/HTML parsing issues
+            await update.effective_message.reply_text(text=error_text, parse_mode=None)
         except Exception as e:
             logger.error(f"Failed to send the user-facing error message: {e}")

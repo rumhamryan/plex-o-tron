@@ -31,3 +31,5 @@ async def test_global_error_handler_logs_and_notifies(
     reply_mock.assert_awaited_once()
     args, kwargs = reply_mock.call_args
     assert "An unexpected error occurred" in kwargs["text"]
+    # New behavior: ensure we force plain text to avoid parse errors
+    assert kwargs.get("parse_mode", None) is None

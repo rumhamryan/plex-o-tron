@@ -27,7 +27,7 @@ from ..services.search_logic import (
     find_season_directory,
     find_episode_file,
 )
-from ..utils import safe_edit_message
+from ..utils import safe_edit_message, safe_send_message
 
 if TYPE_CHECKING:
     from plexapi.video import Movie, Episode, Show, Season
@@ -153,7 +153,8 @@ async def handle_delete_workflow(
     # Route based on the expected next action
     if next_action == "delete_movie_collection_search":
         # FIX: Escape the trailing periods
-        status_message = await context.bot.send_message(
+        status_message = await safe_send_message(
+            context.bot,
             chat_id,
             f"🔎 Searching for movie collection: `{escaped_text}`\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -166,7 +167,8 @@ async def handle_delete_workflow(
 
     elif next_action == "delete_movie_single_search":
         # FIX: Escape the trailing periods
-        status_message = await context.bot.send_message(
+        status_message = await safe_send_message(
+            context.bot,
             chat_id,
             f"🔎 Searching for single movie: `{escaped_text}`\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -179,7 +181,8 @@ async def handle_delete_workflow(
 
     elif next_action == "delete_tv_show_search":
         # FIX: Escape the trailing periods
-        status_message = await context.bot.send_message(
+        status_message = await safe_send_message(
+            context.bot,
             chat_id,
             f"🔎 Searching for TV show: `{escaped_text}`\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -210,7 +213,8 @@ async def handle_delete_workflow(
 
     elif next_action == "delete_tv_season_search":
         # FIX: Escape the trailing periods
-        status_message = await context.bot.send_message(
+        status_message = await safe_send_message(
+            context.bot,
             chat_id,
             f"🔎 Searching for season `{escaped_text}`\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -233,7 +237,8 @@ async def handle_delete_workflow(
         if text.isdigit():
             context.user_data["season_to_delete_num"] = int(text)
             context.user_data["next_action"] = "delete_tv_episode_episode_prompt"
-            new_prompt = await context.bot.send_message(
+            new_prompt = await safe_send_message(
+                context.bot,
                 chat_id,
                 f"📺 Season {escaped_text} selected\\. Now, please send the episode number to delete\\.",
                 reply_markup=InlineKeyboardMarkup(
@@ -249,13 +254,14 @@ async def handle_delete_workflow(
             )
             context.user_data["prompt_message_id"] = new_prompt.message_id
         else:
-            await context.bot.send_message(
-                chat_id, "❌ Invalid season number. Please start over."
+            await safe_send_message(
+                context.bot, chat_id, "❌ Invalid season number. Please start over."
             )
 
     elif next_action == "delete_tv_episode_episode_prompt":
         # FIX: Escape the trailing periods
-        status_message = await context.bot.send_message(
+        status_message = await safe_send_message(
+            context.bot,
             chat_id,
             f"🔎 Searching for episode `{escaped_text}`\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,

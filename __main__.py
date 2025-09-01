@@ -1,6 +1,9 @@
 # telegram_bot/__main__.py
 
 import re
+
+# Ensure PTB env flags are set before importing python-telegram-bot
+from telegram_bot import _ptb_env  # noqa: F401
 import libtorrent as lt
 from telegram import Update
 from telegram.ext import (
