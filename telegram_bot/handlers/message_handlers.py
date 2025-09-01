@@ -3,7 +3,7 @@
 import os
 from telegram import Update, Message
 from telegram.ext import ContextTypes
-from telegram.error import BadRequest
+from telegram.error import TelegramError
 
 # --- Refactored Imports: Using absolute paths for clarity and IDE compatibility ---
 from ..config import logger
@@ -45,7 +45,7 @@ async def handle_link_message(
     try:
         progress_message = await message.reply_text("✅ Link received. Analyzing...")
         await message.delete()
-    except BadRequest as e:
+    except TelegramError as e:
         logger.warning(f"Could not delete user message or reply: {e}")
         return  # Cannot proceed without a message to edit
 

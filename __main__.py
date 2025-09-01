@@ -13,6 +13,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 # --- Refactored Imports ---
 from telegram_bot.config import get_configuration, logger
@@ -108,9 +109,19 @@ def main() -> None:
     # The Application object is the heart of the bot. We use `bot_data` to store
     # application-level state and configurations, making them accessible
     # in any handler via the context object.
+    # Configure HTTPX request timeouts to be more forgiving on slow networks
+    # Use explicit *_timeout kwargs for broad PTB compatibility
+    request = HTTPXRequest(
+        connect_timeout=15.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=15.0,
+    )
+
     application = (
         ApplicationBuilder()
         .token(token)
+        .request(request)
         .post_init(
             post_init
         )  # Function to run after initialization (e.g., resume downloads)

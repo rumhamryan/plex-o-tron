@@ -4,7 +4,7 @@ import platform
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
-from telegram.error import BadRequest
+from telegram.error import TelegramError
 from telegram.helpers import escape_markdown
 
 from ..config import logger
@@ -36,8 +36,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         await update.message.delete()
-    except BadRequest:
-        pass  # Ignore if message is old or bot lacks permissions
+    except TelegramError:
+        # Network errors, timeouts, bad requests, or permission issues
+        pass
 
     chat = update.effective_chat
     if not chat:
@@ -61,7 +62,7 @@ async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     try:
         await update.message.delete()
-    except BadRequest:
+    except TelegramError:
         pass
 
     chat = update.effective_chat
@@ -95,7 +96,7 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         await update.message.delete()
-    except BadRequest:
+    except TelegramError:
         pass
 
     # Set the active workflow to 'delete' to route future text messages correctly
@@ -135,7 +136,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         await message.delete()
-    except BadRequest:
+    except TelegramError:
         pass
 
     # Set the active workflow to 'search' to route future text messages correctly
@@ -168,7 +169,7 @@ async def plex_status_command(
 
     try:
         await update.message.delete()
-    except BadRequest:
+    except TelegramError:
         pass
 
     chat = update.effective_chat
@@ -199,7 +200,7 @@ async def plex_restart_command(
 
     try:
         await update.message.delete()
-    except BadRequest:
+    except TelegramError:
         pass
 
     chat = update.effective_chat
