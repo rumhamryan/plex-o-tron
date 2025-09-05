@@ -14,7 +14,7 @@ import yaml
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
-from ..config import logger
+from ..config import logger, MAX_TORRENT_SIZE_GB
 from .search_logic import _parse_codec, score_torrent_result
 from ..utils import extract_first_int, parse_torrent_name
 from .generic_torrent_scraper import GenericTorrentScraper, load_site_config
@@ -877,7 +877,7 @@ async def scrape_yts(
                 quality = torrent.get("quality", "").lower()
                 if not resolution or (resolution and resolution in quality):
                     size_gb = torrent.get("size_bytes", 0) / (1024**3)
-                    if size_gb > 7.0:
+                    if size_gb > MAX_TORRENT_SIZE_GB:
                         continue
 
                     full_title = f"{movie_title} [{torrent.get('quality')}.{torrent.get('type')}] [YTS.MX]"

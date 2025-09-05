@@ -361,16 +361,12 @@ async def _handle_resolution_button(query, context):
         )
         filtered_results = _filter_results_by_resolution(results, resolution)
 
-        # Allow larger sizes for 4K movie releases so viable results (e.g., 1337x)
-        # aren’t dropped by the generic size cap used for smaller content.
-        max_size_override = 30.0 if resolution == "2160p" else None
-
         await _present_search_results(
             query.message,
             context,
             filtered_results,
             f"{final_title} [{resolution}]",
-            max_size_gb=max_size_override,
+            max_size_gb=MAX_TORRENT_SIZE_GB,
         )
         return
 

@@ -8,7 +8,7 @@ import sys
 from typing import Any
 
 # --- Constants ---
-MAX_TORRENT_SIZE_GB = 10
+MAX_TORRENT_SIZE_GB = 20
 MAX_TORRENT_SIZE_BYTES = MAX_TORRENT_SIZE_GB * (1024**3)
 ALLOWED_EXTENSIONS = [".mkv", ".mp4"]
 DELETION_ENABLED = True
