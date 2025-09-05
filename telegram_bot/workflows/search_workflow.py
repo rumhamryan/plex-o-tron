@@ -104,14 +104,16 @@ async def _handle_movie_title_reply(chat_id, query, context):
     year_match = re.search(r"\b(19\d{2}|20\d{2})\b", query)
     if year_match:
         year = year_match.group(0)
-        title_part = re.sub(r"[^\w\s]", "", query[: year_match.start()]).strip()
+        # Preserve hyphens in titles (e.g., "Spider-Man") while removing other punctuation
+        title_part = re.sub(r"[^\w\s-]", "", query[: year_match.start()]).strip()
         # Title-case the movie title portion for display consistency
         title_part = title_part.title()
         full_title = f"{title_part} ({year})"
         context.user_data["search_media_type"] = "movie"
         await _prompt_for_resolution(chat_id, context, full_title, media_type="movie")
     else:
-        title = re.sub(r"[^\w\s]", "", query).strip()
+        # Preserve hyphens in free-form movie titles for search precision
+        title = re.sub(r"[^\w\s-]", "", query).strip()
         # Normalize to Title Case for user-facing messages
         title = title.title()
         context.user_data["search_query_title"] = title
@@ -155,7 +157,8 @@ async def _handle_tv_title_reply(chat_id, query, context):
     if context.user_data.get("next_action") != "search_tv_get_title":
         return
 
-    sanitized_title = re.sub(r"[^\w\s]", "", query).strip()
+    # Preserve hyphens in TV titles (e.g., "Spider-Man") while removing other punctuation
+    sanitized_title = re.sub(r"[^\w\s-]", "", query).strip()
     # Normalize to Title Case for user-facing messages
     sanitized_title = sanitized_title.title()
     context.user_data["search_query_title"] = sanitized_title
