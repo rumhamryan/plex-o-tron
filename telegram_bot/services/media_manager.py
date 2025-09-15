@@ -153,23 +153,30 @@ async def validate_and_enrich_torrent(
 
     # 3. Parse name and enrich if it's a TV show
     parsed_info = parse_torrent_name(ti.name())
-    if parsed_info["type"] == "tv":
-        await safe_edit_message(
-            progress_message,
-            text="📺 TV show detected. Searching Wikipedia for episode title...",
-        )
-
-        episode_title, corrected_show_title = await fetch_episode_title_from_wikipedia(
-            show_title=parsed_info["title"],
-            season=parsed_info["season"],
-            episode=parsed_info["episode"],
-        )
-        parsed_info["episode_title"] = episode_title
-        if corrected_show_title:
-            logger.info(
-                f"Corrected TV show title from '{parsed_info['title']}' to '{corrected_show_title}'."
+    if parsed_info.get("type") == "tv":
+        # For season packs, skip per-episode Wikipedia lookups
+        if parsed_info.get("is_season_pack"):
+            pass
+        else:
+            await safe_edit_message(
+                progress_message,
+                text="📺 TV show detected. Searching Wikipedia for episode title...",
             )
-            parsed_info["title"] = corrected_show_title
+
+            (
+                episode_title,
+                corrected_show_title,
+            ) = await fetch_episode_title_from_wikipedia(
+                show_title=parsed_info["title"],
+                season=parsed_info["season"],
+                episode=parsed_info["episode"],
+            )
+            parsed_info["episode_title"] = episode_title
+            if corrected_show_title:
+                logger.info(
+                    f"Corrected TV show title from '{parsed_info['title']}' to '{corrected_show_title}'."
+                )
+                parsed_info["title"] = corrected_show_title
 
     return None, parsed_info
 
@@ -180,6 +187,8 @@ async def handle_successful_download(
     initial_download_path: str,
     save_paths: dict[str, str],
     plex_config: dict[str, str] | None,
+    *,
+    defer_scan: bool = False,
 ) -> str:
     """
     Moves completed downloads to the correct media directory, renames them
@@ -244,12 +253,15 @@ async def handle_successful_download(
                 logger.info(f"Moving file from '{current_path}' to '{new_path}'")
                 await asyncio.to_thread(shutil.move, current_path, new_path)
 
-                await _trigger_plex_scan(parsed_info_for_file.get("type"), plex_config)
                 processed += 1
 
+            # Trigger a single Plex scan after all files are moved
+            scan_status_message = await _trigger_plex_scan("tv", plex_config)
+            # Telegram MarkdownV2 requires escaping '.' characters
             return (
                 "✅ *Success\\!*\n"
-                f"Processed and moved {processed} episodes from the season pack."
+                f"Processed and moved {processed} episodes from the season pack\\."
+                f"{scan_status_message}"
             )
 
         # --- Single file torrent processing ---
@@ -278,9 +290,13 @@ async def handle_successful_download(
         logger.info(f"Moving file from '{current_path}' to '{new_path}'")
         await asyncio.to_thread(shutil.move, current_path, new_path)
 
-        scan_status_message = await _trigger_plex_scan(
-            parsed_info.get("type"), plex_config
-        )
+        # Optionally defer Plex scan when part of a multi-episode batch
+        if defer_scan:
+            scan_status_message = ""
+        else:
+            scan_status_message = await _trigger_plex_scan(
+                parsed_info.get("type"), plex_config
+            )
 
     except Exception as e:
         logger.error(f"Post-processing failed: {e}", exc_info=True)

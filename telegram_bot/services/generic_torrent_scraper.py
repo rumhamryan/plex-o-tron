@@ -191,10 +191,45 @@ class GenericTorrentScraper:
             base_name = parsed_info.get("title", "").lower()
             candidates.append((res, base_name))
 
+        # Token helpers to allow simple, fast guardrails against known mis-matches
+        def _normalize_local(text: str) -> str:
+            t = re.sub(r"[^a-z0-9\s]", " ", text.lower())
+            t = re.sub(r"\s+", " ", t).strip()
+            return t
+
+        LOCAL_STOP = {"the", "a", "an", "of", "and"}
+
+        def _tokens_no_stop_local(text: str) -> set[str]:
+            return {
+                tok
+                for tok in _normalize_local(text).split()
+                if tok and tok not in LOCAL_STOP
+            }
+
+        q_tokens = _tokens_no_stop_local(base_query_for_filter or query)
+
+        # For TV searches, exclude candidates that contain certain disallowed tokens
+        # that are not present in the user's query (e.g., "anime" for spin-off titles).
+        disallowed_tokens_tv = {"anime"}
+        disallowed_active = (
+            isinstance(media_type, str)
+            and media_type.lower().startswith("tv")
+            and disallowed_tokens_tv.isdisjoint(q_tokens)
+        )
+
+        def _allowed_base(base: str) -> bool:
+            if not base:
+                return False
+            if not disallowed_active:
+                return True
+            base_tokens = _tokens_no_stop_local(base)
+            return disallowed_tokens_tv.isdisjoint(base_tokens)
+
         strong_candidates = [
             (r, base)
             for r, base in candidates
-            if base and self._fuzz_scorer(filter_query, base) >= self._fuzz_threshold
+            if _allowed_base(base)
+            and self._fuzz_scorer(filter_query, base) >= self._fuzz_threshold
         ]
         if not strong_candidates:
             logger.info(
@@ -210,7 +245,15 @@ class GenericTorrentScraper:
             )
             return []
 
-        best_name, _ = base_name_counts.most_common(1)[0]
+        # Prefer a consensus base name without disallowed tokens when active
+        if disallowed_active:
+            filtered_bases = [b for b in base_name_counts if _allowed_base(b)]
+            if filtered_bases:
+                best_name = max(filtered_bases, key=lambda b: base_name_counts[b])
+            else:
+                best_name, _ = base_name_counts.most_common(1)[0]
+        else:
+            best_name, _ = base_name_counts.most_common(1)[0]
         final_results = [r for r, base in strong_candidates if base == best_name]
 
         # Additional precision filter: avoid overly broad matches for single-token queries.

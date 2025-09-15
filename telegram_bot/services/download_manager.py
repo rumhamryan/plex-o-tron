@@ -17,7 +17,7 @@ from telegram.helpers import escape_markdown
 from ..config import logger, PERSISTENCE_FILE
 from ..state import save_state
 from ..utils import safe_edit_message
-from .media_manager import handle_successful_download
+from .media_manager import handle_successful_download, _trigger_plex_scan
 
 
 class ProgressReporter:
@@ -276,12 +276,15 @@ async def download_task_wrapper(download_data: dict, application: Application):
         )
 
         if success and ti:
+            # Defer Plex scan if this download is part of a batch of episodes
+            defer_scan = bool(source_dict.get("batch_id"))
             message_text = await handle_successful_download(
                 ti=ti,
                 parsed_info=source_dict.get("parsed_info", {}),
                 initial_download_path=initial_save_path,
                 save_paths=application.bot_data.get("SAVE_PATHS", {}),
                 plex_config=application.bot_data.get("PLEX_CONFIG"),
+                defer_scan=defer_scan,
             )
             # Now that the media file has been moved, we can safely delete the originals.
             logger.info(
@@ -292,6 +295,14 @@ async def download_task_wrapper(download_data: dict, application: Application):
             if handle and handle.is_valid():
                 # This flag tells libtorrent to remove the torrent and delete all its files.
                 ses.remove_torrent(handle, lt.session.delete_files)  # type: ignore
+            # If part of a season batch, update counters and maybe trigger a single scan.
+            message_text = await _update_batch_and_maybe_scan(
+                application,
+                source_dict,
+                message_text,
+                source_dict.get("parsed_info", {}),
+            )
+
         else:
             if not download_data.get("requeued"):
                 message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager\\."
@@ -343,6 +354,55 @@ async def download_task_wrapper(download_data: dict, application: Application):
                 initial_save_path,
             )
             await process_queue_for_user(chat_id, application)
+
+
+async def _update_batch_and_maybe_scan(
+    application: Application,
+    source_dict: dict[str, Any],
+    message_text: str,
+    parsed_info: dict[str, Any],
+) -> str:
+    """Updates season-batch counters and triggers a single Plex scan on completion.
+
+    Returns the (possibly) augmented message_text with batch-complete info lines.
+    """
+    try:
+        batch_id = source_dict.get("batch_id")
+        if not batch_id:
+            return message_text
+
+        batches: dict[str, Any] = application.bot_data.setdefault(
+            "DOWNLOAD_BATCHES", {}
+        )
+        batch = batches.get(batch_id)
+        if not isinstance(batch, dict):
+            return message_text
+
+        batch["done"] = int(batch.get("done", 0)) + 1
+        total = int(batch.get("total", 0))
+        if batch["done"] < total or batch.get("scanned"):
+            return message_text
+
+        # Mark scanned before awaiting network, to avoid double-scans if re-entered
+        batch["scanned"] = True
+
+        # Compose a compact, MarkdownV2-safe batch completion line
+        title = str(parsed_info.get("title", "This Show"))
+        season = int(parsed_info.get("season", 0) or 0)
+        title_md = escape_markdown(title, version=2)
+        info_line = (
+            "\n\n*Batch Complete*\n"
+            f"Season {season:02d} of *{title_md}* finalized: {total}/{total} episodes\\.\n"
+            "Starting Plex scan…"
+        )
+
+        scan_msg = await _trigger_plex_scan(
+            batch.get("media_type", "tv"), application.bot_data.get("PLEX_CONFIG")
+        )
+        return f"{message_text}{info_line}{scan_msg}"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Batch tracking error: {e}")
+        return message_text
 
 
 async def _requeue_download(download_data: dict, application: Application):
@@ -578,6 +638,16 @@ async def add_season_to_queue(update, context):
     if chat_id_str not in download_queues:
         download_queues[chat_id_str] = []
 
+    # Create a batch id to defer Plex scan until all episodes are moved
+    batch_id = f"season-{int(time.time())}-{chat_id}"
+    batches: dict[str, Any] = context.bot_data.setdefault("DOWNLOAD_BATCHES", {})
+    batches[batch_id] = {
+        "total": len(pending_list),
+        "done": 0,
+        "media_type": "tv",
+        "scanned": False,
+    }
+
     for torrent_data in pending_list:
         link = torrent_data.get("link")
         if not link:
@@ -587,6 +657,7 @@ async def add_season_to_queue(update, context):
             "value": link,
             "type": "magnet" if link.startswith("magnet:") else "url",
             "parsed_info": parsed_info,
+            "batch_id": batch_id,
             "original_message_id": query.message.message_id,
         }
         download_data = {

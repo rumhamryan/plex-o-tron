@@ -732,7 +732,10 @@ async def _perform_tv_season_search_with_resolution(
     season_queries = [f"{title} S{season:02d}", f"{title} Season {season}"]
     found_results: list[dict[str, Any]] = []
     for q in season_queries:
-        res = await search_logic.orchestrate_searches(q, "tv", context)
+        # Use the base title as a stricter filter to avoid spin-off mis-matches
+        res = await search_logic.orchestrate_searches(
+            q, "tv", context, base_query_for_filter=title
+        )
         if res:
             # Do not filter season packs by resolution; many packs omit it in the title
             found_results.extend(res)
@@ -743,9 +746,9 @@ async def _perform_tv_season_search_with_resolution(
 
     # Primary strategy: look for an actual season pack (unless explicitly skipped)
     season_pack_torrent = None
+    pack_candidates = []
     if not force_individual_episodes:
         season_token = f"s{season:02d} "
-        pack_candidates = []
         for item in found_results:
             title_lower = item.get("title", "").lower()
             if (

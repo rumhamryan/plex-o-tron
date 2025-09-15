@@ -156,5 +156,6 @@ async def test_handle_successful_download_season_pack(mocker):
         any_order=True,
     )
     assert fetch_mock.await_count == 2
-    assert scan_mock.call_count == 2
+    # One scan after all files have been moved
+    assert scan_mock.call_count == 1
     assert "Processed and moved 2 episodes" in result
