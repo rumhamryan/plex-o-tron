@@ -364,3 +364,54 @@ async def test_present_season_download_confirmation_pack(mocker, context, make_m
     assert context.user_data["pending_season_download"] == torrents
     assert "season pack" in safe_mock.await_args.kwargs["text"].lower()
     safe_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_present_season_download_confirmation_pack_has_reject_button(
+    mocker, context, make_message
+):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+    )
+    context.user_data["search_season_number"] = 1
+    context.user_data["season_episode_count"] = 10
+    torrents = [{"link": "pack", "parsed_info": {"is_season_pack": True}}]
+    message = make_message()
+    await _present_season_download_confirmation(message, context, torrents)
+    kwargs = safe_mock.await_args.kwargs
+    # Find the Reject button in the inline keyboard
+    keyboard = kwargs["reply_markup"].inline_keyboard
+    labels = [btn.text for row in keyboard for btn in row]
+    assert "Reject" in labels
+
+
+@pytest.mark.asyncio
+async def test_handle_reject_season_pack_triggers_individual(
+    mocker, context, make_update, make_callback_query, make_message
+):
+    # Arrange minimal state and mocks
+    context.user_data["tv_base_title"] = "Show"
+    context.user_data["search_season_number"] = 1
+    context.user_data["search_resolution"] = "1080p"
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+    )
+    perf_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._perform_tv_season_search_with_resolution",
+        new=AsyncMock(),
+    )
+
+    message = make_message()
+    update = make_update(
+        callback_query=make_callback_query("reject_season_pack", message)
+    )
+
+    from telegram_bot.workflows.search_workflow import handle_reject_season_pack
+
+    await handle_reject_season_pack(update, context)
+
+    safe_mock.assert_awaited()
+    perf_mock.assert_awaited_once()
+    args, kwargs = perf_mock.await_args
+    # Assert forced individual episodes
+    assert kwargs.get("force_individual_episodes") is True

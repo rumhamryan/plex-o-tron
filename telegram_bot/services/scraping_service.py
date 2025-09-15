@@ -45,7 +45,7 @@ async def _get_page_html(url: str) -> str | None:
 
 
 async def fetch_episode_title_from_wikipedia(
-    show_title: str, season: int, episode: int
+    show_title: str, season: int, episode: int, _last_resort: bool = False
 ) -> tuple[str | None, str | None]:
     """
     Fetches an episode title from Wikipedia, trying a dedicated episode list page first,
@@ -97,11 +97,28 @@ async def fetch_episode_title_from_wikipedia(
         logger.error(
             f"[WIKI] Could not find any Wikipedia page for '{show_title}'. Aborting."
         )
+        # Last-resort retry for TV titles: append qualifier once
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_episode_title_from_wikipedia(
+                qualified, season, episode, _last_resort=True
+            )
         return None, None
     except Exception as e:
         logger.error(
             f"[WIKI] An unexpected error occurred during main page search: {e}"
         )
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_episode_title_from_wikipedia(
+                qualified, season, episode, _last_resort=True
+            )
         return None, None
 
     # --- Step 2: Use the canonical title to find the dedicated episode page ---
@@ -132,6 +149,15 @@ async def fetch_episode_title_from_wikipedia(
 
     if not html_to_scrape:
         logger.error("[WIKI] All page search attempts failed.")
+        # As a last resort, retry with a TV-series qualified title if not already tried
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_episode_title_from_wikipedia(
+                qualified, season, episode, _last_resort=True
+            )
         return None, None
 
     # --- Step 3: Parse the HTML to find the episode title ---
@@ -146,12 +172,21 @@ async def fetch_episode_title_from_wikipedia(
         logger.warning(
             f"[WIKI] All parsing strategies failed to find S{season:02d}E{episode:02d}."
         )
+        # Final attempt with qualified TV title
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_episode_title_from_wikipedia(
+                qualified, season, episode, _last_resort=True
+            )
 
     return episode_title, corrected_show_title
 
 
 async def fetch_episode_titles_for_season(
-    show_title: str, season: int
+    show_title: str, season: int, _last_resort: bool = False
 ) -> tuple[dict[int, str], str | None]:
     """Fetch all episode titles for a given season in one pass.
 
@@ -179,6 +214,14 @@ async def fetch_episode_titles_for_season(
         search_results = await asyncio.to_thread(wikipedia.search, show_title)
         if not search_results:
             logger.warning(f"[WIKI] No Wikipedia search results for '{show_title}'.")
+            if not _last_resort:
+                qualified = f"{show_title} (TV series)"
+                logger.info(
+                    f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+                )
+                return await fetch_episode_titles_for_season(
+                    qualified, season, _last_resort=True
+                )
             return {}, None
         main_page_title = search_results[0]
         main_page = await asyncio.to_thread(
@@ -196,6 +239,14 @@ async def fetch_episode_titles_for_season(
         logger.error(
             f"[WIKI] Failed resolving main page for '{show_title}'. Continuing without correction."
         )
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_episode_titles_for_season(
+                qualified, season, _last_resort=True
+            )
         return {}, None
 
     # Step 2: Prefer dedicated list page; fallback to main page
@@ -219,6 +270,14 @@ async def fetch_episode_titles_for_season(
         logger.warning(
             f"[WIKI] No HTML retrieved for '{canonical_title}'. Returning empty titles."
         )
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_episode_titles_for_season(
+                qualified, season, _last_resort=True
+            )
         return {}, corrected_show_title
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
@@ -228,6 +287,14 @@ async def fetch_episode_titles_for_season(
             f"[WIKI] Parsed {len(titles_map)} episode titles for '{canonical_title}' S{season:02d}."
         )
         _WIKI_TITLES_CACHE[cache_key] = (titles_map, corrected_show_title)
+    if not titles_map and not _last_resort:
+        qualified = f"{show_title} (TV series)"
+        logger.info(
+            f"[WIKI] No titles parsed. Retrying with TV qualifier as last resort: '{qualified}'"
+        )
+        return await fetch_episode_titles_for_season(
+            qualified, season, _last_resort=True
+        )
     return titles_map, corrected_show_title
 
 
@@ -442,7 +509,7 @@ async def _extract_title_from_embedded_table(
 
 
 async def fetch_season_episode_count_from_wikipedia(
-    show_title: str, season: int
+    show_title: str, season: int, _last_resort: bool = False
 ) -> int | None:
     """Fetches the number of episodes for a given season from Wikipedia."""
     logger.info(
@@ -523,15 +590,39 @@ async def fetch_season_episode_count_from_wikipedia(
                     f"[WIKI] Autosuggest diagnostic raised: {type(diag).__name__}: {diag}"
                 )
             logger.error(f"[WIKI] Failed to fetch page for '{show_title}': {e}")
+            if not _last_resort:
+                qualified = f"{show_title} (TV series)"
+                logger.info(
+                    f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+                )
+                return await fetch_season_episode_count_from_wikipedia(
+                    qualified, season, _last_resort=True
+                )
             return None
     except Exception as e:
         logger.error(f"[WIKI] Unexpected error when fetching page: {e}")
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_season_episode_count_from_wikipedia(
+                qualified, season, _last_resort=True
+            )
         return None
 
     if not html_to_scrape:
         logger.warning(
             f"[WIKI] No HTML retrieved for '{show_title}' S{season:02d}. Unable to determine episode count."
         )
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_season_episode_count_from_wikipedia(
+                qualified, season, _last_resort=True
+            )
         return None
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
@@ -573,6 +664,14 @@ async def fetch_season_episode_count_from_wikipedia(
 
     if not isinstance(overview_table, Tag):
         logger.debug(f"[WIKI] 'Series overview' table not found for '{show_title}'.")
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_season_episode_count_from_wikipedia(
+                qualified, season, _last_resort=True
+            )
         return None
 
     # Find the column index for "Episodes"

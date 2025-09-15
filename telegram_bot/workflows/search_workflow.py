@@ -89,6 +89,8 @@ async def handle_search_buttons(
         await _handle_year_selection_button(query, context)
     elif action.startswith("search_select_"):
         await _handle_result_selection_button(query, context)
+    elif action == "reject_season_pack":
+        await handle_reject_season_pack(update, context)
     else:
         logger.warning(f"Received unhandled search callback: {action}")
 
@@ -335,6 +337,11 @@ async def _handle_resolution_button(query, context):
         resolution = "720p"
     else:
         resolution = "1080p"
+
+    # Persist the user's chosen resolution for potential later actions
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data["search_resolution"] = resolution
 
     final_title = context.user_data.get("search_final_title")
     media_type = context.user_data.get("search_media_type")
@@ -606,12 +613,25 @@ async def _present_season_download_confirmation(
     else:
         summary = f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}\\."
 
-    keyboard = [
-        [
-            InlineKeyboardButton("Confirm", callback_data="confirm_season_download"),
-            InlineKeyboardButton("Cancel", callback_data="cancel_operation"),
+    if is_pack:
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "Confirm", callback_data="confirm_season_download"
+                ),
+                InlineKeyboardButton("Reject", callback_data="reject_season_pack"),
+                InlineKeyboardButton("Cancel", callback_data="cancel_operation"),
+            ]
         ]
-    ]
+    else:
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "Confirm", callback_data="confirm_season_download"
+                ),
+                InlineKeyboardButton("Cancel", callback_data="cancel_operation"),
+            ]
+        ]
 
     await safe_edit_message(
         message,
@@ -701,6 +721,8 @@ async def _perform_tv_season_search_with_resolution(
     title: str,
     season: int,
     resolution: str,
+    *,
+    force_individual_episodes: bool = False,
 ) -> None:
     """
     Searches for a TV season pack or individual episodes, applying a resolution filter.
@@ -719,29 +741,44 @@ async def _perform_tv_season_search_with_resolution(
 
     torrents_to_queue: list[dict[str, Any]] = []
 
-    # Primary strategy: look for an actual season pack
-    season_token = f"s{season:02d} "
-    pack_candidates = []
-    for item in found_results:
-        title_lower = item.get("title", "").lower()
-        if (
-            any(k in title_lower for k in ["complete", "collection", "season pack"])
-            or season_token in title_lower
-        ) and not re.search(r"s\d{1,2}e\d{1,2}", title_lower):
-            pack_candidates.append(item)
+    # Primary strategy: look for an actual season pack (unless explicitly skipped)
+    season_pack_torrent = None
+    if not force_individual_episodes:
+        season_token = f"s{season:02d} "
+        pack_candidates = []
+        for item in found_results:
+            title_lower = item.get("title", "").lower()
+            if (
+                any(k in title_lower for k in ["complete", "collection", "season pack"])
+                or season_token in title_lower
+            ) and not re.search(r"s\d{1,2}e\d{1,2}", title_lower):
+                pack_candidates.append(item)
 
-    season_pack_torrent = (
-        max(pack_candidates, key=lambda x: x.get("score", 0))
-        if pack_candidates
-        else None
-    )
+        season_pack_torrent = (
+            max(pack_candidates, key=lambda x: x.get("score", 0))
+            if pack_candidates
+            else None
+        )
 
-    if season_pack_torrent:
+    if season_pack_torrent and not force_individual_episodes:
         parsed_info = parse_torrent_name(season_pack_torrent.get("title", ""))
         parsed_info.setdefault("title", title)
         parsed_info.setdefault("season", season)
         parsed_info["type"] = "tv"
         parsed_info["is_season_pack"] = True
+        # Enrich with episode titles for progress reporting
+        try:
+            (
+                season_titles_map,
+                season_corrected_title,
+            ) = await scraping_service.fetch_episode_titles_for_season(title, season)
+            if season_corrected_title:
+                parsed_info["title"] = season_corrected_title
+            if season_titles_map:
+                ordered_titles = [t for _, t in sorted(season_titles_map.items())]
+                parsed_info["season_episode_titles"] = ordered_titles
+        except Exception:
+            pass
         torrents_to_queue.append(
             {"link": season_pack_torrent.get("page_url"), "parsed_info": parsed_info}
         )
@@ -838,6 +875,51 @@ async def _perform_tv_season_search_with_resolution(
             )
 
     await _present_season_download_confirmation(message, context, torrents_to_queue)
+
+
+async def handle_reject_season_pack(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles rejection of a season pack by collecting single episodes instead."""
+    query = update.callback_query
+    if not query or not isinstance(query.message, Message):
+        return
+
+    if context.user_data is None:
+        context.user_data = {}
+
+    title = context.user_data.get("tv_base_title")
+    season = context.user_data.get("search_season_number")
+    resolution = context.user_data.get("search_resolution", "1080p")
+
+    if not title or season is None:
+        await safe_edit_message(
+            query.message,
+            text="❌ Search context has expired\\. Please start over\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    prefix = escape_markdown(
+        "🔄 Rejected season pack. Collecting single episodes for ", version=2
+    )
+    title_md = escape_markdown(str(title), version=2)
+    # Use ellipsis character to avoid MarkdownV2 '.' escaping issues
+    message_text = f"{prefix}*{title_md}* S{int(season):02d}…"
+    await safe_edit_message(
+        query.message,
+        text=message_text,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+    await _perform_tv_season_search_with_resolution(
+        query.message,
+        context,
+        str(title),
+        int(season),
+        str(resolution),
+        force_individual_episodes=True,
+    )
 
 
 def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[dict]:

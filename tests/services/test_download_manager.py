@@ -98,6 +98,49 @@ async def test_progress_reporter_tv_paused(mocker):
 
 
 @pytest.mark.asyncio
+async def test_progress_reporter_season_pack_shows_episode_names(mocker):
+    status = SimpleNamespace(
+        progress=0.75,
+        download_rate=2 * 1024 * 1024,
+        state=SimpleNamespace(name="downloading"),
+        num_peers=7,
+    )
+    application = Mock()
+    download_data = {"lock": asyncio.Lock(), "is_paused": False}
+    parsed_info = {
+        "type": "tv",
+        "title": "Show",
+        "season": 1,
+        "is_season_pack": True,
+        "season_episode_titles": [
+            "Ep1",
+            "Ep2",
+            "Ep3",
+        ],
+    }
+    reporter = ProgressReporter(
+        application,
+        chat_id=1,
+        message_id=2,
+        parsed_info=parsed_info,
+        clean_name="ignored",
+        download_data=download_data,
+    )
+    safe_mock = mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message",
+        AsyncMock(),
+    )
+
+    await reporter.report(status)
+
+    safe_mock.assert_awaited_once()
+    _, kwargs = safe_mock.call_args
+    text = kwargs["text"]
+    assert "Episodes:" in text
+    assert "Ep1" in text and "Ep2" in text and "Ep3" in text
+
+
+@pytest.mark.asyncio
 async def test_progress_reporter_skips_when_cancellation_pending(mocker):
     status = SimpleNamespace(
         progress=0.5,
