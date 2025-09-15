@@ -127,11 +127,44 @@ async def _handle_movie_title_reply(chat_id, query, context):
         status_message = await safe_send_message(
             context.bot,
             chat_id,
-            f"🔎 Searching for available years for *{escape_markdown(title, version=2)}*\\.\\.\\.",
+            f"🔎 Looking up release years for *{escape_markdown(title, version=2)}* on Wikipedia\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
-        results = await search_logic.orchestrate_searches(title, "movie", context)
+        # Use Wikipedia to resolve movie years first; fall back to site-derived years if needed
+        try:
+            years, corrected = await scraping_service.fetch_movie_years_from_wikipedia(
+                title
+            )
+        except Exception:
+            years, corrected = [], None
+
+        if corrected and isinstance(corrected, str) and corrected.strip():
+            # Keep the corrected base for subsequent prompts and searches
+            context.user_data["search_query_title"] = corrected
+            display_title = corrected
+        else:
+            context.user_data["search_query_title"] = title
+            display_title = title
+
+        if isinstance(years, list) and len(years) > 1:
+            unique_years = [str(y) for y in sorted({int(y) for y in years})]
+            await _prompt_for_year_selection(
+                status_message, context, display_title, unique_years
+            )
+            return
+        if isinstance(years, list) and len(years) == 1:
+            full_title = f"{display_title} ({years[0]})"
+            context.user_data["search_media_type"] = "movie"
+            await _prompt_for_resolution(
+                status_message, context, full_title, media_type="movie"
+            )
+            return
+
+        # Fallback if Wikipedia failed to resolve: infer from preliminary search results
+        results = await search_logic.orchestrate_searches(
+            display_title, "movie", context
+        )
         await _process_preliminary_results(status_message, context, results)
 
 

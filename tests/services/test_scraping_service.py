@@ -25,6 +25,10 @@ def _clear_wiki_caches():
         scraping_service._WIKI_SOUP_CACHE.clear()  # type: ignore[attr-defined]
     except Exception:
         pass
+    try:
+        scraping_service._WIKI_MOVIE_CACHE.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
 
 class DummyResponse:
@@ -554,6 +558,300 @@ async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
     assert len(results) == 1
     assert any("attempt 1 failed validation" in m for m in caplog.messages)
     assert any("attempt 2 succeeded" in m for m in caplog.messages)
+
+
+@pytest.mark.asyncio
+async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
+    """When page 1 has no matching year, the scraper paginates to find older films."""
+    # Page 1: no matching movies for the given year
+    search_html_p1 = """
+    <div class="browse-movie-wrap">
+      <a class="browse-movie-title" href="https://yts.mx/movies/alien-xyz">Alien Something</a>
+      <div class="browse-movie-year">2003</div>
+    </div>
+    """
+    # Page 2: contains the correct 1979 entry
+    search_html_p2 = """
+    <div class="browse-movie-wrap">
+      <a class="browse-movie-title" href="https://yts.mx/movies/alien-1979">Alien</a>
+      <div class="browse-movie-year">1979</div>
+    </div>
+    """
+    movie_html = '<div id="movie-info" data-movie-id="1234"></div>'
+    api_json = {
+        "status": "ok",
+        "data": {
+            "movie": {
+                "title_long": "Alien (1979)",
+                "year": 1979,
+                "torrents": [
+                    {
+                        "quality": "1080p",
+                        "type": "WEB",
+                        "size_bytes": 1024**3,
+                        "hash": "abcdef",
+                        "seeds": 10,
+                    }
+                ],
+            }
+        },
+    }
+
+    responses = [
+        DummyResponse(text=search_html_p1),  # browse page 1
+        DummyResponse(text=search_html_p2),  # browse page 2
+        DummyResponse(text=movie_html),  # movie page
+        DummyResponse(json_data=api_json),  # details API
+    ]
+    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x264": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"YTS": 2},
+                }
+            }
+        }
+    }
+
+    results = await scraping_service.scrape_yts(
+        "Alien",
+        "movie",
+        "https://yts.mx/browse-movies/{query}",
+        context,
+        year="1979",
+        resolution="1080p",
+    )
+
+    assert len(results) == 1
+    assert results[0]["source"] == "YTS.mx"
+    assert results[0]["seeders"] == 10
+
+
+@pytest.mark.asyncio
+async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
+    """API fallback tries again without quality when the first pass returns 0."""
+    # No browse matches -> triggers API fallback
+    search_html = """
+    <div class="other"></div>
+    """
+    # Attempt 1 (year+quality): 0 movies
+    api_empty = {"status": "ok", "data": {"movie_count": 0}}
+    # Attempt 2 (year only): has one movie with 1080p torrent
+    api_with_movie = {
+        "status": "ok",
+        "data": {
+            "movies": [
+                {
+                    "title_long": "Test Movie (1979)",
+                    "year": 1979,
+                    "torrents": [
+                        {
+                            "quality": "1080p",
+                            "type": "WEB",
+                            "size_bytes": 1024**3,
+                            "hash": "abcdef",
+                            "seeds": 7,
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    responses = [
+        DummyResponse(text=search_html),  # browse page 1 (no choices)
+        DummyResponse(text=search_html),  # browse page 2 (still no choices)
+        DummyResponse(text=search_html),  # browse page 3
+        DummyResponse(text=search_html),  # browse page 4
+        DummyResponse(text=search_html),  # browse page 5
+        DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+        DummyResponse(json_data=api_with_movie),  # API attempt 2 (year only)
+    ]
+    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x264": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"YTS": 2},
+                }
+            }
+        }
+    }
+
+    results = await scraping_service.scrape_yts(
+        "Test Movie",
+        "movie",
+        "https://yts.mx/browse-movies/{query}",
+        context,
+        year="1979",
+        resolution="1080p",
+    )
+
+    assert len(results) == 1
+    assert results[0]["seeders"] == 7
+    assert results[0]["source"] == "YTS.mx"
+
+
+@pytest.mark.asyncio
+async def test_scrape_yts_api_fallback_relaxes_year(mocker):
+    """API fallback eventually drops year param and filters locally by year."""
+    # No browse matches -> triggers API fallback
+    search_html = '<div class="other"></div>'
+    api_empty = {"status": "ok", "data": {"movie_count": 0}}
+    # Attempt 3 (no year param): include multiple years, only target year remains
+    api_all_years = {
+        "status": "ok",
+        "data": {
+            "movies": [
+                {
+                    "title_long": "Alien (1979)",
+                    "year": 1979,
+                    "torrents": [
+                        {
+                            "quality": "1080p",
+                            "type": "WEB",
+                            "size_bytes": 1024**3,
+                            "hash": "abcd11",
+                            "seeds": 5,
+                        }
+                    ],
+                },
+                {
+                    "title_long": "Alien (2012)",
+                    "year": 2012,
+                    "torrents": [
+                        {
+                            "quality": "1080p",
+                            "type": "WEB",
+                            "size_bytes": 1024**3,
+                            "hash": "efgh22",
+                            "seeds": 9,
+                        }
+                    ],
+                },
+            ]
+        },
+    }
+
+    responses = [
+        DummyResponse(text=search_html),  # browse page 1
+        DummyResponse(text=search_html),  # browse page 2
+        DummyResponse(text=search_html),  # browse page 3
+        DummyResponse(text=search_html),  # browse page 4
+        DummyResponse(text=search_html),  # browse page 5
+        DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+        DummyResponse(json_data=api_empty),  # API attempt 2 (year only)
+        DummyResponse(json_data=api_all_years),  # API attempt 3 (no year param)
+    ]
+    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x264": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"YTS": 2},
+                }
+            }
+        }
+    }
+
+    results = await scraping_service.scrape_yts(
+        "Alien",
+        "movie",
+        "https://yts.mx/browse-movies/{query}",
+        context,
+        year="1979",
+        resolution="1080p",
+    )
+
+    # Only the 1979 entry should remain after local filtering
+    assert len(results) == 1
+    assert (
+        results[0]["title"].startswith("Alien (1979)")
+        or "(1979)" in results[0]["title"]
+    )
+    assert results[0]["source"] == "YTS.mx"
+
+
+@pytest.mark.asyncio
+async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
+    """With a year present, token gate avoids false matches like 'The Dunes' for 'Dune'."""
+    # Page 1 contains 'The Dunes' (fails token gate), then pages 2-5 empty -> fallback
+    browse_dunes = """
+    <div class="browse-movie-wrap">
+      <a class="browse-movie-title" href="https://yts.mx/movies/the-dunes-1979">The Dunes</a>
+      <div class="browse-movie-year">1979</div>
+    </div>
+    """
+    browse_empty = '<div class="other"></div>'
+
+    api_with_movie = {
+        "status": "ok",
+        "data": {
+            "movies": [
+                {
+                    "title_long": "Dune (1979)",
+                    "year": 1979,
+                    "torrents": [
+                        {
+                            "quality": "1080p",
+                            "type": "WEB",
+                            "size_bytes": 1024**3,
+                            "hash": "aaaaaa",
+                            "seeds": 3,
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    responses = [
+        DummyResponse(text=browse_dunes),  # page 1 (gated out)
+        DummyResponse(text=browse_empty),  # page 2
+        DummyResponse(text=browse_empty),  # page 3
+        DummyResponse(text=browse_empty),  # page 4
+        DummyResponse(text=browse_empty),  # page 5
+        DummyResponse(json_data=api_with_movie),  # API fallback
+    ]
+    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "movies": {
+                    "codecs": {"x264": 5},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {"YTS": 2},
+                }
+            }
+        }
+    }
+
+    results = await scraping_service.scrape_yts(
+        "Dune",
+        "movie",
+        "https://yts.mx/browse-movies/{query}",
+        context,
+        year="1979",
+        resolution="1080p",
+    )
+
+    assert len(results) == 1
+    assert results[0]["source"] == "YTS.mx"
 
 
 def test_strategy_find_direct_links_magnet():

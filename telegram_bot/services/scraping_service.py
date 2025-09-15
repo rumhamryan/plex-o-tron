@@ -9,7 +9,8 @@ from typing import Any
 
 import httpx
 import wikipedia
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Tag, GuessedAtParserWarning
+import warnings
 import yaml
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
@@ -24,6 +25,12 @@ from .generic_torrent_scraper import GenericTorrentScraper, load_site_config
 # network requests and HTML parsing during season workflows.
 _WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], str | None]] = {}
 _WIKI_SOUP_CACHE: dict[str, BeautifulSoup] = {}
+_WIKI_MOVIE_CACHE: dict[str, tuple[list[int], str | None]] = {}
+
+# Suppress noisy BeautifulSoup parser guess warnings originating from wikipedia lib only
+warnings.filterwarnings(
+    "ignore", category=GuessedAtParserWarning, module=r"^wikipedia\.wikipedia$"
+)
 
 
 # --- Helper Functions ---
@@ -183,6 +190,287 @@ async def fetch_episode_title_from_wikipedia(
             )
 
     return episode_title, corrected_show_title
+
+
+async def fetch_movie_years_from_wikipedia(
+    movie_title: str, _last_resort: bool = False
+) -> tuple[list[int], str | None]:
+    """
+    Resolve a movie's likely release year(s) from Wikipedia and optionally return a
+    corrected title suitable for searching.
+
+    Strategy (adapted from TV show Wikipedia flow, but film-focused):
+    1) Wikipedia search for the title and try to resolve a canonical film page
+       ("Title (YEAR film)" preferred, then "Title (film)").
+    2) If a film page is found, extract a release year from the page title,
+       summary, or infobox.
+    3) If resolution fails, fall back to the disambiguation page to collect film
+       entries like "Title (YEAR film)".
+    4) As a last resort, retry once by appending "(film)" to the query.
+
+    Returns a tuple: (years, corrected_title_for_search).
+    The corrected title is normalized for searching (i.e., parentheses are
+    stripped so "Spider-Man" may be returned instead of "Spider-Man (film)"),
+    and is only provided if it differs from the input after normalization.
+    """
+
+    title = movie_title.strip()
+    if not title:
+        return [], None
+
+    cache_key = title.lower()
+    cached = _WIKI_MOVIE_CACHE.get(cache_key)
+    if cached:
+        return cached
+
+    def _extract_years_from_text(text: str) -> list[int]:
+        yrs = []
+        for m in re.finditer(r"\b(19\d{2}|20\d{2})\b", text):
+            try:
+                yrs.append(int(m.group(1)))
+            except Exception:
+                continue
+        return yrs
+
+    def _year_from_title(page_title: str) -> int | None:
+        m = re.search(r"\((19\d{2}|20\d{2})\s+film\)", page_title, re.IGNORECASE)
+        return int(m.group(1)) if m else None
+
+    def _normalized_search_title(page_title: str) -> str:
+        # Remove any trailing parenthetical qualifier like "(film)" or "(1979 film)".
+        base = re.sub(r"\s*\([^)]*\)\s*$", "", page_title).strip()
+        return base
+
+    def _pick_film_candidate(
+        search_results: list[str],
+    ) -> tuple[str | None, str | None]:
+        # Returns (best_title, disambiguation_title)
+        if not search_results:
+            return None, None
+        exact_year_pat = re.compile(
+            rf"^{re.escape(title)}\s*\((\d{{4}})\s+film\)$", re.IGNORECASE
+        )
+        simple_film_pat = re.compile(
+            rf"^{re.escape(title)}\s*\((?:feature\s+)?film\)$", re.IGNORECASE
+        )
+        any_film_pat = re.compile(rf"^{re.escape(title)}.*\bfilm\)$", re.IGNORECASE)
+        disamb_pat = re.compile(r"\(disambiguation\)$", re.IGNORECASE)
+
+        best: str | None = None
+        disamb: str | None = None
+        for candidate in search_results:
+            if disamb_pat.search(candidate) and disamb is None:
+                disamb = candidate
+            if exact_year_pat.match(candidate):
+                return candidate, disamb
+            if best is None and simple_film_pat.match(candidate):
+                best = candidate
+            elif best is None and any_film_pat.match(candidate):
+                best = candidate
+        return best, disamb
+
+    years: list[int] = []
+    corrected_for_search: str | None = None
+
+    try:
+        logger.info("[WIKI] Resolving movie years via Wikipedia for '%s'", title)
+        # Use a higher result cap to capture multiple film variants (e.g., 1984, 2021)
+        search_results = await asyncio.to_thread(wikipedia.search, title, 50)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[WIKI] Wikipedia search failed for '%s': %s", title, e)
+        search_results = []
+
+    # Collect all equal-precision film years directly from search results first
+    equal_precision_years: set[int] = set()
+    film_year_pat = re.compile(
+        rf"^{re.escape(title)}\s*\((19\d{{2}}|20\d{{2}})\s+film\)$",
+        re.IGNORECASE,
+    )
+    for cand in search_results or []:
+        m = film_year_pat.match(cand)
+        if m:
+            try:
+                equal_precision_years.add(int(m.group(1)))
+            except Exception:
+                pass
+
+    best_title, disamb_title = _pick_film_candidate(search_results)
+
+    # Try to resolve the best film candidate page first
+    page_url: str | None = None
+    if best_title:
+        try:
+            page = await asyncio.to_thread(
+                wikipedia.page, best_title, auto_suggest=False, redirect=True
+            )
+            page_url = getattr(page, "url", None)
+
+            # Only expose a corrected base title if it materially differs for searching
+            normalized = _normalized_search_title(page.title)
+            if normalized.lower() != title.lower():
+                corrected_for_search = normalized
+
+            # Prefer year encoded in the title e.g., "Title (1979 film)"
+            if (y := _year_from_title(page.title)) is not None:
+                years.append(y)
+            else:
+                # Fallback 1: try summary heuristic "is a 1979 ... film"
+                try:
+                    summary = await asyncio.to_thread(
+                        wikipedia.summary, page.title, sentences=2, auto_suggest=False
+                    )
+                except Exception:
+                    summary = ""
+                m = re.search(
+                    r"\b(19\d{2}|20\d{2})\b[^.]{0,60}\bfilm\b", summary, re.IGNORECASE
+                )
+                if m:
+                    years.append(int(m.group(1)))
+                else:
+                    # Fallback 2: fetch HTML and parse infobox release dates
+                    if page_url:
+                        html = await _get_page_html(page_url)
+                        if html:
+                            soup = BeautifulSoup(html, "lxml")
+                            infobox = soup.find(
+                                "table", class_=re.compile(r"\binfobox\b")
+                            )
+                            if isinstance(infobox, Tag):
+                                for row in infobox.find_all("tr"):
+                                    if not isinstance(row, Tag):
+                                        continue
+                                    th = row.find("th")
+                                    if (
+                                        th
+                                        and "release" in th.get_text(strip=True).lower()
+                                    ):
+                                        td = row.find("td")
+                                        if td:
+                                            cand_years = _extract_years_from_text(
+                                                td.get_text(" ", strip=True)
+                                            )
+                                            for y in cand_years:
+                                                if y not in years:
+                                                    years.append(y)
+                            # As a last HTML heuristic, try the first paragraph
+                            if not years:
+                                lead_p = soup.find("p")
+                                if isinstance(lead_p, Tag):
+                                    m2 = re.search(
+                                        r"\b(19\d{2}|20\d{2})\b[^.]{0,60}\bfilm\b",
+                                        lead_p.get_text(" ", strip=True),
+                                        re.IGNORECASE,
+                                    )
+                                    if m2:
+                                        years.append(int(m2.group(1)))
+        except wikipedia.exceptions.DisambiguationError as d_err:
+            # Collect film years directly from disambiguation options
+            for opt in getattr(d_err, "options", []) or []:
+                m = re.search(r"\((19\d{2}|20\d{2})\s+film\)", opt, re.IGNORECASE)
+                if m:
+                    y = int(m.group(1))
+                    if y not in years:
+                        years.append(y)
+            # If no years, fall through to explicit disambiguation page parsing below
+            disamb_title = disamb_title or f"{title} (disambiguation)"
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[WIKI] Error resolving film page for '%s': %s", title, e)
+
+    # If we still have no years OR we want to supplement equal-precision set, parse disambiguation
+    if disamb_title:
+        try:
+            disamb_page = await asyncio.to_thread(
+                wikipedia.page, disamb_title, auto_suggest=False, redirect=True
+            )
+            html = await _get_page_html(getattr(disamb_page, "url", ""))
+            if html:
+                soup = BeautifulSoup(html, "lxml")
+                link_pat = re.compile(
+                    rf"^{re.escape(title)}\s*\((19\d{{2}}|20\d{{2}})\s+film\)$",
+                    re.IGNORECASE,
+                )
+                for a in soup.find_all("a", href=True):
+                    if not isinstance(a, Tag):
+                        continue
+                    text = a.get_text(strip=True)
+                    m = link_pat.match(text)
+                    if m:
+                        y = int(m.group(1))
+                        equal_precision_years.add(y)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(
+                "[WIKI] Error parsing disambiguation for '%s' via '%s': %s",
+                title,
+                disamb_title,
+                e,
+            )
+
+    # If still underrepresented, try an explicit '(disambiguation)' page fallback
+    if len(equal_precision_years) < 2:
+        fallback_disamb = f"{title} (disambiguation)"
+        try:
+            disamb_page = await asyncio.to_thread(
+                wikipedia.page, fallback_disamb, auto_suggest=False, redirect=True
+            )
+            html = await _get_page_html(getattr(disamb_page, "url", ""))
+            if html:
+                soup = BeautifulSoup(html, "lxml")
+                link_pat = re.compile(
+                    rf"^{re.escape(title)}\s*\((19\d{{2}}|20\d{{2}})\s+film\)$",
+                    re.IGNORECASE,
+                )
+                for a in soup.find_all("a", href=True):
+                    if not isinstance(a, Tag):
+                        continue
+                    text = a.get_text(strip=True)
+                    m = link_pat.match(text)
+                    if m:
+                        y = int(m.group(1))
+                        equal_precision_years.add(y)
+        except Exception:
+            # Silent fallback; not all titles have a dedicated disambiguation page
+            pass
+
+    # Last resort: try appending (film) once if nothing found
+    if not years and not _last_resort and "(film)" not in title.lower():
+        qualified = f"{title} (film)"
+        logger.info(
+            "[WIKI] No film years found for '%s'. Retrying with qualifier: '%s'",
+            title,
+            qualified,
+        )
+        yr2, corr2 = await fetch_movie_years_from_wikipedia(
+            qualified, _last_resort=True
+        )
+        # Normalize corrected title for search if available; otherwise, use the qualified base
+        if corr2:
+            corrected_for_search = corr2
+        elif corrected_for_search is None:
+            # Strip qualifier when handing back a corrected base for searching
+            corrected_for_search = _normalized_search_title(qualified)
+        years = yr2
+
+    # Prefer equal-precision years if any were found; otherwise, fall back to heuristics.
+    preferred_years: list[int]
+    if equal_precision_years:
+        preferred_years = sorted(equal_precision_years)
+    else:
+        # De-duplicate heuristic-derived years while preserving order
+        seen: set[int] = set()
+        preferred_years = []
+        for y in years:
+            if y not in seen:
+                seen.add(y)
+                preferred_years.append(y)
+
+    logger.info(
+        "[WIKI] Movie years for '%s': %s (corrected: %s)",
+        title,
+        preferred_years,
+        corrected_for_search,
+    )
+    _WIKI_MOVIE_CACHE[cache_key] = (preferred_years, corrected_for_search)
+    return preferred_years, corrected_for_search
 
 
 async def fetch_episode_titles_for_season(
@@ -1058,49 +1346,239 @@ async def scrape_yts(
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
 
+            # --- helpers for robust title matching ---
+            STOPWORDS = {"the", "a", "an", "of", "and"}
+
+            def _tokens(s: str) -> set[str]:
+                return {t for t in re.findall(r"[a-z0-9]+", s.lower()) if t}
+
+            base_tokens = _tokens(query) - STOPWORDS
+
+            def _passes_gate(title_text: str) -> bool:
+                # Require at least one non-stopword token from query to appear in candidate
+                cand_tokens = _tokens(title_text)
+                return (
+                    any(t in cand_tokens for t in base_tokens) if base_tokens else True
+                )
+
             # Stage 1: Scrape search results to find the movie's page URL
             formatted_query = urllib.parse.quote_plus(query)
-            search_url = search_url_template.replace("{query}", formatted_query)
-            response = await client.get(search_url, headers=headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "lxml")
 
-            choices = {}
-            for movie_wrapper in soup.find_all("div", class_="browse-movie-wrap"):
-                # --- Refactored Type Check: Ensure movie_wrapper is a Tag to resolve IDE errors ---
-                if not isinstance(movie_wrapper, Tag):
-                    continue
+            async def _fetch_browse_page(url: str) -> BeautifulSoup | None:
+                try:
+                    resp = await client.get(url, headers=headers)
+                    resp.raise_for_status()
+                    return BeautifulSoup(resp.text, "lxml")
+                except Exception:
+                    return None
 
-                year_tag = movie_wrapper.find("div", class_="browse-movie-year")
-                scraped_year = (
-                    year_tag.get_text(strip=True) if isinstance(year_tag, Tag) else None
-                )
-                if year and scraped_year and year != scraped_year:
-                    continue
+            def _add_page_param(url: str, page_num: int) -> str:
+                if page_num <= 1:
+                    return url
+                joiner = "&" if "?" in url else "?"
+                return f"{url}{joiner}page={page_num}"
 
-                title_tag = movie_wrapper.find("a", class_="browse-movie-title")
-                if isinstance(title_tag, Tag):
-                    if (href := title_tag.get("href")) and (
-                        title_text := title_tag.get_text(strip=True)
-                    ):
-                        choices[href] = title_text
+            def _collect_choices_from_soup(soup: BeautifulSoup) -> dict[str, str]:
+                out: dict[str, str] = {}
+                for movie_wrapper in soup.find_all("div", class_="browse-movie-wrap"):
+                    if not isinstance(movie_wrapper, Tag):
+                        continue
+                    year_tag = movie_wrapper.find("div", class_="browse-movie-year")
+                    scraped_year = (
+                        year_tag.get_text(strip=True)
+                        if isinstance(year_tag, Tag)
+                        else None
+                    )
+                    if year and scraped_year and year != scraped_year:
+                        continue
+                    title_tag = movie_wrapper.find("a", class_="browse-movie-title")
+                    if isinstance(title_tag, Tag):
+                        href = title_tag.get("href")
+                        title_text = title_tag.get_text(strip=True)
+                        if isinstance(href, str) and title_text:
+                            # Gate by tokens when a year is specified to avoid near-homonyms
+                            if not year or _passes_gate(title_text):
+                                out[href] = title_text
+                return out
+
+            # Try the first page. If nothing matches (common for older films due to sorting),
+            # paginate up to a small max to discover the intended year.
+            base_search_url = search_url_template.replace("{query}", formatted_query)
+            choices: dict[str, str] = {}
+            first_soup = await _fetch_browse_page(base_search_url)
+            if first_soup:
+                choices.update(_collect_choices_from_soup(first_soup))
+
+            if not choices and year:
+                for page_num in range(2, 6):  # check a few pages for older titles
+                    paged_url = _add_page_param(base_search_url, page_num)
+                    soup = await _fetch_browse_page(paged_url)
+                    if not soup:
+                        continue
+                    choices.update(_collect_choices_from_soup(soup))
+                    if choices:
+                        break
+
+            async def _api_fallback() -> list[dict[str, Any]]:
+                """Query YTS list_movies API directly and build results when browse fails or is ambiguous."""
+
+                def _build_results_from_movies(
+                    movies: list[dict[str, Any]],
+                ) -> list[dict[str, Any]]:
+                    out: list[dict[str, Any]] = []
+                    for mv in movies:
+                        try:
+                            mv_title = mv.get("title_long") or mv.get("title") or query
+                            mv_year = mv.get("year")
+                            if year and mv_year and str(mv_year) != str(year):
+                                continue
+                            if year and not _passes_gate(str(mv_title)):
+                                # Avoid near-homonyms like 'The Dunes'
+                                continue
+                            for tor in mv.get("torrents", []) or []:
+                                quality = str(tor.get("quality", "")).lower()
+                                if (
+                                    resolution
+                                    and isinstance(resolution, str)
+                                    and resolution.lower() not in quality
+                                ):
+                                    continue
+                                size_gb = (tor.get("size_bytes", 0) or 0) / (1024**3)
+                                if size_gb > MAX_TORRENT_SIZE_GB:
+                                    continue
+                                info_hash = tor.get("hash")
+                                if not info_hash:
+                                    continue
+                                title_full = f"{mv_title} [{tor.get('quality')}.{tor.get('type')}] [YTS.MX]"
+                                trackers = "&tr=" + "&tr=".join(
+                                    [
+                                        "udp://open.demonii.com:1337/announce",
+                                        "udp://tracker.openbittorrent.com:80",
+                                    ]
+                                )
+                                magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(str(mv_title))}{trackers}"
+                                seeders_count = int(tor.get("seeds", 0) or 0)
+                                parsed_codec = _parse_codec(title_full) or "x264"
+                                score = score_torrent_result(
+                                    title_full,
+                                    "YTS",
+                                    preferences,
+                                    seeders=seeders_count,
+                                )
+                                out.append(
+                                    {
+                                        "title": title_full,
+                                        "page_url": magnet_link,
+                                        "score": score,
+                                        "source": "YTS.mx",
+                                        "uploader": "YTS",
+                                        "size_gb": size_gb,
+                                        "codec": parsed_codec,
+                                        "seeders": seeders_count,
+                                        "year": mv_year,
+                                    }
+                                )
+                        except Exception:
+                            continue
+                    return out
+
+                async def _call_list_movies(
+                    params: dict[str, Any],
+                ) -> list[dict[str, Any]]:
+                    try:
+                        resp = await client.get(
+                            "https://yts.mx/api/v2/list_movies.json", params=params
+                        )
+                        resp.raise_for_status()
+                        payload = resp.json()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug(
+                            "[SCRAPER] YTS API fallback request failed: %s", exc
+                        )
+                        return []
+                    data = payload.get("data") if isinstance(payload, dict) else None
+                    movies = data.get("movies") if isinstance(data, dict) else None
+                    if not isinstance(movies, list):
+                        return []
+                    return _build_results_from_movies(movies)
+
+                # Attempt 1: honor both year and quality if provided
+                base_params: dict[str, Any] = {"query_term": query, "limit": 50}
+                if isinstance(resolution, str) and resolution.lower() in {
+                    "720p",
+                    "1080p",
+                    "2160p",
+                }:
+                    base_params["quality"] = resolution.lower()
+                if year and str(year).isdigit():
+                    base_params["year"] = str(year)
+                results = await _call_list_movies(base_params)
+                if results:
+                    logger.info(
+                        "[SCRAPER] YTS API fallback finished. Found %d torrents.",
+                        len(results),
+                    )
+                    return results
+
+                # Attempt 2: drop quality, keep year
+                params_no_quality = {
+                    k: v for k, v in base_params.items() if k != "quality"
+                }
+                results = await _call_list_movies(params_no_quality)
+                if results:
+                    logger.info(
+                        "[SCRAPER] YTS API fallback (no quality) finished. Found %d torrents.",
+                        len(results),
+                    )
+                    return results
+
+                # Attempt 3: drop year filter from request but filter in-code by year
+                params_no_year = {k: v for k, v in base_params.items() if k != "year"}
+                results_all_years = await _call_list_movies(params_no_year)
+                if results_all_years:
+                    # _build_results_from_movies() already filters by 'year' via closure
+                    logger.info(
+                        "[SCRAPER] YTS API fallback (no year param) finished. Found %d torrents after filtering.",
+                        len(results_all_years),
+                    )
+                    return results_all_years
+
+                logger.info("[SCRAPER] YTS API fallback finished. Found 0 torrents.")
+                return []
 
             if not choices:
-                logger.warning(
-                    f"[SCRAPER] YTS Stage 1: No movies found matching year '{year}'."
-                )
-                return []
+                if year:
+                    logger.warning(
+                        f"[SCRAPER] YTS Stage 1: No movies found matching year '{year}'. Trying API fallback."
+                    )
+                    return await _api_fallback()
+                else:
+                    logger.warning(
+                        f"[SCRAPER] YTS Stage 1: No movies found for '{query}'."
+                    )
+                    return []
 
-            best_match = process.extractOne(query, choices, scorer=fuzz.ratio)
+            # Use a more robust scorer and apply token gating if year is provided
+            best_match = process.extractOne(query, choices, scorer=fuzz.token_set_ratio)
+            is_confident = bool(
+                best_match
+                and len(best_match) == 3
+                and best_match[1] >= (80 if year else 86)
+            )
+            gated_ok = True
+            if year and best_match and len(best_match) == 3:
+                candidate_title = choices.get(best_match[2], "")
+                gated_ok = _passes_gate(candidate_title)
 
-            # --- Refactored Match Validation: Safely handle potentially incorrect type stubs from `thefuzz` ---
-            # `thefuzz` can return a 3-element tuple (choice, score, key) when choices is a dict.
-            # This check is safer than the original complex single-line check.
-            if not (best_match and len(best_match) == 3 and best_match[1] > 85):
+            if not (is_confident and gated_ok):
                 logger.warning(
-                    f"[SCRAPER] YTS Stage 1: No confident match found for '{query}'. Best was: {best_match}"
+                    f"[SCRAPER] YTS Stage 1: No confident gated match for '{query}'. Best was: {best_match}. Trying API fallback."
                 )
-                return []
+                api_results = await _api_fallback()
+                if api_results:
+                    return api_results
+                else:
+                    return []
 
             # The URL is the third element (the key from the choices dict).
             best_page_url = best_match[2]
@@ -1123,7 +1601,8 @@ async def scrape_yts(
                 logger.error(
                     f"[SCRAPER ERROR] YTS Stage 2: Could not find data-movie-id on page {best_page_url}"
                 )
-                return []
+                # Try API fallback as a last resort
+                return await _api_fallback()
 
             # Stage 3: Call the YTS API with the movie ID and validate
             api_url = f"https://yts.mx/api/v2/movie_details.json?movie_id={movie_id}"
@@ -1204,7 +1683,8 @@ async def scrape_yts(
                         f"for movie id {movie_id}."
                     )
                 )
-                return []
+                # Try API fallback if details endpoint keeps failing
+                return await _api_fallback()
 
             # Stage 4: Parse the API response
             results: list[dict[str, Any]] = []
@@ -1216,7 +1696,11 @@ async def scrape_yts(
 
             for torrent in torrents:
                 quality = torrent.get("quality", "").lower()
-                if not resolution or (resolution and resolution in quality):
+                if not resolution or (
+                    resolution
+                    and isinstance(resolution, str)
+                    and resolution.lower() in quality
+                ):
                     size_gb = torrent.get("size_bytes", 0) / (1024**3)
                     if size_gb > MAX_TORRENT_SIZE_GB:
                         continue
