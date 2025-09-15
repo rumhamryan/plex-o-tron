@@ -252,19 +252,34 @@ async def fetch_episode_titles_for_season(
     # Step 2: Prefer dedicated list page; fallback to main page
     html_to_scrape: str | None = None
     try:
-        direct_query = f"List of {canonical_title} episodes"
-        logger.info(f"[WIKI] Attempting dedicated list page lookup: '{direct_query}'.")
-        list_page = await asyncio.to_thread(
-            wikipedia.page, direct_query, auto_suggest=False, redirect=True
+        # Try with the user-provided title first to avoid incorrect canonical corrections
+        direct_query_user = f"List of {show_title} episodes"
+        logger.info(
+            f"[WIKI] Attempting dedicated list page lookup: '{direct_query_user}'."
         )
-        logger.debug(f"[WIKI] List page URL: {list_page.url}")
-        html_to_scrape = await _get_page_html(list_page.url)
+        list_page_user = await asyncio.to_thread(
+            wikipedia.page, direct_query_user, auto_suggest=False, redirect=True
+        )
+        logger.debug(f"[WIKI] List page URL: {list_page_user.url}")
+        html_to_scrape = await _get_page_html(list_page_user.url)
     except Exception:
-        if main_page_url:
+        try:
+            # If that failed, try with canonical title next
+            direct_query_canon = f"List of {canonical_title} episodes"
             logger.info(
-                f"[WIKI] Dedicated list page not found. Falling back to main page for '{canonical_title}'."
+                f"[WIKI] Dedicated list page not found. Retrying with canonical: '{direct_query_canon}'."
             )
-            html_to_scrape = await _get_page_html(main_page_url)
+            list_page_canon = await asyncio.to_thread(
+                wikipedia.page, direct_query_canon, auto_suggest=False, redirect=True
+            )
+            logger.debug(f"[WIKI] List page URL: {list_page_canon.url}")
+            html_to_scrape = await _get_page_html(list_page_canon.url)
+        except Exception:
+            if main_page_url:
+                logger.info(
+                    f"[WIKI] Dedicated list page not found. Falling back to main page for '{canonical_title}'."
+                )
+                html_to_scrape = await _get_page_html(main_page_url)
 
     if not html_to_scrape:
         logger.warning(
@@ -296,6 +311,167 @@ async def fetch_episode_titles_for_season(
             qualified, season, _last_resort=True
         )
     return titles_map, corrected_show_title
+
+
+async def fetch_total_seasons_from_wikipedia(
+    show_title: str, _last_resort: bool = False
+) -> int | None:
+    """Determine the total number of seasons for a TV show using Wikipedia.
+
+    Strategy:
+    1) Resolve the canonical show title (handles redirects and corrections).
+    2) Prefer the dedicated "List of ... episodes" page; fallback to the main page.
+    3) Parse for a "Series overview" table to enumerate seasons; otherwise, count
+       distinct "Season N" headers.
+
+    Returns the count of seasons if found, otherwise None.
+    """
+    canonical_title = show_title
+    main_page_url: str | None = None
+
+    # Step 1: Resolve main show page to get canonical title
+    try:
+        logger.info(
+            f"[WIKI] Resolving main show page for '{show_title}' to determine total seasons."
+        )
+        search_results = await asyncio.to_thread(wikipedia.search, show_title)
+        if not search_results:
+            logger.warning(f"[WIKI] No Wikipedia search results for '{show_title}'.")
+            if not _last_resort:
+                qualified = f"{show_title} (TV series)"
+                logger.info(
+                    f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+                )
+                return await fetch_total_seasons_from_wikipedia(
+                    qualified, _last_resort=True
+                )
+            return None
+        main_page_title = search_results[0]
+        main_page = await asyncio.to_thread(
+            wikipedia.page, main_page_title, auto_suggest=False, redirect=True
+        )
+        main_page_url = main_page.url
+        if main_page.title != show_title:
+            canonical_title = main_page.title
+            logger.info(
+                f"[WIKI] Title corrected: '{show_title}' -> '{canonical_title}'."
+            )
+        logger.debug(f"[WIKI] Main page URL: {main_page_url}")
+    except Exception as e:
+        logger.error(
+            f"[WIKI] Failed resolving main page for '{show_title}': {e}. Continuing without correction."
+        )
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_total_seasons_from_wikipedia(
+                qualified, _last_resort=True
+            )
+        return None
+
+    # Step 2: Prefer dedicated list page; fallback to main page
+    html_to_scrape: str | None = None
+    try:
+        direct_query = f"List of {canonical_title} episodes"
+        logger.info(f"[WIKI] Attempting dedicated list page lookup: '{direct_query}'.")
+        list_page = await asyncio.to_thread(
+            wikipedia.page, direct_query, auto_suggest=False, redirect=True
+        )
+        logger.debug(f"[WIKI] List page URL: {list_page.url}")
+        html_to_scrape = await _get_page_html(list_page.url)
+    except Exception:
+        if main_page_url:
+            logger.info(
+                f"[WIKI] Dedicated list page not found. Falling back to main page for '{canonical_title}'."
+            )
+            html_to_scrape = await _get_page_html(main_page_url)
+
+    if not html_to_scrape:
+        logger.warning(
+            f"[WIKI] No HTML retrieved for '{canonical_title}'. Unable to determine season count."
+        )
+        if not _last_resort:
+            qualified = f"{show_title} (TV series)"
+            logger.info(
+                f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+            )
+            return await fetch_total_seasons_from_wikipedia(
+                qualified, _last_resort=True
+            )
+        return None
+
+    soup = BeautifulSoup(html_to_scrape, "lxml")
+
+    # Strategy A: Use "Series overview" table if present
+    try:
+        for table in soup.find_all("table", class_="wikitable"):
+            if not isinstance(table, Tag):
+                continue
+            header_row = table.find("tr")
+            if not isinstance(header_row, Tag):
+                continue
+            headers = [
+                th.get_text(strip=True).lower() for th in header_row.find_all("th")
+            ]
+            if not headers:
+                continue
+            # Look for a table where first column is Season and where there is a column mentioning Episodes
+            if ("season" in headers[0]) and any("episode" in h for h in headers):
+                seasons: set[int] = set()
+                for row in table.find_all("tr")[1:]:
+                    if not isinstance(row, Tag):
+                        continue
+                    cells = row.find_all(["td", "th"])
+                    if not cells:
+                        continue
+                    season_num = extract_first_int(cells[0].get_text(strip=True))
+                    if season_num:
+                        seasons.add(season_num)
+                if seasons:
+                    count = max(seasons)
+                    logger.info(
+                        f"[WIKI] Season count for '{canonical_title}' (from overview table): {count}"
+                    )
+                    return count
+    except Exception as e:
+        logger.debug(
+            f"[WIKI] Failed parsing 'Series overview' table for '{canonical_title}': {e}"
+        )
+
+    # Strategy B: Count distinct Season headers (h2/h3) like "Season 1", "Season 2", ...
+    try:
+        season_pattern = re.compile(r"Season\s+(\d+)", re.IGNORECASE)
+        seasons_found: set[int] = set()
+        for tag in soup.find_all(["h2", "h3"]):
+            text = tag.get_text(" ", strip=True)
+            m = season_pattern.search(text)
+            if m:
+                try:
+                    seasons_found.add(int(m.group(1)))
+                except ValueError:
+                    continue
+        if seasons_found:
+            count = max(seasons_found)
+            logger.info(
+                f"[WIKI] Season count for '{canonical_title}' (from headers): {count}"
+            )
+            return count
+    except Exception as e:
+        logger.debug(
+            f"[WIKI] Failed parsing season headers for '{canonical_title}': {e}"
+        )
+
+    logger.warning(f"[WIKI] Unable to determine season count for '{canonical_title}'.")
+    # As a last step, explicitly try with TV-series qualifier if we haven't already
+    if not _last_resort:
+        qualified = f"{show_title} (TV series)"
+        logger.info(
+            f"[WIKI] Retrying season-count lookup with TV qualifier as last resort: '{qualified}'"
+        )
+        return await fetch_total_seasons_from_wikipedia(qualified, _last_resort=True)
+    return None
 
 
 async def _parse_episode_tables(

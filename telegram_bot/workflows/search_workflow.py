@@ -85,6 +85,8 @@ async def handle_search_buttons(
         await _handle_resolution_button(query, context)
     elif action.startswith("search_tv_scope_"):
         await _handle_tv_scope_selection(query, context)
+    elif action.startswith("search_select_season_"):
+        await _handle_season_selection_button(query, context)
     elif action.startswith("search_select_year_"):  # <-- NEWLY ADDED BLOCK
         await _handle_year_selection_button(query, context)
     elif action.startswith("search_select_"):
@@ -164,9 +166,79 @@ async def _handle_tv_title_reply(chat_id, query, context):
     # Normalize to Title Case for user-facing messages
     sanitized_title = sanitized_title.title()
     context.user_data["search_query_title"] = sanitized_title
-    context.user_data["next_action"] = "search_tv_get_season"
-    prompt_text = f"Got it: *{escape_markdown(sanitized_title, version=2)}*\\. Now, please send the season number\\."
-    await _send_prompt(chat_id, context, prompt_text)
+
+    # Check Wikipedia for number of seasons. If <= MAX_SEASON_BUTTONS, present as buttons.
+    # If > MAX_SEASON_BUTTONS (or unknown), inform the count and ask for manual input.
+    status_message = await safe_send_message(
+        context.bot,
+        chat_id,
+        f"🔎 Checking seasons for *{escape_markdown(sanitized_title, version=2)}* on Wikipedia\\.\\.\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+    try:
+        seasons_count = await scraping_service.fetch_total_seasons_from_wikipedia(
+            sanitized_title
+        )
+    except Exception:
+        seasons_count = None
+
+    # Layout constants
+    SEASON_COLUMNS = 4
+    MAX_SEASON_BUTTONS = 40
+
+    if (
+        isinstance(seasons_count, int)
+        and seasons_count > 0
+        and seasons_count <= MAX_SEASON_BUTTONS
+    ):
+        # Present buttons for season selection as a grid
+        buttons = [
+            InlineKeyboardButton(str(i), callback_data=f"search_select_season_{i}")
+            for i in range(1, seasons_count + 1)
+        ]
+        keyboard = [
+            buttons[i : i + SEASON_COLUMNS]
+            for i in range(0, len(buttons), SEASON_COLUMNS)
+        ]
+        # Also allow users to type a season number directly
+        context.user_data["next_action"] = "search_tv_get_season"
+        keyboard.append(
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]
+        )
+        await safe_edit_message(
+            status_message,
+            text=(
+                f"Found *{escape_markdown(str(seasons_count), version=2)}* season\\(s\\) for "
+                f"*{escape_markdown(sanitized_title, version=2)}*\\. Please select a season:"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        context.user_data["prompt_message_id"] = status_message.message_id
+        # Do not set next_action yet; it will be set after season selection
+    else:
+        # Unknown or above the display cap: ask user to type the season number and show count when available
+        context.user_data["next_action"] = "search_tv_get_season"
+        if isinstance(seasons_count, int) and seasons_count > MAX_SEASON_BUTTONS:
+            prompt_text = (
+                f"Found *{escape_markdown(str(seasons_count), version=2)}* seasons for "
+                f"*{escape_markdown(sanitized_title, version=2)}*\\. Now, please send the season number\\."
+            )
+        else:
+            prompt_text = (
+                f"Could not determine the total seasons for *{escape_markdown(sanitized_title, version=2)}*\\.\n"
+                "Please send the season number\\."
+            )
+        await safe_edit_message(
+            status_message,
+            text=prompt_text,
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        context.user_data["prompt_message_id"] = status_message.message_id
 
 
 async def _handle_tv_season_reply(chat_id, query, context):
@@ -206,6 +278,62 @@ async def _handle_tv_season_reply(chat_id, query, context):
     )
     context.user_data["prompt_message_id"] = sent_message.message_id
     context.user_data["next_action"] = "search_tv_scope"
+
+
+async def _handle_season_selection_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles the user selecting a season from inline buttons (<=5 seasons case)."""
+    if not isinstance(query.message, Message):
+        return
+    if context.user_data is None:
+        context.user_data = {}
+
+    title = context.user_data.get("search_query_title")
+    if not title:
+        await safe_edit_message(
+            query.message,
+            text="❌ Search context has expired\\. Please start over\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    try:
+        season_str = query.data.split("_")[3]
+        season_num = int(season_str)
+    except Exception:
+        await safe_edit_message(
+            query.message,
+            text="❌ An error occurred with your selection\\. Please try again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    context.user_data["search_season_number"] = season_num
+    context.user_data["next_action"] = "search_tv_scope"
+
+    # Ask whether single episode or entire season
+    prompt_text = (
+        f"Season *{escape_markdown(str(season_num), version=2)}* selected\\. "
+        "Do you want a single episode or the entire season\\?"
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "Single Episode", callback_data="search_tv_scope_single"
+            ),
+            InlineKeyboardButton(
+                "Entire Season", callback_data="search_tv_scope_season"
+            ),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+    ]
+    await safe_edit_message(
+        query.message,
+        text=prompt_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
 
 
 async def _handle_tv_episode_reply(chat_id, query, context):
