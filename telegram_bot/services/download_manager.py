@@ -71,30 +71,9 @@ class ProgressReporter:
                     self.parsed_info.get("title", ""), version=2
                 )
 
-                # Season pack handling: display list of episode titles if provided
+                # Season pack handling: show single-line "<Title> Season 01"
                 if self.parsed_info.get("is_season_pack"):
-                    ep_titles = self.parsed_info.get("season_episode_titles") or []
-                    if isinstance(ep_titles, dict):
-                        # If dict was provided, turn into ordered list
-                        ep_titles = [t for _, t in sorted(ep_titles.items())]
-
-                    # Limit the number of titles shown to keep message readable
-                    display_list = ep_titles[:10] if isinstance(ep_titles, list) else []
-                    more_count = (
-                        max(0, (len(ep_titles) - len(display_list)))
-                        if isinstance(ep_titles, list)
-                        else 0
-                    )
-                    ep_list_str = ", ".join(str(t) for t in display_list)
-                    if more_count:
-                        ep_list_str += f" …(+{more_count} more)"
-                    ep_block = (
-                        f"Season S{s:02d}\nEpisodes: {ep_list_str}"
-                        if ep_list_str
-                        else f"Season S{s:02d}"
-                    )
-                    episode_details_str = escape_markdown(ep_block, version=2)
-                    name_str = f"`{title_str}`\n`{episode_details_str}`"
+                    name_str = f"`{title_str} Season {s:02d}`"
                 else:
                     e = int(self.parsed_info.get("episode", 0) or 0)
                     ep_title = self.parsed_info.get("episode_title", "")

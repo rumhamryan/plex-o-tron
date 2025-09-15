@@ -98,7 +98,7 @@ async def test_progress_reporter_tv_paused(mocker):
 
 
 @pytest.mark.asyncio
-async def test_progress_reporter_season_pack_shows_episode_names(mocker):
+async def test_progress_reporter_season_pack_omits_episode_names(mocker):
     status = SimpleNamespace(
         progress=0.75,
         download_rate=2 * 1024 * 1024,
@@ -136,8 +136,11 @@ async def test_progress_reporter_season_pack_shows_episode_names(mocker):
     safe_mock.assert_awaited_once()
     _, kwargs = safe_mock.call_args
     text = kwargs["text"]
-    assert "Episodes:" in text
-    assert "Ep1" in text and "Ep2" in text and "Ep3" in text
+    # Should not show the Episodes field for season packs
+    assert "Episodes:" not in text
+    # Should present single-line title + Season 01 (no leading 'S')
+    assert "Season 01" in text
+    assert "Season S01" not in text
 
 
 @pytest.mark.asyncio
