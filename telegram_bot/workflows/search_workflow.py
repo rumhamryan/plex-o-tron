@@ -87,6 +87,8 @@ async def handle_search_buttons(
         await _handle_tv_scope_selection(query, context)
     elif action.startswith("search_select_season_"):
         await _handle_season_selection_button(query, context)
+    elif action.startswith("search_select_episode_"):
+        await _handle_episode_selection_button(query, context)
     elif action.startswith("search_select_year_"):  # <-- NEWLY ADDED BLOCK
         await _handle_year_selection_button(query, context)
     elif action.startswith("search_select_"):
@@ -336,6 +338,46 @@ async def _handle_season_selection_button(
     )
 
 
+async def _handle_episode_selection_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles user selecting an episode via inline buttons in the single-episode flow."""
+    if not isinstance(query.message, Message):
+        return
+    if context.user_data is None:
+        context.user_data = {}
+
+    title = context.user_data.get("search_query_title")
+    season = context.user_data.get("search_season_number")
+    if not title or season is None:
+        await safe_edit_message(
+            query.message,
+            text="❌ Search context has expired\\. Please start over\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    try:
+        episode_str = query.data.split("_")[3]
+        episode_num = int(episode_str)
+    except Exception:
+        await safe_edit_message(
+            query.message,
+            text="❌ An error occurred with your selection\\. Please try again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    full_search_term = f"{title} S{int(season):02d}E{episode_num:02d}"
+    # Store TV search context, then prompt for resolution (1080p/720p)
+    context.user_data["search_media_type"] = "tv"
+    context.user_data["tv_scope"] = "single"
+    context.user_data["tv_base_title"] = title
+    await _prompt_for_resolution(
+        query.message, context, full_search_term, media_type="tv"
+    )
+
+
 async def _handle_tv_episode_reply(chat_id, query, context):
     """Handles user reply for an episode number. Then prompts for quality."""
     if context.user_data.get("next_action") != "search_tv_get_episode":
@@ -383,6 +425,46 @@ async def _handle_tv_scope_selection(
 
     if query.data == "search_tv_scope_single":
         context.user_data["next_action"] = "search_tv_get_episode"
+        EPISODE_COLUMNS = 4
+        MAX_EPISODE_BUTTONS = 40
+
+        episode_count: int | None = None
+        # Gate Wikipedia network call on SEARCH_CONFIG to keep tests lightweight
+        if context.bot_data.get("SEARCH_CONFIG"):
+            try:
+                episode_count = (
+                    await scraping_service.fetch_season_episode_count_from_wikipedia(
+                        str(title), int(season)
+                    )
+                )
+            except Exception:
+                episode_count = None
+
+        if isinstance(episode_count, int) and 0 < episode_count <= MAX_EPISODE_BUTTONS:
+            # Present inline episode grid (single message, includes Cancel)
+            buttons = [
+                InlineKeyboardButton(str(i), callback_data=f"search_select_episode_{i}")
+                for i in range(1, episode_count + 1)
+            ]
+            keyboard = [
+                buttons[i : i + EPISODE_COLUMNS]
+                for i in range(0, len(buttons), EPISODE_COLUMNS)
+            ]
+            keyboard.append(
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]
+            )
+            await safe_edit_message(
+                query.message,
+                text=(
+                    f"Season *{escape_markdown(str(season), version=2)}* selected\\. "
+                    "Choose an episode below or type the number\\."
+                ),
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+
+        # Fallback: typed input prompt (no episode grid available)
         await safe_edit_message(
             query.message,
             text=f"Season *{escape_markdown(str(season), version=2)}* selected\\.",

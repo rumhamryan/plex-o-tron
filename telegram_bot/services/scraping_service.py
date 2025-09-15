@@ -527,8 +527,48 @@ async def _extract_titles_for_season(
     """Extracts a mapping of episode number -> title for a given season.
 
     Uses the same heuristics as _parse_episode_tables, but returns all titles
-    for the season in one pass.
+    for the season in one pass, and is resilient to table layout variations
+    and different quote styles on Wikipedia.
     """
+
+    def _get_column_indices(
+        table: Tag, *, default_ep: int, default_title: int
+    ) -> tuple[int, int]:
+        ep_idx, title_idx = default_ep, default_title
+        header_row = table.find("tr")
+        if isinstance(header_row, Tag):
+            headers = [
+                th.get_text(strip=True).lower() for th in header_row.find_all("th")
+            ]
+            # Prefer "No. in season"
+            for i, h in enumerate(headers):
+                if ("no" in h and "season" in h) or ("in season" in h):
+                    ep_idx = i
+                    break
+            else:
+                for i, h in enumerate(headers):
+                    if "no" in h:
+                        ep_idx = i
+                        break
+            for i, h in enumerate(headers):
+                if "title" in h:
+                    title_idx = i
+                    break
+        return ep_idx, title_idx
+
+    def _extract_title_text(title_cell: Tag) -> str:
+        italic = title_cell.find("i")
+        if italic and italic.get_text(strip=True):
+            return italic.get_text(strip=True)
+        anchor = title_cell.find("a")
+        if anchor and anchor.get_text(strip=True):
+            return anchor.get_text(strip=True)
+        text_full = title_cell.get_text(" ", strip=True)
+        m = re.search("[\\\"“”'‘’]([^\\\"“”'‘’]+)[\\\"“”'‘’]", text_full)
+        if m:
+            return m.group(1).strip()
+        return text_full.strip('"')
+
     results: dict[int, str] = {}
 
     # Strategy 1: dedicated season table under a specific Season header
@@ -540,28 +580,24 @@ async def _extract_titles_for_season(
     if isinstance(header_tag, Tag):
         target_table = header_tag.find_next("table", class_="wikitable")
         if isinstance(target_table, Tag):
+            ep_idx, title_idx = _get_column_indices(
+                target_table, default_ep=1, default_title=2
+            )
             for row in target_table.find_all("tr")[1:]:
                 if not isinstance(row, Tag):
                     continue
                 cells = row.find_all(["th", "td"])
-                if len(cells) < 3:
+                if len(cells) <= max(ep_idx, title_idx):
                     continue
                 try:
-                    ep_num = extract_first_int(cells[1].get_text(strip=True))
+                    ep_text = cells[ep_idx].get_text(" ", strip=True)
+                    ep_num = extract_first_int(ep_text)
                     if not ep_num:
                         continue
-                    title_cell = cells[2]
+                    title_cell = cells[title_idx]
                     if not isinstance(title_cell, Tag):
                         continue
-                    found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
-                    if found_text:
-                        results[ep_num] = str(found_text).strip().strip('"')
-                        continue
-                    italic_text = title_cell.find("i")
-                    if italic_text:
-                        results[ep_num] = italic_text.get_text(strip=True)
-                        continue
-                    results[ep_num] = title_cell.get_text(strip=True).strip('"')
+                    results[ep_num] = _extract_title_text(title_cell)
                 except Exception:
                     continue
             if results:
@@ -576,28 +612,23 @@ async def _extract_titles_for_season(
     if isinstance(episodes_header_tag, Tag):
         target_table = episodes_header_tag.find_next("table", class_="wikitable")
         if isinstance(target_table, Tag):
+            ep_idx, title_idx = _get_column_indices(
+                target_table, default_ep=0, default_title=1
+            )
             for row in target_table.find_all("tr")[1:]:
                 if not isinstance(row, Tag):
                     continue
                 cells = row.find_all(["td", "th"])
-                if len(cells) < 2:
+                if len(cells) <= max(ep_idx, title_idx):
                     continue
                 try:
-                    ep_num = extract_first_int(cells[0].get_text(strip=True))
+                    ep_num = extract_first_int(cells[ep_idx].get_text(" ", strip=True))
                     if not ep_num:
                         continue
-                    title_cell = cells[1]
+                    title_cell = cells[title_idx]
                     if not isinstance(title_cell, Tag):
                         continue
-                    found_text = title_cell.find(string=re.compile(r'"([^"]+)"'))
-                    if found_text:
-                        results[ep_num] = str(found_text).strip().strip('"')
-                        continue
-                    italic_text = title_cell.find("i")
-                    if italic_text:
-                        results[ep_num] = italic_text.get_text(strip=True)
-                        continue
-                    results[ep_num] = title_cell.get_text(strip=True).strip('"')
+                    results[ep_num] = _extract_title_text(title_cell)
                 except Exception:
                     continue
 
@@ -803,19 +834,17 @@ async def fetch_season_episode_count_from_wikipedia(
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
 
-    # First, reuse the same robust episode-title extraction used by the
-    # single-episode path. If we can enumerate episode titles for the season,
-    # we can derive the count without depending on a 'Series overview' table.
+    # First, reuse the episode-title extraction used by the single-episode path.
+    # Keep this as a preliminary count; we may refine with the overview table below.
+    count_from_titles: int | None = None
     try:
         titles_map = await _extract_titles_for_season(soup, season)
         if titles_map:
             ep_numbers = sorted(titles_map.keys())
-            # Prefer the highest episode number seen; fallback to len
-            count = ep_numbers[-1] if ep_numbers else len(titles_map)
+            count_from_titles = ep_numbers[-1] if ep_numbers else len(titles_map)
             logger.info(
-                f"[WIKI] Episode count (from titles) for '{show_title}' S{season:02d}: {count}"
+                f"[WIKI] Episode count (from titles) for '{show_title}' S{season:02d}: {count_from_titles}"
             )
-            return count
     except Exception as e:
         logger.debug(
             f"[WIKI] Title-based episode enumeration failed for '{show_title}' S{season:02d}: {e}"
@@ -840,6 +869,8 @@ async def fetch_season_episode_count_from_wikipedia(
 
     if not isinstance(overview_table, Tag):
         logger.debug(f"[WIKI] 'Series overview' table not found for '{show_title}'.")
+        if count_from_titles:
+            return count_from_titles
         if not _last_resort:
             qualified = f"{show_title} (TV series)"
             logger.info(
@@ -856,7 +887,7 @@ async def fetch_season_episode_count_from_wikipedia(
         logger.debug(
             f"[WIKI] Header row not found in overview table for '{show_title}'."
         )
-        return None
+        return count_from_titles
 
     header_cells = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
     episodes_col_index = -1
@@ -889,7 +920,15 @@ async def fetch_season_episode_count_from_wikipedia(
             logger.info(
                 f"[WIKI] Episode count for '{show_title}' S{season:02d}: {ep_count}"
             )
+            # Prefer the larger of the two counts to avoid undercounting when
+            # title parsing misses entries due to formatting quirks.
+            if count_from_titles and isinstance(ep_count, int):
+                return max(ep_count, count_from_titles)
             return ep_count  # Return the extracted episode count
+
+    # Fallback to titles-derived count if we have it
+    if count_from_titles:
+        return count_from_titles
 
     return None
 
