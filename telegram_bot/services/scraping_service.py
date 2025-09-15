@@ -835,8 +835,7 @@ async def fetch_season_episode_count_from_wikipedia(
     soup = BeautifulSoup(html_to_scrape, "lxml")
 
     # First, reuse the episode-title extraction used by the single-episode path.
-    # Keep this as a preliminary count; we may refine with the overview table below.
-    count_from_titles: int | None = None
+    # Prefer this as authoritative because it reflects currently listed episodes.
     try:
         titles_map = await _extract_titles_for_season(soup, season)
         if titles_map:
@@ -845,6 +844,7 @@ async def fetch_season_episode_count_from_wikipedia(
             logger.info(
                 f"[WIKI] Episode count (from titles) for '{show_title}' S{season:02d}: {count_from_titles}"
             )
+            return count_from_titles
     except Exception as e:
         logger.debug(
             f"[WIKI] Title-based episode enumeration failed for '{show_title}' S{season:02d}: {e}"
@@ -869,8 +869,6 @@ async def fetch_season_episode_count_from_wikipedia(
 
     if not isinstance(overview_table, Tag):
         logger.debug(f"[WIKI] 'Series overview' table not found for '{show_title}'.")
-        if count_from_titles:
-            return count_from_titles
         if not _last_resort:
             qualified = f"{show_title} (TV series)"
             logger.info(
@@ -887,7 +885,7 @@ async def fetch_season_episode_count_from_wikipedia(
         logger.debug(
             f"[WIKI] Header row not found in overview table for '{show_title}'."
         )
-        return count_from_titles
+        return None
 
     header_cells = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
     episodes_col_index = -1
@@ -920,15 +918,7 @@ async def fetch_season_episode_count_from_wikipedia(
             logger.info(
                 f"[WIKI] Episode count for '{show_title}' S{season:02d}: {ep_count}"
             )
-            # Prefer the larger of the two counts to avoid undercounting when
-            # title parsing misses entries due to formatting quirks.
-            if count_from_titles and isinstance(ep_count, int):
-                return max(ep_count, count_from_titles)
             return ep_count  # Return the extracted episode count
-
-    # Fallback to titles-derived count if we have it
-    if count_from_titles:
-        return count_from_titles
 
     return None
 
