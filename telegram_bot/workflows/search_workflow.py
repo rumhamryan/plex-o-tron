@@ -301,7 +301,9 @@ async def _handle_season_selection_button(
         return
 
     try:
-        season_str = query.data.split("_")[3]
+        # Guard against Optional[str] for type checkers and runtime safety
+        data = query.data or ""
+        season_str = data.split("_")[3]
         season_num = int(season_str)
     except Exception:
         await safe_edit_message(
@@ -358,7 +360,9 @@ async def _handle_episode_selection_button(
         return
 
     try:
-        episode_str = query.data.split("_")[3]
+        # Guard against Optional[str] for type checkers and runtime safety
+        data = query.data or ""
+        episode_str = data.split("_")[3]
         episode_num = int(episode_str)
     except Exception:
         await safe_edit_message(
@@ -724,8 +728,9 @@ async def _handle_year_selection_button(
         return
 
     try:
-        # At this point, the type checker knows query.data is a string.
-        selected_year = query.data.split("_")[3]
+        # Guard against Optional[str] for type checkers and runtime safety
+        data = query.data or ""
+        selected_year = data.split("_")[3]
         full_title = f"{title} ({selected_year})"
         logger.info(f"User selected year {selected_year} for title '{title}'.")
 
