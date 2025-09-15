@@ -844,6 +844,9 @@ async def fetch_season_episode_count_from_wikipedia(
             logger.info(
                 f"[WIKI] Episode count (from titles) for '{show_title}' S{season:02d}: {count_from_titles}"
             )
+            logger.info(
+                f"[WIKI] Using titles-derived count for '{show_title}' S{season:02d}'. Skipping overview table."
+            )
             return count_from_titles
     except Exception as e:
         logger.debug(
@@ -879,7 +882,7 @@ async def fetch_season_episode_count_from_wikipedia(
             )
         return None
 
-    # Find the column index for "Episodes"
+    # Find the column index for "Episodes" and optionally "Last aired"/"Originally aired"
     header_row = overview_table.find("tr")
     if not isinstance(header_row, Tag):
         logger.debug(
@@ -889,9 +892,22 @@ async def fetch_season_episode_count_from_wikipedia(
 
     header_cells = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
     episodes_col_index = -1
+    last_aired_col_index = -1
+    originally_aired_col_index = -1
     for idx, text in enumerate(header_cells):
         if "episode" in text:
             episodes_col_index = idx
+            break
+    # Try to capture columns indicating ongoing seasons
+    for idx, text in enumerate(header_cells):
+        if "last" in text and "air" in text:
+            last_aired_col_index = idx
+            break
+    for idx, text in enumerate(header_cells):
+        if ("originally" in text and "air" in text) or (
+            "original" in text and "release" in text
+        ):
+            originally_aired_col_index = idx
             break
 
     if episodes_col_index == -1:
@@ -913,6 +929,27 @@ async def fetch_season_episode_count_from_wikipedia(
 
         season_num = extract_first_int(cells[0].get_text(strip=True))
         if season_num == season:
+            # If the season appears to be ongoing, avoid trusting the overview count.
+            def _cell_text(i: int) -> str:
+                try:
+                    return cells[i].get_text(" ", strip=True)
+                except Exception:
+                    return ""
+
+            last_text = (
+                _cell_text(last_aired_col_index) if last_aired_col_index != -1 else ""
+            )
+            orig_text = (
+                _cell_text(originally_aired_col_index)
+                if originally_aired_col_index != -1
+                else ""
+            )
+            combined_air_text = f"{last_text} {orig_text}".lower()
+            if any(k in combined_air_text for k in ("present", "tba", "ongoing")):
+                logger.info(
+                    f"[WIKI] Overview indicates season is ongoing for '{show_title}' S{season:02d}; skipping overview count."
+                )
+                return None
             ep_text = cells[episodes_col_index].get_text(strip=True)
             ep_count = extract_first_int(ep_text)
             logger.info(

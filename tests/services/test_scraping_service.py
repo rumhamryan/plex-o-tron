@@ -123,6 +123,31 @@ SEASON_OVERVIEW_HTML = """
 </table>
 """
 
+DEDICATED_WITH_OVERVIEW_ONGOING_HTML = """
+<h3>Season 27</h3>
+<table class="wikitable">
+<tr><th>No. in season</th><th>Title</th></tr>
+<tr><td>1</td><td><i>Ep1</i></td></tr>
+<tr><td>2</td><td><i>Ep2</i></td></tr>
+<tr><td>3</td><td><i>Ep3</i></td></tr>
+<tr><td>4</td><td><i>Ep4</i></td></tr>
+</table>
+
+<h2>Series overview</h2>
+<table class="wikitable">
+<tr><th>Season</th><th>Episodes</th><th>Last aired</th></tr>
+<tr><td>27</td><td>10</td><td>present</td></tr>
+</table>
+"""
+
+OVERVIEW_ONGOING_ONLY_HTML = """
+<h2>Series overview</h2>
+<table class="wikitable">
+<tr><th>Season</th><th>Episodes</th><th>Originally aired</th></tr>
+<tr><td>27</td><td>10</td><td>2024–present</td></tr>
+</table>
+"""
+
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_dedicated_page(mocker):
@@ -190,6 +215,36 @@ async def test_fetch_season_episode_count(mocker):
 
     count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 2)
     assert count == 8
+
+
+@pytest.mark.asyncio
+async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
+    mock_page = mocker.Mock()
+    mock_page.url = "http://example.com"
+    mocker.patch("wikipedia.page", return_value=mock_page)
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=DEDICATED_WITH_OVERVIEW_ONGOING_HTML,
+    )
+
+    # Should return the enumerated title count (4), not the overview's 10
+    count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 27)
+    assert count == 4
+
+
+@pytest.mark.asyncio
+async def test_fetch_season_episode_count_skips_ongoing_overview(mocker):
+    mock_page = mocker.Mock()
+    mock_page.url = "http://example.com"
+    mocker.patch("wikipedia.page", return_value=mock_page)
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=OVERVIEW_ONGOING_ONLY_HTML,
+    )
+
+    # No titles are present and overview is marked ongoing -> expect None
+    count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 27)
+    assert count is None
 
 
 @pytest.mark.asyncio
