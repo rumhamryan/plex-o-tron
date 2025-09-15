@@ -761,27 +761,10 @@ async def _perform_tv_season_search_with_resolution(
         )
 
     if season_pack_torrent and not force_individual_episodes:
-        parsed_info = parse_torrent_name(season_pack_torrent.get("title", ""))
-        parsed_info.setdefault("title", title)
-        parsed_info.setdefault("season", season)
-        parsed_info["type"] = "tv"
-        parsed_info["is_season_pack"] = True
-        # Enrich with episode titles for progress reporting
-        try:
-            (
-                season_titles_map,
-                season_corrected_title,
-            ) = await scraping_service.fetch_episode_titles_for_season(title, season)
-            if season_corrected_title:
-                parsed_info["title"] = season_corrected_title
-            if season_titles_map:
-                ordered_titles = [t for _, t in sorted(season_titles_map.items())]
-                parsed_info["season_episode_titles"] = ordered_titles
-        except Exception:
-            pass
-        torrents_to_queue.append(
-            {"link": season_pack_torrent.get("page_url"), "parsed_info": parsed_info}
-        )
+        # Present all pack-like candidates as a normal results list with details
+        query_str = f"{title} S{season:02d} [{resolution}]"
+        await _present_search_results(message, context, pack_candidates, query_str)
+        return
     else:
         # Fallback: search for each episode individually
         # Guard for Optional user_data to satisfy type checkers/IDEs

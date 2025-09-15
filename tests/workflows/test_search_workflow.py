@@ -263,8 +263,8 @@ async def test_handle_tv_scope_selection_season(
             ]
         ),
     )
-    present_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow._present_season_download_confirmation",
+    present_results_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._present_search_results",
         new=AsyncMock(),
     )
     context.user_data["search_query_title"] = "Show"
@@ -284,10 +284,12 @@ async def test_handle_tv_scope_selection_season(
     await handle_search_buttons(res_update, context)
 
     assert orch_mock.call_count == 2
-    present_mock.assert_awaited_once()
-    passed = present_mock.await_args.args[2]
-    assert passed[0]["link"] == "pack"
-    assert passed[0]["parsed_info"]["is_season_pack"]
+    present_results_mock.assert_awaited_once()
+    # Ensure we presented pack candidates as normal results
+    args, _ = present_results_mock.await_args
+    results_passed = args[2]
+    assert isinstance(results_passed, list) and results_passed
+    assert results_passed[0]["page_url"] == "pack"
 
 
 @pytest.mark.asyncio
