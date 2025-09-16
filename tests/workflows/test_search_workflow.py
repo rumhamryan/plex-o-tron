@@ -417,3 +417,125 @@ async def test_handle_reject_season_pack_triggers_individual(
     args, kwargs = perf_mock.await_args
     # Assert forced individual episodes
     assert kwargs.get("force_individual_episodes") is True
+
+
+@pytest.mark.asyncio
+async def test_entire_season_skips_pack_and_targets_missing(
+    mocker, context, make_callback_query, make_message
+):
+    # Mock messaging and data sources
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        new=AsyncMock(return_value=5),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
+        new=AsyncMock(return_value={2, 4}),
+    )
+
+    # orchestrate_searches returns results only for targeted episodes
+    async def orch_side_effect(query, media_type, ctx, **kwargs):  # noqa: ARG001
+        # Only respond with results when searching individual episodes
+        m = __import__("re").search(r"S(\d{2})E(\d{2})", query)
+        if m:
+            ep = int(m.group(2))
+            return [{"title": f"Show S01E{ep:02d}", "page_url": f"ep{ep}"}]
+        return []
+
+    orch_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
+        new=AsyncMock(side_effect=orch_side_effect),
+    )
+
+    present_conf_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._present_season_download_confirmation",
+        new=AsyncMock(),
+    )
+
+    # Seed state prior to selecting season scope
+    context.user_data["search_query_title"] = "Show"
+    context.user_data["search_season_number"] = 1
+
+    # 1) User chooses Entire Season (populates missing/owned and prompts resolution)
+    await handle_search_buttons(
+        Update(
+            update_id=1,
+            callback_query=make_callback_query(
+                "search_tv_scope_season", make_message()
+            ),
+        ),
+        context,
+    )
+
+    # Validate precomputed lists
+    assert context.user_data["season_episode_count"] == 5
+    assert context.user_data["season_existing_episodes"] == [2, 4]
+    assert context.user_data["season_missing_episode_numbers"] == [1, 3, 5]
+
+    # 2) User chooses resolution which triggers season search
+    await handle_search_buttons(
+        Update(
+            update_id=2,
+            callback_query=make_callback_query(
+                "search_resolution_1080p", make_message()
+            ),
+        ),
+        context,
+    )
+
+    # Should have invoked episode searches only for missing [1,3,5]
+    searched_eps = []
+    for call in orch_mock.await_args_list:
+        q = call.args[0]
+        m = __import__("re").search(r"S01E(\d{2})", q)
+        if m:
+            searched_eps.append(int(m.group(1)))
+    assert sorted(set(searched_eps)) == [1, 3, 5]
+
+    # And present confirmation with exactly those episodes
+    torrents = present_conf_mock.await_args.args[2]
+    assert {t["parsed_info"]["episode"] for t in torrents} == {1, 3, 5}
+
+
+@pytest.mark.asyncio
+async def test_entire_season_all_owned_exits_early(
+    mocker, context, make_callback_query, make_message
+):
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        new=AsyncMock(return_value=3),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
+        new=AsyncMock(return_value={1, 2, 3}),
+    )
+    prompt_res_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._prompt_for_resolution",
+        new=AsyncMock(),
+    )
+
+    # Seed title/season
+    context.user_data["search_query_title"] = "Show"
+    context.user_data["search_season_number"] = 1
+
+    await handle_search_buttons(
+        Update(
+            update_id=1,
+            callback_query=make_callback_query(
+                "search_tv_scope_season", make_message()
+            ),
+        ),
+        context,
+    )
+
+    # Should have detected all episodes present and not prompted for resolution
+    assert context.user_data["season_missing_episode_numbers"] == []
+    prompt_res_mock.assert_not_awaited()
+    # Confirm we informed the user
+    assert "already exist" in (edit_mock.await_args.kwargs.get("text") or "")

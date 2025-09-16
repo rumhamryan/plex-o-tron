@@ -16,7 +16,7 @@ from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 
 from ..config import logger, MAX_TORRENT_SIZE_GB
-from ..services import search_logic, torrent_service, scraping_service
+from ..services import search_logic, torrent_service, scraping_service, plex_service
 from ..services.media_manager import validate_and_enrich_torrent
 from ..utils import safe_edit_message, parse_torrent_name, safe_send_message
 from ..ui.views import send_confirmation_prompt
@@ -541,8 +541,53 @@ async def _handle_tv_scope_selection(
             )
             return
 
+        # Determine which episodes already exist (Plex preferred; filesystem fallback)
+        existing_eps = await plex_service.get_existing_episodes_for_season(
+            context, str(title), int(season)
+        )
+        missing_list = [
+            i for i in range(1, int(episode_count) + 1) if i not in existing_eps
+        ]
+
         # Store details and prompt for TV quality (1080p/720p), then search
-        context.user_data["season_episode_count"] = episode_count
+        context.user_data["season_episode_count"] = int(episode_count)
+        context.user_data["season_existing_episodes"] = sorted(existing_eps)
+        context.user_data["season_missing_episode_numbers"] = missing_list
+
+        # If user already has the full season, stop here
+        if len(missing_list) == 0:
+            await safe_edit_message(
+                query.message,
+                text=(
+                    f"All episodes for *{escape_markdown(str(title), version=2)}* "
+                    f"S{int(season):02d} already exist in your library\. Nothing to download\."
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+
+        # Immediate feedback to the user about ownership
+        have = len(existing_eps)
+        total = int(episode_count)
+        if have > 0:
+            await safe_edit_message(
+                query.message,
+                text=(
+                    f"Detected {have}/{total} episodes already in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
+                    "I will only fetch the missing episodes\. Choose a resolution:"
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        else:
+            await safe_edit_message(
+                query.message,
+                text=(
+                    f"No existing episodes found in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
+                    "You may download a season pack if available\. Choose a resolution:"
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+
         context.user_data["search_media_type"] = "tv"
         context.user_data["tv_scope"] = "season"
         context.user_data["tv_base_title"] = title
@@ -856,10 +901,22 @@ async def _present_season_download_confirmation(
         "is_season_pack"
     )
 
+    # If any episodes already exist, packs are disallowed
+    existing = set((context.user_data or {}).get("season_existing_episodes") or [])
+    missing_targets = (context.user_data or {}).get("season_missing_episode_numbers")
+    if isinstance(missing_targets, list) and missing_targets:
+        target_total = len(missing_targets)
+    else:
+        target_total = int(total_eps or 0)
+
+    if is_pack and existing:
+        is_pack = False  # enforce episode-only flow
+
     if is_pack:
         summary = f"Found a season pack for Season {season}\\."
     else:
-        summary = f"Found torrents for {len(found_torrents)} of {total_eps} episodes in Season {season}\\."
+        # Escape parentheses for MarkdownV2
+        summary = f"Found torrents for {len(found_torrents)} of {target_total} episode\\(s\\) in Season {season}\\."
 
     if is_pack:
         keyboard = [
@@ -995,7 +1052,13 @@ async def _perform_tv_season_search_with_resolution(
     # Primary strategy: look for an actual season pack (unless explicitly skipped)
     season_pack_torrent = None
     pack_candidates = []
-    if not force_individual_episodes:
+    # Enforce individual episodes if any are already owned
+    existing_owned = set(
+        (context.user_data or {}).get("season_existing_episodes") or []
+    )
+    must_individual = bool(force_individual_episodes or existing_owned)
+
+    if not must_individual:
         season_token = f"s{season:02d} "
         for item in found_results:
             title_lower = item.get("title", "").lower()
@@ -1011,7 +1074,7 @@ async def _perform_tv_season_search_with_resolution(
             else None
         )
 
-    if season_pack_torrent and not force_individual_episodes:
+    if season_pack_torrent and not must_individual:
         # Present all pack-like candidates as a normal results list with details
         query_str = f"{title} S{season:02d} [{resolution}]"
         await _present_search_results(message, context, pack_candidates, query_str)
@@ -1020,6 +1083,25 @@ async def _perform_tv_season_search_with_resolution(
         # Fallback: search for each episode individually
         # Guard for Optional user_data to satisfy type checkers/IDEs
         episode_count = int((context.user_data or {}).get("season_episode_count") or 0)
+        # Determine target episodes:
+        # - If season_missing_episode_numbers is explicitly present, use it;
+        #   if it's an empty list, then everything is already owned.
+        # - If not present at all, default to the full season [1..episode_count].
+        raw_targets = (context.user_data or {}).get("season_missing_episode_numbers")
+        if isinstance(raw_targets, list):
+            targets = list(raw_targets)
+            if len(targets) == 0:
+                await safe_edit_message(
+                    message,
+                    text=(
+                        f"All episodes for *{escape_markdown(title, version=2)}* "
+                        f"S{int(season):02d} already exist in your library\."
+                    ),
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+                return
+        else:
+            targets = list(range(1, episode_count + 1))
         # Fetch all episode titles once to avoid per-episode Wikipedia lookups
         titles_map: dict[int, str] = {}
         corrected_title: str | None = None
@@ -1056,14 +1138,12 @@ async def _perform_tv_season_search_with_resolution(
                 f"🔎 Searching for Season {escape_markdown(str(season), version=2)} "
                 f"of *{escape_markdown(title, version=2)}* in *{escape_markdown(resolution, version=2)}*\\.\\.\\."
             )
-            if episode_count:
-                if last_ep is not None:
-                    # Escape parentheses for MarkdownV2
-                    return base + (f"\nProgress: {processed_eps}/{episode_count}")
-                return base + f"\nProgress: {processed_eps}/{episode_count}"
+            total_targets = len(targets) if targets else episode_count
+            if total_targets:
+                return base + f"\nProgress: {processed_eps}/{total_targets}"
             return base
 
-        for ep in range(1, episode_count + 1):
+        for ep in targets:
             search_term = f"{title} S{season:02d}E{ep:02d}"
             ep_results = await search_logic.orchestrate_searches(
                 search_term, "tv", context, base_query_for_filter=title

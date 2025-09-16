@@ -1122,20 +1122,17 @@ async def fetch_season_episode_count_from_wikipedia(
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
 
-    # First, reuse the episode-title extraction used by the single-episode path.
-    # Prefer this as authoritative because it reflects currently listed episodes.
+    # First, attempt episode-title extraction (reflects enumerated episodes on the page)
+    count_from_titles: int | None = None
     try:
         titles_map = await _extract_titles_for_season(soup, season)
         if titles_map:
             ep_numbers = sorted(titles_map.keys())
+            # Use the max explicit episode number when available; otherwise fall back to the number of rows parsed
             count_from_titles = ep_numbers[-1] if ep_numbers else len(titles_map)
             logger.info(
                 f"[WIKI] Episode count (from titles) for '{show_title}' S{season:02d}: {count_from_titles}"
             )
-            logger.info(
-                f"[WIKI] Using titles-derived count for '{show_title}' S{season:02d}'. Skipping overview table."
-            )
-            return count_from_titles
     except Exception as e:
         logger.debug(
             f"[WIKI] Title-based episode enumeration failed for '{show_title}' S{season:02d}: {e}"
@@ -1160,6 +1157,12 @@ async def fetch_season_episode_count_from_wikipedia(
 
     if not isinstance(overview_table, Tag):
         logger.debug(f"[WIKI] 'Series overview' table not found for '{show_title}'.")
+        # If we already have a titles-derived count, return it
+        if isinstance(count_from_titles, int) and count_from_titles > 0:
+            logger.info(
+                f"[WIKI] Using titles-derived count for '{show_title}' S{season:02d}: {count_from_titles}"
+            )
+            return count_from_titles
         if not _last_resort:
             qualified = f"{show_title} (TV series)"
             logger.info(
@@ -1237,14 +1240,34 @@ async def fetch_season_episode_count_from_wikipedia(
                 logger.info(
                     f"[WIKI] Overview indicates season is ongoing for '{show_title}' S{season:02d}; skipping overview count."
                 )
+                # If we have titles-based count, return it; otherwise unknown
+                if isinstance(count_from_titles, int) and count_from_titles > 0:
+                    return count_from_titles
                 return None
             ep_text = cells[episodes_col_index].get_text(strip=True)
             ep_count = extract_first_int(ep_text)
             logger.info(
-                f"[WIKI] Episode count for '{show_title}' S{season:02d}: {ep_count}"
+                f"[WIKI] Episode count (from overview) for '{show_title}' S{season:02d}: {ep_count}"
             )
+            # Prefer the larger of titles-derived and overview when both exist
+            if (
+                isinstance(count_from_titles, int)
+                and count_from_titles > 0
+                and ep_count
+            ):
+                chosen = max(count_from_titles, ep_count)
+                logger.info(
+                    f"[WIKI] Using max(count_from_titles, overview) = {chosen} for '{show_title}' S{season:02d}."
+                )
+                return chosen
             return ep_count  # Return the extracted episode count
 
+    # If we reach here, no overview match; fallback to titles-based count if available
+    if isinstance(count_from_titles, int) and count_from_titles > 0:
+        logger.info(
+            f"[WIKI] Using titles-derived fallback for '{show_title}' S{season:02d}: {count_from_titles}"
+        )
+        return count_from_titles
     return None
 
 

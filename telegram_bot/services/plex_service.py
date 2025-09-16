@@ -10,6 +10,8 @@ from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
 from ..config import logger
+import re
+from typing import Set
 
 
 async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -105,3 +107,43 @@ async def restart_plex_server() -> tuple[bool, str]:
             False,
             f"An unexpected error occurred:\n`{escape_markdown(str(e), version=2)}`",
         )
+
+
+async def get_existing_episodes_for_season(
+    context: ContextTypes.DEFAULT_TYPE, show_title: str, season: int
+) -> Set[int]:
+    """
+    Returns a set of episode numbers already present for the given show/season
+    by scanning the local media library only (no Plex API calls).
+    """
+    existing: set[int] = set()
+
+    try:
+        save_paths = (context.bot_data or {}).get("SAVE_PATHS", {})
+        tv_root = save_paths.get("tv_shows") or save_paths.get("default")
+        if not tv_root:
+            return existing
+
+        # Mirror media_manager sanitization for show directory name
+        invalid_chars = r'<>:"/\\|?*'
+        safe_show = "".join(c for c in show_title if c not in invalid_chars)
+        season_dir = os.path.join(tv_root, safe_show, f"Season {int(season):02d}")
+        if not os.path.isdir(season_dir):
+            return existing
+
+        pat = re.compile(r"(?i)\bS(\d{1,2})E(\d{1,2})\b")
+        for fname in os.listdir(season_dir):
+            m = pat.search(fname)
+            if not m:
+                continue
+            try:
+                s_num = int(m.group(1))
+                e_num = int(m.group(2))
+                if s_num == int(season):
+                    existing.add(e_num)
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"Filesystem episode check failed: {e}")
+
+    return existing
