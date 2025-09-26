@@ -147,21 +147,29 @@ async def _handle_movie_title_reply(chat_id, query, context):
             context.user_data["search_query_title"] = title
             display_title = title
 
-        if isinstance(years, list) and len(years) > 1:
-            unique_years = [str(y) for y in sorted({int(y) for y in years})]
+        bot_data = (
+            context.bot_data
+            if isinstance(getattr(context, "bot_data", None), dict)
+            else {}
+        )
+        has_search_config = bool(bot_data.get("SEARCH_CONFIG"))
+        effective_years = years if has_search_config else []
+
+        if isinstance(effective_years, list) and len(effective_years) > 1:
+            unique_years = [str(y) for y in sorted({int(y) for y in effective_years})]
             await _prompt_for_year_selection(
                 status_message, context, display_title, unique_years
             )
             return
-        if isinstance(years, list) and len(years) == 1:
-            full_title = f"{display_title} ({years[0]})"
+        if isinstance(effective_years, list) and len(effective_years) == 1:
+            full_title = f"{display_title} ({effective_years[0]})"
             context.user_data["search_media_type"] = "movie"
             await _prompt_for_resolution(
                 status_message, context, full_title, media_type="movie"
             )
             return
 
-        # Fallback if Wikipedia failed to resolve: infer from preliminary search results
+        # Fallback if Wikipedia failed to resolve (or no search config loaded): infer from preliminary search results
         results = await search_logic.orchestrate_searches(
             display_title, "movie", context
         )
