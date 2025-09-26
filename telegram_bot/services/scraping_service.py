@@ -27,6 +27,12 @@ _WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], str | None]] = {
 _WIKI_SOUP_CACHE: dict[str, BeautifulSoup] = {}
 _WIKI_MOVIE_CACHE: dict[str, tuple[list[int], str | None]] = {}
 
+
+def _normalize_for_comparison(value: str) -> str:
+    """Collapse punctuation/spacing so title comparisons tolerate stylistic variants."""
+    return re.sub(r"[\W_]+", "", value).casefold()
+
+
 # Suppress noisy BeautifulSoup parser guess warnings originating from wikipedia lib only
 warnings.filterwarnings(
     "ignore", category=GuessedAtParserWarning, module=r"^wikipedia\.wikipedia$"
@@ -223,6 +229,11 @@ async def fetch_movie_years_from_wikipedia(
     if cached:
         return cached
 
+    normalized_title_key = _normalize_for_comparison(title)
+    year_film_pat = re.compile(r"\((19\d{2}|20\d{2})\s+film\)", re.IGNORECASE)
+    generic_film_pat = re.compile(r"\((?:feature\s+)?film\)", re.IGNORECASE)
+    disamb_pat = re.compile(r"\(disambiguation\)\Z", re.IGNORECASE)
+
     def _extract_years_from_text(text: str) -> list[int]:
         yrs = []
         for m in re.finditer(r"\b(19\d{2}|20\d{2})\b", text):
@@ -241,31 +252,32 @@ async def fetch_movie_years_from_wikipedia(
         base = re.sub(r"\s*\([^)]*\)\s*$", "", page_title).strip()
         return base
 
+    def _candidate_matches_title(candidate_title: str) -> bool:
+        base = _normalized_search_title(candidate_title)
+        return _normalize_for_comparison(base) == normalized_title_key
+
     def _pick_film_candidate(
         search_results: list[str],
     ) -> tuple[str | None, str | None]:
         # Returns (best_title, disambiguation_title)
         if not search_results:
             return None, None
-        exact_year_pat = re.compile(
-            rf"^{re.escape(title)}\s*\((\d{{4}})\s+film\)$", re.IGNORECASE
-        )
-        simple_film_pat = re.compile(
-            rf"^{re.escape(title)}\s*\((?:feature\s+)?film\)$", re.IGNORECASE
-        )
-        any_film_pat = re.compile(rf"^{re.escape(title)}.*\bfilm\)$", re.IGNORECASE)
-        disamb_pat = re.compile(r"\(disambiguation\)$", re.IGNORECASE)
 
         best: str | None = None
         disamb: str | None = None
         for candidate in search_results:
-            if disamb_pat.search(candidate) and disamb is None:
+            if disamb is None and disamb_pat.search(candidate):
                 disamb = candidate
-            if exact_year_pat.match(candidate):
+
+            if not _candidate_matches_title(candidate):
+                continue
+
+            if year_film_pat.search(candidate):
                 return candidate, disamb
-            if best is None and simple_film_pat.match(candidate):
+
+            if best is None and generic_film_pat.search(candidate):
                 best = candidate
-            elif best is None and any_film_pat.match(candidate):
+            elif best is None and "film" in candidate.lower():
                 best = candidate
         return best, disamb
 
@@ -282,12 +294,10 @@ async def fetch_movie_years_from_wikipedia(
 
     # Collect all equal-precision film years directly from search results first
     equal_precision_years: set[int] = set()
-    film_year_pat = re.compile(
-        rf"^{re.escape(title)}\s*\((19\d{{2}}|20\d{{2}})\s+film\)$",
-        re.IGNORECASE,
-    )
     for cand in search_results or []:
-        m = film_year_pat.match(cand)
+        if not _candidate_matches_title(cand):
+            continue
+        m = year_film_pat.search(cand)
         if m:
             try:
                 equal_precision_years.add(int(m.group(1)))
@@ -385,18 +395,20 @@ async def fetch_movie_years_from_wikipedia(
             html = await _get_page_html(getattr(disamb_page, "url", ""))
             if html:
                 soup = BeautifulSoup(html, "lxml")
-                link_pat = re.compile(
-                    rf"^{re.escape(title)}\s*\((19\d{{2}}|20\d{{2}})\s+film\)$",
-                    re.IGNORECASE,
-                )
                 for a in soup.find_all("a", href=True):
                     if not isinstance(a, Tag):
                         continue
                     text = a.get_text(strip=True)
-                    m = link_pat.match(text)
+                    if not text:
+                        continue
+                    if not _candidate_matches_title(text):
+                        continue
+                    m = year_film_pat.search(text)
                     if m:
-                        y = int(m.group(1))
-                        equal_precision_years.add(y)
+                        try:
+                            equal_precision_years.add(int(m.group(1)))
+                        except Exception:
+                            pass
         except Exception as e:  # noqa: BLE001
             logger.debug(
                 "[WIKI] Error parsing disambiguation for '%s' via '%s': %s",
@@ -415,18 +427,20 @@ async def fetch_movie_years_from_wikipedia(
             html = await _get_page_html(getattr(disamb_page, "url", ""))
             if html:
                 soup = BeautifulSoup(html, "lxml")
-                link_pat = re.compile(
-                    rf"^{re.escape(title)}\s*\((19\d{{2}}|20\d{{2}})\s+film\)$",
-                    re.IGNORECASE,
-                )
                 for a in soup.find_all("a", href=True):
                     if not isinstance(a, Tag):
                         continue
                     text = a.get_text(strip=True)
-                    m = link_pat.match(text)
+                    if not text:
+                        continue
+                    if not _candidate_matches_title(text):
+                        continue
+                    m = year_film_pat.search(text)
                     if m:
-                        y = int(m.group(1))
-                        equal_precision_years.add(y)
+                        try:
+                            equal_precision_years.add(int(m.group(1)))
+                        except Exception:
+                            pass
         except Exception:
             # Silent fallback; not all titles have a dedicated disambiguation page
             pass

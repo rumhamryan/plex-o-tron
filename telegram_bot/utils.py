@@ -176,10 +176,34 @@ async def safe_edit_message(
                     wait = delay
 
             if wait > max_retry_after:
-                # Set suppression window and exit without raising to avoid crashing tasks
+                # Set suppression window and attempt a fallback send so the user still sees the update
                 if key is not None:
                     _edit_suppression_until[key] = time.monotonic() + wait
-                return
+
+                try:
+                    if isinstance(bot_or_message, Message):
+                        bot = bot_or_message.get_bot()
+                        chat_id = bot_or_message.chat_id
+                        send_kwargs = dict(kwargs)
+                        send_kwargs.pop("message_id", None)
+                        await safe_send_message(
+                            bot, chat_id=chat_id, text=text, **send_kwargs
+                        )
+                        return
+                    if "chat_id" in kwargs:
+                        send_kwargs = dict(kwargs)
+                        chat_id = send_kwargs.pop("chat_id")
+                        send_kwargs.pop("message_id", None)
+                        await safe_send_message(
+                            bot_or_message, chat_id=chat_id, text=text, **send_kwargs
+                        )
+                        return
+                except Exception as send_exc:
+                    last_exc = send_exc
+                    break
+
+                last_exc = e
+                break
 
             await asyncio.sleep(wait + 0.1)
             last_exc = e

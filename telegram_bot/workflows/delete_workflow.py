@@ -86,10 +86,55 @@ async def _delete_item_from_plex(
             PlexServer, plex_config["url"], plex_config["token"]
         )
 
-        # Find the corresponding item in Plex
-        plex_item = await asyncio.to_thread(
-            _find_media_in_plex_by_path, plex, path_to_delete
-        )
+        abs_path = os.path.abspath(path_to_delete)
+
+        # If deleting a directory (e.g., a movie collection folder), find all movie items whose
+        # media files reside under this directory and delete them all from Plex.
+        if os.path.isdir(abs_path):
+            logger.info(
+                f"Directory delete requested. Searching Plex movies under: {abs_path}"
+            )
+            items_to_delete = []
+            seen_keys: set[int] = set()
+
+            for section in plex.library.sections():
+                # Only target movie libraries for collection folders
+                if getattr(section, "type", None) != "movie":
+                    continue
+                for item in section.all():
+                    try:
+                        for media in getattr(item, "media", []) or []:
+                            for part in getattr(media, "parts", []) or []:
+                                part_path = os.path.abspath(getattr(part, "file", ""))
+                                # Match any file that lives within the collection directory
+                                if part_path.startswith(abs_path + os.sep):
+                                    # Use ratingKey to deduplicate multi-part/multi-file movies
+                                    rk = getattr(item, "ratingKey", None)
+                                    if rk is not None and rk not in seen_keys:
+                                        seen_keys.add(rk)
+                                        items_to_delete.append(item)
+                                    break
+                    except Exception:
+                        # Be defensive; continue scanning other items
+                        continue
+
+            if items_to_delete:
+                base_name = os.path.basename(abs_path)
+                logger.info(
+                    f"Found {len(items_to_delete)} Plex movie(s) under collection folder '{base_name}'. Deleting..."
+                )
+                # Delete sequentially to keep it simple and reliable
+                for it in items_to_delete:
+                    await asyncio.to_thread(it.delete)
+
+                message = f"🗑️ *Successfully Deleted from Plex*\n`{escape_markdown(base_name, version=2)}`"
+                logger.info(
+                    f"Successfully deleted {len(items_to_delete)} movie(s) for collection '{base_name}'."
+                )
+                return True, message
+
+        # Fallback: find a single matching item by exact path (file, season dir, show dir, or single movie dir)
+        plex_item = await asyncio.to_thread(_find_media_in_plex_by_path, plex, abs_path)
 
         if not plex_item:
             return (
