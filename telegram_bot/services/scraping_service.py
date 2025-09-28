@@ -33,6 +33,19 @@ def _normalize_for_comparison(value: str) -> str:
     return re.sub(r"[\W_]+", "", value).casefold()
 
 
+_MINISERIES_QUALIFIER_PATTERN = re.compile(
+    r"\s*\([^)]*miniseries[^)]*\)\s*$", re.IGNORECASE
+)
+
+
+def _sanitize_wikipedia_title(title: str) -> str:
+    """Normalize Wikipedia titles by trimming trailing miniseries qualifiers."""
+    if not title:
+        return title
+    cleaned = _MINISERIES_QUALIFIER_PATTERN.sub("", title).strip()
+    return cleaned or title
+
+
 # Suppress noisy BeautifulSoup parser guess warnings originating from wikipedia lib only
 warnings.filterwarnings(
     "ignore", category=GuessedAtParserWarning, module=r"^wikipedia\.wikipedia$"
@@ -69,14 +82,15 @@ async def fetch_episode_title_from_wikipedia(
         returned if Wikipedia redirects the initial search.
     """
     corrected_show_title: str | None = None
-    cache_key = (show_title.strip().lower(), season)
+    normalized_input = show_title.strip()
+    cache_key = (normalized_input.lower(), season)
 
     # Fast path: return from cache if available
     cached = _WIKI_TITLES_CACHE.get(cache_key)
     if cached:
         titles_map, corrected = cached
         return titles_map.get(episode), corrected
-    canonical_title = show_title
+    canonical_title = normalized_input
     main_page_url: str | None = None
 
     # --- Step 1: Find the main show page to get the canonical, corrected title ---
@@ -97,9 +111,17 @@ async def fetch_episode_title_from_wikipedia(
         )
         main_page_url = main_page.url
 
-        if main_page.title != show_title:
-            corrected_show_title = main_page.title
-            canonical_title = main_page.title
+        resolved_title = main_page.title.strip()
+        sanitized_title = _sanitize_wikipedia_title(resolved_title)
+        canonical_title = sanitized_title
+
+        if resolved_title != sanitized_title:
+            logger.info(
+                f"[WIKI] Normalized resolved title '{resolved_title}' -> '{sanitized_title}'"
+            )
+
+        if canonical_title.casefold() != normalized_input.casefold():
+            corrected_show_title = canonical_title
             logger.info(
                 f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'"
             )
