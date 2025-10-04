@@ -200,6 +200,33 @@ async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
 
 
 @pytest.mark.asyncio
+async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
+    mock_main_page = mocker.Mock()
+    mock_main_page.title = "Show (TV series)"
+    mock_main_page.url = "http://example.com/show"
+
+    mock_list_page = mocker.Mock()
+    mock_list_page.url = "http://example.com/list"
+
+    mocker.patch("wikipedia.search", return_value=["Show (TV series)"])
+    page_patch = mocker.patch(
+        "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
+    )
+    mocker.patch(
+        "telegram_bot.services.scraping_service._get_page_html",
+        return_value=DEDICATED_HTML,
+    )
+
+    title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+        "Show", 1, 1
+    )
+
+    assert title == "Pilot"
+    assert corrected is None
+    assert page_patch.call_args_list[1].args[0] == "List of Show episodes"
+
+
+@pytest.mark.asyncio
 async def test_fetch_episode_title_embedded_page(mocker):
     mock_main_page = mocker.Mock()
     mock_main_page.title = "Show"

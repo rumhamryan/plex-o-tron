@@ -33,16 +33,22 @@ def _normalize_for_comparison(value: str) -> str:
     return re.sub(r"[\W_]+", "", value).casefold()
 
 
-_MINISERIES_QUALIFIER_PATTERN = re.compile(
-    r"\s*\([^)]*miniseries[^)]*\)\s*$", re.IGNORECASE
+_WIKIPEDIA_TRAILING_QUALIFIER_PATTERN = re.compile(
+    r"\s*\((?:[^)]*\b(?:mini[-\s]?series|(?:tv|television)\s+series)[^)]*)\)\s*$",
+    re.IGNORECASE,
 )
 
 
 def _sanitize_wikipedia_title(title: str) -> str:
-    """Normalize Wikipedia titles by trimming trailing miniseries qualifiers."""
+    """Normalize Wikipedia titles by trimming trailing series qualifiers."""
     if not title:
         return title
-    cleaned = _MINISERIES_QUALIFIER_PATTERN.sub("", title).strip()
+    cleaned = title
+    while True:
+        new_cleaned = _WIKIPEDIA_TRAILING_QUALIFIER_PATTERN.sub("", cleaned).strip()
+        if new_cleaned == cleaned:
+            break
+        cleaned = new_cleaned
     return cleaned or title
 
 
