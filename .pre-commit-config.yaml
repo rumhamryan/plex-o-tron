@@ -44,7 +44,7 @@ repos:
         -   types-PyYAML
     -   id: pytest
         name: pytest
-        entry: pytest
+        entry: env PYTHONPATH=tests/mocks pytest
         language: python
         types: [python]
         pass_filenames: false
@@ -60,7 +60,6 @@ repos:
         -   python-telegram-bot
         -   pyyaml
         -   wikipedia
-        -   libtorrent
         -   plexapi
         -   thefuzz
         -   "httpx[http2]"

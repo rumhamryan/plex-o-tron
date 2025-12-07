@@ -11,7 +11,7 @@ from thefuzz import fuzz
 
 from ...config import logger
 from ...utils import parse_torrent_name
-from .scoring import parse_codec, score_torrent_result
+from .scoring import score_torrent_result
 from ...services.generic_torrent_scraper import GenericTorrentScraper, load_site_config
 
 
@@ -282,23 +282,26 @@ async def scrape_yaml_site(
 
     results: list[dict[str, Any]] = []
     for item in raw_results:
-        score = score_torrent_result(
-            item.name, item.uploader or "", preferences, seeders=item.seeders
-        )
+        # raw_results contains dicts
+        name = item.get("name", "")
+        seeders = item.get("seeders", 0)
+        uploader = item.get("uploader") or "Anonymous"
+
+        score = score_torrent_result(name, uploader, preferences, seeders=seeders)
         if score <= 0:
             continue
-        parsed_name = parse_torrent_name(item.name)
+        parsed_name = parse_torrent_name(name)
         results.append(
             {
-                "title": item.name,
-                "page_url": item.magnet_url,
+                "title": name,
+                "page_url": item.get("magnet_url"),
                 "score": score,
-                "source": item.source_site,
-                "uploader": item.uploader or "Anonymous",
-                "size_gb": item.size_bytes / (1024**3),
-                "codec": _parse_codec(item.name),
-                "seeders": item.seeders,
-                "leechers": item.leechers,
+                "source": item.get("source_site", ""),
+                "uploader": uploader,
+                "size_gb": item.get("size_bytes", 0) / (1024**3),
+                "codec": parse_codec(name),
+                "seeders": seeders,
+                "leechers": item.get("leechers", 0),
                 "year": parsed_name.get("year"),
             }
         )
@@ -310,6 +313,7 @@ async def scrape_yaml_site(
         query,
     )
     return results
+
 
 async def _get_page_html(url: str) -> str | None:
     """Fetches the HTML content of a URL."""

@@ -1,0 +1,647 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.2, pluggy-1.6.0 -- /home/jules/.pyenv/versions/3.12.12/bin/python
+cachedir: .pytest_cache
+rootdir: /app
+configfile: pyproject.toml
+testpaths: tests
+plugins: mock-3.15.1, anyio-4.12.0, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 157 items
+
+tests/handlers/test_callback_handlers.py::test_button_handler_routes_search PASSED [  0%]
+tests/handlers/test_callback_handlers.py::test_button_handler_routes_delete PASSED [  1%]
+tests/handlers/test_callback_handlers.py::test_button_handler_routes_download PASSED [  1%]
+tests/handlers/test_command_handlers.py::test_search_command_starts_workflow PASSED [  2%]
+tests/handlers/test_command_handlers.py::test_plex_status_command_calls_service PASSED [  3%]
+tests/handlers/test_error_handler.py::test_global_error_handler_logs_and_notifies PASSED [  3%]
+tests/handlers/test_message_handlers.py::test_handle_link_message_processes_input PASSED [  4%]
+tests/handlers/test_message_handlers.py::test_handle_search_message_routes_search PASSED [  5%]
+tests/handlers/test_message_handlers.py::test_handle_search_message_routes_delete PASSED [  5%]
+tests/services/test_download_manager.py::test_progress_reporter_movie PASSED [  6%]
+tests/services/test_download_manager.py::test_progress_reporter_tv_paused PASSED [  7%]
+tests/services/test_download_manager.py::test_progress_reporter_season_pack_omits_episode_names PASSED [  7%]
+tests/services/test_download_manager.py::test_progress_reporter_skips_when_cancellation_pending PASSED [  8%]
+tests/services/test_download_manager.py::test_download_task_wrapper_success PASSED [  8%]
+tests/services/test_download_manager.py::test_download_task_wrapper_cancellation_cleanup PASSED [  9%]
+tests/services/test_download_manager.py::test_download_task_wrapper_failure_message PASSED [ 10%]
+tests/services/test_download_manager.py::test_download_with_progress_http_status_error PASSED [ 10%]
+tests/services/test_download_manager.py::test_download_with_progress_reports_during_pause PASSED [ 11%]
+tests/services/test_download_manager.py::test_add_download_to_queue PASSED [ 12%]
+tests/services/test_download_manager.py::test_add_season_to_queue PASSED [ 12%]
+tests/services/test_download_manager.py::test_process_queue_for_user_active PASSED [ 13%]
+tests/services/test_download_manager.py::test_process_queue_for_user_start PASSED [ 14%]
+tests/services/test_download_manager.py::test_handle_pause_resume_toggles_state PASSED [ 14%]
+tests/services/test_download_manager.py::test_cancel_request_flag_flow PASSED [ 15%]
+tests/services/test_dry_run_integration.py::test_dry_run_flow_uses_wiki_year_and_filters_resolution PASSED [ 15%]
+tests/services/test_dry_run_integration.py::test_dry_run_movie_explicit_year_overrides_wiki FAILED [ 16%]
+tests/services/test_dry_run_integration.py::test_dry_run_tv_search_workflow_basic FAILED [ 17%]
+tests/services/test_generic_torrent_scraper_config_cache.py::test_load_site_config_uses_cache PASSED [ 17%]
+tests/services/test_generic_torrent_scraper_filtering.py::test_two_stage_filtering_prefers_precise_single_token_match PASSED [ 18%]
+tests/services/test_generic_torrent_scraper_logging.py::test_fetch_page_logs_status PASSED [ 19%]
+tests/services/test_generic_torrent_scraper_logging.py::test_fetch_page_logs_error_body PASSED [ 19%]
+tests/services/test_generic_torrent_scraper_magnet.py::test_search_parses_magnet_link_from_detail_page PASSED [ 20%]
+tests/services/test_generic_torrent_scraper_topn.py::test_extract_data_from_row PASSED [ 21%]
+tests/services/test_generic_torrent_scraper_topn.py::test_parse_and_select_top_results PASSED [ 21%]
+tests/services/test_media_manager.py::test_generate_plex_filename_movie PASSED [ 22%]
+tests/services/test_media_manager.py::test_generate_plex_filename_tv_with_episode_title PASSED [ 22%]
+tests/services/test_media_manager.py::test_generate_plex_filename_illegal_chars PASSED [ 23%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Movie.2160p.BluRay-4K] PASSED [ 24%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Video.1080p.x265-1080p] PASSED [ 24%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Series.720p.HDTV-720p] PASSED [ 25%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Old.Movie.DVDRip-SD] PASSED [ 26%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Sample-N/A] PASSED [ 26%]
+tests/services/test_media_manager.py::test_handle_successful_download PASSED [ 27%]
+tests/services/test_media_manager.py::test_handle_successful_download_season_pack PASSED [ 28%]
+tests/services/test_plex_service.py::test_get_plex_server_status_connected PASSED [ 28%]
+tests/services/test_plex_service.py::test_get_plex_server_status_unauthorized PASSED [ 29%]
+tests/services/test_plex_service.py::test_get_plex_server_status_connection_error PASSED [ 29%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_dedicated_page PASSED [ 30%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_strips_miniseries_suffix FAILED [ 31%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_strips_tv_series_suffix FAILED [ 31%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_embedded_page PASSED [ 32%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_not_found FAILED [ 33%]
+tests/services/test_scraping_service.py::test_fetch_season_episode_count PASSED [ 33%]
+tests/services/test_scraping_service.py::test_fetch_season_episode_count_prefers_titles_over_overview PASSED [ 34%]
+tests/services/test_scraping_service.py::test_fetch_season_episode_count_skips_ongoing_overview PASSED [ 35%]
+tests/services/test_scraping_service.py::test_scrape_1337x_parses_results PASSED [ 35%]
+tests/services/test_scraping_service.py::test_scrape_1337x_no_results PASSED [ 36%]
+tests/services/test_scraping_service.py::test_scrape_1337x_fuzzy_filter PASSED [ 36%]
+tests/services/test_scraping_service.py::test_scrape_1337x_passes_limit PASSED [ 37%]
+tests/services/test_scraping_service.py::test_scrape_yts_parses_results PASSED [ 38%]
+tests/services/test_scraping_service.py::test_scrape_yts_retries_on_validation_failure PASSED [ 38%]
+tests/services/test_scraping_service.py::test_scrape_yts_paginates_browse_pages_to_find_year PASSED [ 39%]
+tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_quality FAILED [ 40%]
+tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_year FAILED [ 40%]
+tests/services/test_scraping_service.py::test_scrape_yts_token_gate_avoids_near_homonyms FAILED [ 41%]
+tests/services/test_scraping_service.py::test_strategy_find_direct_links_magnet PASSED [ 42%]
+tests/services/test_scraping_service.py::test_strategy_find_direct_links_torrent PASSED [ 42%]
+tests/services/test_scraping_service.py::test_strategy_find_direct_links_none PASSED [ 43%]
+tests/services/test_scraping_service.py::test_strategy_contextual_search_keyword PASSED [ 43%]
+tests/services/test_scraping_service.py::test_strategy_contextual_search_query_match PASSED [ 44%]
+tests/services/test_scraping_service.py::test_strategy_contextual_search_unrelated_keyword PASSED [ 45%]
+tests/services/test_scraping_service.py::test_strategy_find_in_tables_single_match PASSED [ 45%]
+tests/services/test_scraping_service.py::test_strategy_find_in_tables_multiple_matches PASSED [ 46%]
+tests/services/test_scraping_service.py::test_strategy_find_in_tables_ignores_unrelated_tables PASSED [ 47%]
+tests/services/test_scraping_service.py::test_score_candidate_links_prefers_magnet PASSED [ 47%]
+tests/services/test_scraping_service.py::test_score_candidate_links_penalizes_ads PASSED [ 48%]
+tests/services/test_scraping_service.py::test_score_candidate_links_prefers_better_match PASSED [ 49%]
+tests/services/test_search_logic.py::test_parse_codec[Some.Movie.x265-x265] PASSED [ 49%]
+tests/services/test_search_logic.py::test_parse_codec[Another HEVC release-x265] PASSED [ 50%]
+tests/services/test_search_logic.py::test_parse_codec[Film X264 edition-x264] PASSED [ 50%]
+tests/services/test_search_logic.py::test_parse_codec[AV1 Showcase 1080p-av1] PASSED [ 51%]
+tests/services/test_search_logic.py::test_parse_codec[H.265 encode-x265] PASSED [ 52%]
+tests/services/test_search_logic.py::test_parse_codec[H 265 Hybrid-x265] PASSED [ 52%]
+tests/services/test_search_logic.py::test_parse_codec[H264 remux-x264] PASSED [ 53%]
+tests/services/test_search_logic.py::test_parse_codec[H 264-FLUX-x264] PASSED [ 54%]
+tests/services/test_search_logic.py::test_parse_codec[Rick and Morty S08E01 1080p WEB H264-LAZYCUNTS [eztv]-x264] PASSED [ 54%]
+tests/services/test_search_logic.py::test_parse_codec[Rick and Morty S08E01 Summer of All Fears 720p MAX WEB-DL DDP5 1 H 264-FLUX [eztv]-x264] PASSED [ 55%]
+tests/services/test_search_logic.py::test_parse_codec[No codec here-None] PASSED [ 56%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[1.5 GB-1610612736.0] PASSED [ 56%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[500 MB-524288000] PASSED [ 57%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[1024 KB-1048576] PASSED [ 57%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[invalid-0] PASSED [ 58%]
+tests/services/test_search_logic.py::test_score_torrent_result PASSED    [ 59%]
+tests/services/test_search_orchestration.py::test_orchestrate_searches_calls_sites_and_sorts PASSED [ 59%]
+tests/services/test_search_orchestration.py::test_orchestrate_searches_respects_enabled_flag PASSED [ 60%]
+tests/services/test_search_orchestration.py::test_orchestrate_searches_yaml_fallback_for_unknown_site FAILED [ 61%]
+tests/services/test_torrent_service.py::test_process_user_input_magnet_routing PASSED [ 61%]
+tests/services/test_torrent_service.py::test_process_user_input_torrent_url_routing PASSED [ 62%]
+tests/services/test_torrent_service.py::test_process_user_input_webpage_routing PASSED [ 63%]
+tests/services/test_torrent_service.py::test_handle_webpage_url_no_links PASSED [ 63%]
+tests/services/test_torrent_service.py::test_handle_webpage_url_multiple_links PASSED [ 64%]
+tests/services/test_torrent_service.py::test_fetch_metadata_from_magnet_timeout PASSED [ 64%]
+tests/services/test_torrent_service.py::test_fetch_metadata_from_magnet_success PASSED [ 65%]
+tests/test_batch_scanning.py::test_update_batch_triggers_single_scan PASSED [ 66%]
+tests/test_batch_scanning.py::test_update_batch_no_scan_before_completion PASSED [ 66%]
+tests/test_batch_scanning.py::test_update_batch_skip_duplicate_scan PASSED [ 67%]
+tests/test_config.py::test_get_configuration_happy_path PASSED           [ 68%]
+tests/test_config.py::test_get_configuration_missing_file PASSED         [ 68%]
+tests/test_config.py::test_get_configuration_missing_token PASSED        [ 69%]
+tests/test_config.py::test_get_configuration_missing_default_path PASSED [ 70%]
+tests/test_config.py::test_get_configuration_invalid_search_json PASSED  [ 70%]
+tests/test_state.py::test_save_and_load_state_roundtrip PASSED           [ 71%]
+tests/test_state.py::test_load_state_missing_file PASSED                 [ 71%]
+tests/test_state.py::test_load_state_json_error PASSED                   [ 72%]
+tests/test_state.py::test_post_init_resumes_persisted_download PASSED    [ 73%]
+tests/test_state.py::test_post_shutdown_cancels_tasks_and_saves_state PASSED [ 73%]
+tests/test_utils.py::test_format_bytes[0-0B] PASSED                      [ 74%]
+tests/test_utils.py::test_format_bytes[1023-1023.0 B] PASSED             [ 75%]
+tests/test_utils.py::test_format_bytes[1024-1.0 KB] PASSED               [ 75%]
+tests/test_utils.py::test_format_bytes[1536-1.5 KB] PASSED               [ 76%]
+tests/test_utils.py::test_format_bytes[1048576-1.0 MB] PASSED            [ 77%]
+tests/test_utils.py::test_format_bytes[1610612736-1.5 GB] PASSED         [ 77%]
+tests/test_utils.py::test_extract_first_int[S01E05-1] PASSED             [ 78%]
+tests/test_utils.py::test_extract_first_int[Season 12-12] PASSED         [ 78%]
+tests/test_utils.py::test_extract_first_int[No numbers here-None] PASSED [ 79%]
+tests/test_utils.py::test_extract_first_int[-None] PASSED                [ 80%]
+tests/test_utils.py::test_extract_first_int[Episode 5 is the best-5] PASSED [ 80%]
+tests/test_utils.py::test_parse_torrent_name[Movie.Title.2023-expected0] PASSED [ 81%]
+tests/test_utils.py::test_parse_torrent_name[Show.Name.S01E02.1080p-expected1] PASSED [ 82%]
+tests/test_utils.py::test_parse_torrent_name[Show Name 1x02 [1080p]-expected2] PASSED [ 82%]
+tests/test_utils.py::test_parse_torrent_name[Another_Show-S01E02_[x265]-expected3] PASSED [ 83%]
+tests/test_utils.py::test_parse_torrent_name[Unknown.File[x265]-expected4] PASSED [ 84%]
+tests/utils/test_safe_edit_message_fallback.py::test_safe_edit_message_falls_back_to_send PASSED [ 84%]
+tests/utils/test_safe_edit_message_retry_after.py::test_safe_edit_message_retries_on_small_retry_after PASSED [ 85%]
+tests/utils/test_safe_edit_message_retry_after.py::test_safe_edit_message_suppresses_on_large_retry_after PASSED [ 85%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_success PASSED [ 86%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_retries_on_timeout_then_succeeds PASSED [ 87%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_respects_retry_after PASSED [ 87%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_retries_on_network_error_then_raises PASSED [ 88%]
+tests/workflows/test_delete_workflow.py::test_delete_show_happy_path PASSED [ 89%]
+tests/workflows/test_delete_workflow.py::test_delete_workflow_not_found PASSED [ 89%]
+tests/workflows/test_search_workflow.py::test_search_movie_happy_path PASSED [ 90%]
+tests/workflows/test_search_workflow.py::test_search_tv_happy_path PASSED [ 91%]
+tests/workflows/test_search_workflow.py::test_search_cancel_clears_context PASSED [ 91%]
+tests/workflows/test_search_workflow.py::test_resolution_filters_results[search_resolution_4k-expected_titles0] PASSED [ 92%]
+tests/workflows/test_search_workflow.py::test_resolution_filters_results[search_resolution_1080p-expected_titles1] PASSED [ 92%]
+tests/workflows/test_search_workflow.py::test_tv_season_reply_offers_scope_buttons PASSED [ 93%]
+tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_single PASSED [ 94%]
+tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_season PASSED [ 94%]
+tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_season_fallback PASSED [ 95%]
+tests/workflows/test_search_workflow.py::test_present_season_download_confirmation PASSED [ 96%]
+tests/workflows/test_search_workflow.py::test_present_season_download_confirmation_pack PASSED [ 96%]
+tests/workflows/test_search_workflow.py::test_present_season_download_confirmation_pack_has_reject_button PASSED [ 97%]
+tests/workflows/test_search_workflow.py::test_handle_reject_season_pack_triggers_individual PASSED [ 98%]
+tests/workflows/test_search_workflow.py::test_entire_season_skips_pack_and_targets_missing PASSED [ 98%]
+tests/workflows/test_search_workflow.py::test_entire_season_all_owned_exits_early PASSED [ 99%]
+tests/workflows/test_search_workflow_integration.py::test_tv_season_fallback_uses_wiki_titles_and_corrected_title PASSED [100%]
+
+=================================== FAILURES ===================================
+_______________ test_dry_run_movie_explicit_year_overrides_wiki ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa233641a0>
+
+    @pytest.mark.asyncio
+    async def test_dry_run_movie_explicit_year_overrides_wiki(mocker):
+        # Wikipedia would return an incorrect or different year, but explicit year should win
+        mocker.patch(
+            "telegram_bot.services.scrapers.wikipedia_scraper.fetch_movie_years_from_wikipedia",
+            new=AsyncMock(return_value=([1983], None)),
+        )
+
+        yts_results = [
+            {
+                "title": "The Thing (1982) 1080p WEB x265 [YTS]",
+                "score": 22,
+                "source": "YTS.mx",
+            },
+        ]
+        x_results = [
+            {"title": "The.Thing.1982.1080p.BluRay.x265", "score": 18, "source": "1337x"},
+        ]
+        m_yts = mocker.patch.object(
+            YtsScraper,
+            "search",
+            new=AsyncMock(return_value=yts_results),
+        )
+        m_1337 = mocker.patch(
+            "telegram_bot.services.search_logic.scrape_1337x",
+            new=AsyncMock(return_value=x_results),
+        )
+
+        ctx = _ctx_with_search_config()
+        title = "The Thing 1982"
+        resolution = "1080p"
+
+        # Emulate dry-run logic: extract explicit year and base
+        import re as _re
+
+        m = _re.search(r"\b(19\d{2}|20\d{2})\b", title)
+        explicit_year = m.group(1) if m else None
+        base = title[: m.start()].strip() if m else title
+
+        years, corrected = await fetch_movie_years_from_wikipedia(base)
+        base_for_search = corrected or base
+>       assert years == [1983]
+E       AssertionError: assert [1982, 2011] == [1983]
+E
+E         At index 0 diff: 1982 != 1983
+E         Left contains one more item: 2011
+E
+E         Full diff:
+E           [
+E         -     1983,...
+E
+E         ...Full output truncated (5 lines hidden), use '-vv' to show
+
+tests/services/test_dry_run_integration.py:169: AssertionError
+____________________ test_dry_run_tv_search_workflow_basic _____________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa23353830>
+
+    @pytest.mark.asyncio
+    async def test_dry_run_tv_search_workflow_basic(mocker):
+        # TV workflow uses TV websites set; here we only include 1337x TV category
+        ctx = Mock()
+        ctx.bot_data = {
+            "SEARCH_CONFIG": {
+                "websites": {
+                    "movies": [],
+                    "tv": [
+                        {
+                            "name": "1337x",
+                            "enabled": True,
+                            "search_url": "https://1337x.to/category-search/{query}/TV/1/",
+                        }
+                    ],
+                },
+                "preferences": {
+                    "tv": {
+                        "resolutions": {"1080p": 5, "720p": 1},
+                        "codecs": {"x265": 4, "hevc": 4, "x264": 1, "h264": 1},
+                        "uploaders": {"EZTV": 5, "MeGusta": 5},
+                    }
+                },
+            }
+        }
+
+        x_results = [
+            {"title": "My.Show.S01E01.1080p.WEB.x265", "score": 17, "source": "1337x"},
+            {"title": "My.Show.S01E01.720p.WEB.x264", "score": 9, "source": "1337x"},
+        ]
+
+        m_1337 = mocker.patch(
+            "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
+            new=AsyncMock(return_value=x_results),
+        )
+
+        query = "My Show S01E01"
+        resolution = "1080p"
+        results = await orchestrate_searches(query, "tv", ctx, resolution=resolution)
+
+        # 1337x called with query as-is (no year appended for TV)
+        x_call = m_1337.await_args
+>       assert query in x_call.args or x_call.kwargs.get("query") == query
+                        ^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'args'
+
+tests/services/test_dry_run_integration.py:226: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:generic_torrent_scraper.py:456 [SCRAPER] HTTP error fetching https://1337x.to/category-search/My+Show+S01E01/TV/1/: Client error '403 Forbidden' for url 'https://1337x.to/category-search/My+Show+S01E01/TV/1/'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+ERROR    telegram_bot.config:generic_torrent_scraper.py:148 [SCRAPER] 1337x: Failed to retrieve search results from https://1337x.to/category-search/My+Show+S01E01/TV/1/
+______________ test_fetch_episode_title_strips_miniseries_suffix _______________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa232adf70>
+
+    @pytest.mark.asyncio
+    async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
+        mock_main_page = mocker.Mock()
+        mock_main_page.title = "Show (miniseries)"
+        mock_main_page.url = "http://example.com/show"
+
+        mock_list_page = mocker.Mock()
+        mock_list_page.url = "http://example.com/list"
+
+        mocker.patch("wikipedia.search", return_value=["Show (miniseries)"])
+        page_patch = mocker.patch(
+            "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
+        )
+        mocker.patch(
+            "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
+            return_value=DEDICATED_HTML,
+        )
+
+        title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+            "Show", 1, 1
+        )
+
+        assert title == "Pilot"
+        assert corrected is None
+>       assert page_patch.call_args_list[1].args[0] == "List of Show episodes"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+tests/services/test_scraping_service.py:200: IndexError
+_______________ test_fetch_episode_title_strips_tv_series_suffix _______________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa232bf5c0>
+
+    @pytest.mark.asyncio
+    async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
+        mock_main_page = mocker.Mock()
+        mock_main_page.title = "Show (TV series)"
+        mock_main_page.url = "http://example.com/show"
+
+        mock_list_page = mocker.Mock()
+        mock_list_page.url = "http://example.com/list"
+
+        mocker.patch("wikipedia.search", return_value=["Show (TV series)"])
+        page_patch = mocker.patch(
+            "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
+        )
+        mocker.patch(
+            "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
+            return_value=DEDICATED_HTML,
+        )
+
+        title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+            "Show", 1, 1
+        )
+
+        assert title == "Pilot"
+        assert corrected is None
+>       assert page_patch.call_args_list[1].args[0] == "List of Show episodes"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+tests/services/test_scraping_service.py:227: IndexError
+______________________ test_fetch_episode_title_not_found ______________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa23317230>
+
+    @pytest.mark.asyncio
+    async def test_fetch_episode_title_not_found(mocker):
+        mock_page = mocker.Mock()
+        mock_page.url = "http://example.com"
+        mocker.patch("wikipedia.search", return_value=["Show"])
+        mocker.patch("wikipedia.page", return_value=mock_page)
+        mocker.patch(
+            "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
+            return_value=NO_EPISODE_HTML,
+        )
+
+        title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
+>       assert title is None
+E       AssertionError: assert 'Pilot' is None
+
+tests/services/test_scraping_service.py:262: AssertionError
+_________________ test_scrape_yts_api_fallback_relaxes_quality _________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa23316600>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
+        """API fallback tries again without quality when the first pass returns 0."""
+        # No browse matches -> triggers API fallback
+        search_html = """
+        <div class="other"></div>
+        """
+        # Attempt 1 (year+quality): 0 movies
+        api_empty = {"status": "ok", "data": {"movie_count": 0}}
+        # Attempt 2 (year only): has one movie with 1080p torrent
+        api_with_movie = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Test Movie (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "abcdef",
+                                "seeds": 7,
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=search_html),  # browse page 1 (no choices)
+            DummyResponse(text=search_html),  # browse page 2 (still no choices)
+            DummyResponse(text=search_html),  # browse page 3
+            DummyResponse(text=search_html),  # browse page 4
+            DummyResponse(text=search_html),  # browse page 5
+            DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+            DummyResponse(json_data=api_with_movie),  # API attempt 2 (year only)
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Test Movie",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:754: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:342 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+__________________ test_scrape_yts_api_fallback_relaxes_year ___________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa23452540>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_api_fallback_relaxes_year(mocker):
+        """API fallback eventually drops year param and filters locally by year."""
+        # No browse matches -> triggers API fallback
+        search_html = '<div class="other"></div>'
+        api_empty = {"status": "ok", "data": {"movie_count": 0}}
+        # Attempt 3 (no year param): include multiple years, only target year remains
+        api_all_years = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Alien (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "abcd11",
+                                "seeds": 5,
+                            }
+                        ],
+                    },
+                    {
+                        "title_long": "Alien (2012)",
+                        "year": 2012,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "efgh22",
+                                "seeds": 9,
+                            }
+                        ],
+                    },
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=search_html),  # browse page 1
+            DummyResponse(text=search_html),  # browse page 2
+            DummyResponse(text=search_html),  # browse page 3
+            DummyResponse(text=search_html),  # browse page 4
+            DummyResponse(text=search_html),  # browse page 5
+            DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+            DummyResponse(json_data=api_empty),  # API attempt 2 (year only)
+            DummyResponse(json_data=api_all_years),  # API attempt 3 (no year param)
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Alien",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+        # Only the 1979 entry should remain after local filtering
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:835: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:342 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+_______________ test_scrape_yts_token_gate_avoids_near_homonyms ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa23366d50>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
+        """With a year present, token gate avoids false matches like 'The Dunes' for 'Dune'."""
+        # Page 1 contains 'The Dunes' (fails token gate), then pages 2-5 empty -> fallback
+        browse_dunes = """
+        <div class="browse-movie-wrap">
+          <a class="browse-movie-title" href="https://yts.mx/movies/the-dunes-1979">The Dunes</a>
+          <div class="browse-movie-year">1979</div>
+        </div>
+        """
+        browse_empty = '<div class="other"></div>'
+
+        api_with_movie = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Dune (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "aaaaaa",
+                                "seeds": 3,
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=browse_dunes),  # page 1 (gated out)
+            DummyResponse(text=browse_empty),  # page 2
+            DummyResponse(text=browse_empty),  # page 3
+            DummyResponse(text=browse_empty),  # page 4
+            DummyResponse(text=browse_empty),  # page 5
+            DummyResponse(json_data=api_with_movie),  # API fallback
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Dune",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:908: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:342 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+___________ test_orchestrate_searches_yaml_fallback_for_unknown_site ___________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7ffa2334be90>
+
+    @pytest.mark.asyncio
+    async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
+        ctx = _ctx_with_config(
+            websites_movies=[
+                {
+                    "name": "EZTV",
+                    "enabled": True,
+                    "search_url": "https://eztv.re/search/{query}",
+                },
+            ]
+        )
+
+        m_yaml = mocker.patch(
+            "telegram_bot.services.scraping_service.scrape_yaml_site",
+            new=AsyncMock(
+                return_value=[{"title": "Alien (1979) EZ", "score": 9, "source": "EZTV"}]
+            ),
+        )
+
+        results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
+>       assert results and results[0]["source"] == "EZTV"
+E       assert ([])
+
+tests/services/test_search_orchestration.py:147: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:generic_web_scraper.py:267 [SCRAPER] No YAML config found for site 'EZTV' — skipping.
+=========================== short test summary info ============================
+FAILED tests/services/test_dry_run_integration.py::test_dry_run_movie_explicit_year_overrides_wiki
+FAILED tests/services/test_dry_run_integration.py::test_dry_run_tv_search_workflow_basic
+FAILED tests/services/test_scraping_service.py::test_fetch_episode_title_strips_miniseries_suffix
+FAILED tests/services/test_scraping_service.py::test_fetch_episode_title_strips_tv_series_suffix
+FAILED tests/services/test_scraping_service.py::test_fetch_episode_title_not_found
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_quality
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_year
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_token_gate_avoids_near_homonyms
+FAILED tests/services/test_search_orchestration.py::test_orchestrate_searches_yaml_fallback_for_unknown_site
+======================== 9 failed, 148 passed in 11.01s ========================

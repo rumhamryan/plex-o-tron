@@ -11,7 +11,6 @@ from thefuzz import fuzz, process
 
 from ..config import logger
 from .scrapers import scrape_1337x, YtsScraper, scrape_yaml_site
-from .scrapers.scoring import score_torrent_result, parse_codec
 
 # --- Type Aliases for Readability ---
 ScraperCoroutine = Coroutine[Any, Any, list[dict[str, Any]]]
@@ -49,7 +48,6 @@ async def orchestrate_searches(
     }
 
     yts_scraper = YtsScraper()
-
 
     tasks = []
     for site_info in sites_to_scrape:
@@ -144,7 +142,6 @@ async def orchestrate_searches(
         f"[SEARCH] Orchestration complete. Returning {len(all_results)} sorted results."
     )
     return all_results
-
 
 
 # --- Local Filesystem Searching (for Delete workflow) ---

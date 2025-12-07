@@ -1,0 +1,444 @@
+trim trailing whitespace.................................................Failed
+- hook id: trailing-whitespace
+- exit code: 1
+- files were modified by this hook
+
+Fixing pre_commit_results.txt
+
+fix end of files.........................................................Failed
+- hook id: end-of-file-fixer
+- exit code: 1
+- files were modified by this hook
+
+Fixing pre_commit_results.txt
+
+check yaml...............................................................Passed
+check for added large files..............................................Passed
+ruff.....................................................................Failed
+- hook id: ruff
+- exit code: 1
+
+telegram_bot/services/generic_torrent_scraper.py:73:1: E402 Module level import not at top of file
+telegram_bot/services/scrapers/generic_web_scraper.py:304:26: F821 Undefined name `parse_codec`
+telegram_bot/services/scrapers/torrent_scraper.py:83:1: E402 Module level import not at top of file
+telegram_bot/services/scrapers/torrent_scraper.py:260:52: F821 Undefined name `_parse_codec`
+Found 4 errors.
+
+ruff-format..............................................................Failed
+- hook id: ruff-format
+- files were modified by this hook
+
+1 file reformatted, 65 files left unchanged
+
+uv-lock..................................................................Passed
+mypy.....................................................................Failed
+- hook id: mypy
+- exit code: 1
+
+tests/services/test_download_manager.py:94: SyntaxWarning: invalid escape sequence '\.'
+  assert "*Speed:* 0\.00 MB/s" in kwargs["text"]
+/app/telegram_bot/workflows/search_workflow.py:567: SyntaxWarning: invalid escape sequence '\.'
+  f"S{int(season):02d} already exist in your library\. Nothing to download\."
+/app/telegram_bot/workflows/search_workflow.py:581: SyntaxWarning: invalid escape sequence '\.'
+  "I will only fetch the missing episodes\. Choose a resolution:"
+/app/telegram_bot/workflows/search_workflow.py:590: SyntaxWarning: invalid escape sequence '\.'
+  "You may download a season pack if available\. Choose a resolution:"
+/app/telegram_bot/workflows/search_workflow.py:1102: SyntaxWarning: invalid escape sequence '\.'
+  f"S{int(season):02d} already exist in your library\."
+telegram_bot/services/scrapers/torrent_scraper.py:260: error: Name "_parse_codec" is not defined  [name-defined]
+telegram_bot/services/scrapers/generic_web_scraper.py:302: error: Name "parse_codec" is not defined  [name-defined]
+telegram_bot/services/download_manager.py:643: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+tests/services/test_download_manager.py:281: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+tests/services/test_download_manager.py:352: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+Found 2 errors in 2 files (checked 17 source files)
+telegram_bot/workflows/search_workflow.py:567: SyntaxWarning: invalid escape sequence '\.'
+  f"S{int(season):02d} already exist in your library\. Nothing to download\."
+telegram_bot/workflows/search_workflow.py:581: SyntaxWarning: invalid escape sequence '\.'
+  "I will only fetch the missing episodes\. Choose a resolution:"
+telegram_bot/workflows/search_workflow.py:590: SyntaxWarning: invalid escape sequence '\.'
+  "You may download a season pack if available\. Choose a resolution:"
+telegram_bot/workflows/search_workflow.py:1102: SyntaxWarning: invalid escape sequence '\.'
+  f"S{int(season):02d} already exist in your library\."
+telegram_bot/services/scrapers/torrent_scraper.py:260: error: Name "_parse_codec" is not defined  [name-defined]
+telegram_bot/services/scrapers/generic_web_scraper.py:302: error: Name "parse_codec" is not defined  [name-defined]
+scripts/dry_run_movie_search.py:74: error: Incompatible types in assignment (expression has type "tuple[str]", variable has type "tuple[str, str]")  [assignment]
+scripts/dry_run_movie_search.py:76: error: Incompatible types in assignment (expression has type "tuple[str]", variable has type "tuple[str, str]")  [assignment]
+scripts/dry_run_movie_search.py:78: error: Incompatible types in assignment (expression has type "tuple[str]", variable has type "tuple[str, str]")  [assignment]
+telegram_bot/services/download_manager.py:643: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+Found 5 errors in 3 files (checked 17 source files)
+telegram_bot/services/scrapers/generic_web_scraper.py:302: error: Name "parse_codec" is not defined  [name-defined]
+telegram_bot/services/scrapers/torrent_scraper.py:260: error: Name "_parse_codec" is not defined  [name-defined]
+telegram_bot/services/download_manager.py:643: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+Found 2 errors in 2 files (checked 17 source files)
+/app/telegram_bot/workflows/search_workflow.py:567: SyntaxWarning: invalid escape sequence '\.'
+  f"S{int(season):02d} already exist in your library\. Nothing to download\."
+/app/telegram_bot/workflows/search_workflow.py:581: SyntaxWarning: invalid escape sequence '\.'
+  "I will only fetch the missing episodes\. Choose a resolution:"
+/app/telegram_bot/workflows/search_workflow.py:590: SyntaxWarning: invalid escape sequence '\.'
+  "You may download a season pack if available\. Choose a resolution:"
+/app/telegram_bot/workflows/search_workflow.py:1102: SyntaxWarning: invalid escape sequence '\.'
+  f"S{int(season):02d} already exist in your library\."
+telegram_bot/services/scrapers/generic_web_scraper.py:302: error: Name "parse_codec" is not defined  [name-defined]
+telegram_bot/services/scrapers/torrent_scraper.py:260: error: Name "_parse_codec" is not defined  [name-defined]
+telegram_bot/services/download_manager.py:643: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+Found 2 errors in 2 files (checked 15 source files)
+
+pytest...................................................................Failed
+- hook id: pytest
+- exit code: 1
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.1, pluggy-1.6.0
+rootdir: /app
+configfile: pyproject.toml
+testpaths: tests
+plugins: mock-3.15.1, anyio-4.12.0, cov-7.0.0, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 157 items
+
+tests/handlers/test_callback_handlers.py ...                             [  1%]
+tests/handlers/test_command_handlers.py ..                               [  3%]
+tests/handlers/test_error_handler.py .                                   [  3%]
+tests/handlers/test_message_handlers.py ...                              [  5%]
+tests/services/test_download_manager.py ...............                  [ 15%]
+tests/services/test_dry_run_integration.py ..F                           [ 17%]
+tests/services/test_generic_torrent_scraper_config_cache.py .            [ 17%]
+tests/services/test_generic_torrent_scraper_filtering.py .               [ 18%]
+tests/services/test_generic_torrent_scraper_logging.py ..                [ 19%]
+tests/services/test_generic_torrent_scraper_magnet.py .                  [ 20%]
+tests/services/test_generic_torrent_scraper_topn.py ..                   [ 21%]
+tests/services/test_media_manager.py ..........                          [ 28%]
+tests/services/test_plex_service.py ...                                  [ 29%]
+tests/services/test_scraping_service.py ...............FFF............   [ 49%]
+tests/services/test_search_logic.py ................                     [ 59%]
+tests/services/test_search_orchestration.py ...                          [ 61%]
+tests/services/test_torrent_service.py .......                           [ 65%]
+tests/test_batch_scanning.py ...                                         [ 67%]
+tests/test_config.py .....                                               [ 70%]
+tests/test_state.py .....                                                [ 73%]
+tests/test_utils.py ................                                     [ 84%]
+tests/utils/test_safe_edit_message_fallback.py .                         [ 84%]
+tests/utils/test_safe_edit_message_retry_after.py ..                     [ 85%]
+tests/utils/test_safe_send_message.py ....                               [ 88%]
+tests/workflows/test_delete_workflow.py ..                               [ 89%]
+tests/workflows/test_search_workflow.py ...............                  [ 99%]
+tests/workflows/test_search_workflow_integration.py .                    [100%]
+
+=================================== FAILURES ===================================
+____________________ test_dry_run_tv_search_workflow_basic _____________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7f64ce019820>
+
+    @pytest.mark.asyncio
+    async def test_dry_run_tv_search_workflow_basic(mocker):
+        # TV workflow uses TV websites set; here we only include 1337x TV category
+        ctx = Mock()
+        ctx.bot_data = {
+            "SEARCH_CONFIG": {
+                "websites": {
+                    "movies": [],
+                    "tv": [
+                        {
+                            "name": "1337x",
+                            "enabled": True,
+                            "search_url": "https://1337x.to/category-search/{query}/TV/1/",
+                        }
+                    ],
+                },
+                "preferences": {
+                    "tv": {
+                        "resolutions": {"1080p": 5, "720p": 1},
+                        "codecs": {"x265": 4, "hevc": 4, "x264": 1, "h264": 1},
+                        "uploaders": {"EZTV": 5, "MeGusta": 5},
+                    }
+                },
+            }
+        }
+
+        x_results = [
+            {"title": "My.Show.S01E01.1080p.WEB.x265", "score": 17, "source": "1337x"},
+            {"title": "My.Show.S01E01.720p.WEB.x264", "score": 9, "source": "1337x"},
+        ]
+
+        m_1337 = mocker.patch(
+            "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
+            new=AsyncMock(return_value=x_results),
+        )
+
+        query = "My Show S01E01"
+        resolution = "1080p"
+        results = await orchestrate_searches(query, "tv", ctx, resolution=resolution)
+
+        # 1337x called with query as-is (no year appended for TV)
+        x_call = m_1337.await_args
+>       assert query in x_call.args or x_call.kwargs.get("query") == query
+                        ^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'args'
+
+tests/services/test_dry_run_integration.py:238: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:generic_torrent_scraper.py:462 [SCRAPER] HTTP error fetching https://1337x.to/category-search/My+Show+S01E01/TV/1/: Client error '403 Forbidden' for url 'https://1337x.to/category-search/My+Show+S01E01/TV/1/'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+ERROR    telegram_bot.config:generic_torrent_scraper.py:146 [SCRAPER] 1337x: Failed to retrieve search results from https://1337x.to/category-search/My+Show+S01E01/TV/1/
+_________________ test_scrape_yts_api_fallback_relaxes_quality _________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7f64cde6ad80>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
+        """API fallback tries again without quality when the first pass returns 0."""
+        # No browse matches -> triggers API fallback
+        search_html = """
+        <div class="other"></div>
+        """
+        # Attempt 1 (year+quality): 0 movies
+        api_empty = {"status": "ok", "data": {"movie_count": 0}}
+        # Attempt 2 (year only): has one movie with 1080p torrent
+        api_with_movie = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Test Movie (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "abcdef",
+                                "seeds": 7,
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=search_html),  # browse page 1 (no choices)
+            DummyResponse(text=search_html),  # browse page 2 (still no choices)
+            DummyResponse(text=search_html),  # browse page 3
+            DummyResponse(text=search_html),  # browse page 4
+            DummyResponse(text=search_html),  # browse page 5
+            DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+            DummyResponse(json_data=api_with_movie),  # API attempt 2 (year only)
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Test Movie",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:756: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:356 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+__________________ test_scrape_yts_api_fallback_relaxes_year ___________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7f64cde520f0>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_api_fallback_relaxes_year(mocker):
+        """API fallback eventually drops year param and filters locally by year."""
+        # No browse matches -> triggers API fallback
+        search_html = '<div class="other"></div>'
+        api_empty = {"status": "ok", "data": {"movie_count": 0}}
+        # Attempt 3 (no year param): include multiple years, only target year remains
+        api_all_years = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Alien (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "abcd11",
+                                "seeds": 5,
+                            }
+                        ],
+                    },
+                    {
+                        "title_long": "Alien (2012)",
+                        "year": 2012,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "efgh22",
+                                "seeds": 9,
+                            }
+                        ],
+                    },
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=search_html),  # browse page 1
+            DummyResponse(text=search_html),  # browse page 2
+            DummyResponse(text=search_html),  # browse page 3
+            DummyResponse(text=search_html),  # browse page 4
+            DummyResponse(text=search_html),  # browse page 5
+            DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+            DummyResponse(json_data=api_empty),  # API attempt 2 (year only)
+            DummyResponse(json_data=api_all_years),  # API attempt 3 (no year param)
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Alien",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+        # Only the 1979 entry should remain after local filtering
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:837: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:356 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+_______________ test_scrape_yts_token_gate_avoids_near_homonyms ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7f64cde40b30>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
+        """With a year present, token gate avoids false matches like 'The Dunes' for 'Dune'."""
+        # Page 1 contains 'The Dunes' (fails token gate), then pages 2-5 empty -> fallback
+        browse_dunes = """
+        <div class="browse-movie-wrap">
+          <a class="browse-movie-title" href="https://yts.mx/movies/the-dunes-1979">The Dunes</a>
+          <div class="browse-movie-year">1979</div>
+        </div>
+        """
+        browse_empty = '<div class="other"></div>'
+
+        api_with_movie = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Dune (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "aaaaaa",
+                                "seeds": 3,
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=browse_dunes),  # page 1 (gated out)
+            DummyResponse(text=browse_empty),  # page 2
+            DummyResponse(text=browse_empty),  # page 3
+            DummyResponse(text=browse_empty),  # page 4
+            DummyResponse(text=browse_empty),  # page 5
+            DummyResponse(json_data=api_with_movie),  # API fallback
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Dune",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:910: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:356 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+=============================== warnings summary ===============================
+telegram_bot/workflows/search_workflow.py:567
+  /app/telegram_bot/workflows/search_workflow.py:567: SyntaxWarning: invalid escape sequence '\.'
+    f"S{int(season):02d} already exist in your library\. Nothing to download\."
+
+telegram_bot/workflows/search_workflow.py:581
+  /app/telegram_bot/workflows/search_workflow.py:581: SyntaxWarning: invalid escape sequence '\.'
+    "I will only fetch the missing episodes\. Choose a resolution:"
+
+telegram_bot/workflows/search_workflow.py:590
+  /app/telegram_bot/workflows/search_workflow.py:590: SyntaxWarning: invalid escape sequence '\.'
+    "You may download a season pack if available\. Choose a resolution:"
+
+telegram_bot/workflows/search_workflow.py:1102
+  /app/telegram_bot/workflows/search_workflow.py:1102: SyntaxWarning: invalid escape sequence '\.'
+    f"S{int(season):02d} already exist in your library\."
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/services/test_dry_run_integration.py::test_dry_run_tv_search_workflow_basic
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_quality
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_year
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_token_gate_avoids_near_homonyms
+================== 4 failed, 153 passed, 4 warnings in 9.89s ===================

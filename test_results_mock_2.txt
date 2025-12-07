@@ -1,0 +1,2422 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.2, pluggy-1.6.0 -- /home/jules/.pyenv/versions/3.12.12/bin/python
+cachedir: .pytest_cache
+rootdir: /app
+configfile: pyproject.toml
+testpaths: tests
+plugins: mock-3.15.1, anyio-4.12.0, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 157 items
+
+tests/handlers/test_callback_handlers.py::test_button_handler_routes_search PASSED [  0%]
+tests/handlers/test_callback_handlers.py::test_button_handler_routes_delete PASSED [  1%]
+tests/handlers/test_callback_handlers.py::test_button_handler_routes_download PASSED [  1%]
+tests/handlers/test_command_handlers.py::test_search_command_starts_workflow PASSED [  2%]
+tests/handlers/test_command_handlers.py::test_plex_status_command_calls_service PASSED [  3%]
+tests/handlers/test_error_handler.py::test_global_error_handler_logs_and_notifies PASSED [  3%]
+tests/handlers/test_message_handlers.py::test_handle_link_message_processes_input PASSED [  4%]
+tests/handlers/test_message_handlers.py::test_handle_search_message_routes_search PASSED [  5%]
+tests/handlers/test_message_handlers.py::test_handle_search_message_routes_delete PASSED [  5%]
+tests/services/test_download_manager.py::test_progress_reporter_movie PASSED [  6%]
+tests/services/test_download_manager.py::test_progress_reporter_tv_paused PASSED [  7%]
+tests/services/test_download_manager.py::test_progress_reporter_season_pack_omits_episode_names PASSED [  7%]
+tests/services/test_download_manager.py::test_progress_reporter_skips_when_cancellation_pending PASSED [  8%]
+tests/services/test_download_manager.py::test_download_task_wrapper_success PASSED [  8%]
+tests/services/test_download_manager.py::test_download_task_wrapper_cancellation_cleanup PASSED [  9%]
+tests/services/test_download_manager.py::test_download_task_wrapper_failure_message PASSED [ 10%]
+tests/services/test_download_manager.py::test_download_with_progress_http_status_error PASSED [ 10%]
+tests/services/test_download_manager.py::test_download_with_progress_reports_during_pause PASSED [ 11%]
+tests/services/test_download_manager.py::test_add_download_to_queue PASSED [ 12%]
+tests/services/test_download_manager.py::test_add_season_to_queue PASSED [ 12%]
+tests/services/test_download_manager.py::test_process_queue_for_user_active PASSED [ 13%]
+tests/services/test_download_manager.py::test_process_queue_for_user_start PASSED [ 14%]
+tests/services/test_download_manager.py::test_handle_pause_resume_toggles_state PASSED [ 14%]
+tests/services/test_download_manager.py::test_cancel_request_flag_flow PASSED [ 15%]
+tests/services/test_dry_run_integration.py::test_dry_run_flow_uses_wiki_year_and_filters_resolution FAILED [ 15%]
+tests/services/test_dry_run_integration.py::test_dry_run_movie_explicit_year_overrides_wiki FAILED [ 16%]
+tests/services/test_dry_run_integration.py::test_dry_run_tv_search_workflow_basic FAILED [ 17%]
+tests/services/test_generic_torrent_scraper_config_cache.py::test_load_site_config_uses_cache PASSED [ 17%]
+tests/services/test_generic_torrent_scraper_filtering.py::test_two_stage_filtering_prefers_precise_single_token_match PASSED [ 18%]
+tests/services/test_generic_torrent_scraper_logging.py::test_fetch_page_logs_status PASSED [ 19%]
+tests/services/test_generic_torrent_scraper_logging.py::test_fetch_page_logs_error_body PASSED [ 19%]
+tests/services/test_generic_torrent_scraper_magnet.py::test_search_parses_magnet_link_from_detail_page FAILED [ 20%]
+tests/services/test_generic_torrent_scraper_topn.py::test_extract_data_from_row PASSED [ 21%]
+tests/services/test_generic_torrent_scraper_topn.py::test_parse_and_select_top_results PASSED [ 21%]
+tests/services/test_media_manager.py::test_generate_plex_filename_movie PASSED [ 22%]
+tests/services/test_media_manager.py::test_generate_plex_filename_tv_with_episode_title PASSED [ 22%]
+tests/services/test_media_manager.py::test_generate_plex_filename_illegal_chars PASSED [ 23%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Movie.2160p.BluRay-4K] PASSED [ 24%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Video.1080p.x265-1080p] PASSED [ 24%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Series.720p.HDTV-720p] PASSED [ 25%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Old.Movie.DVDRip-SD] PASSED [ 26%]
+tests/services/test_media_manager.py::test_parse_resolution_from_name[Sample-N/A] PASSED [ 26%]
+tests/services/test_media_manager.py::test_handle_successful_download PASSED [ 27%]
+tests/services/test_media_manager.py::test_handle_successful_download_season_pack PASSED [ 28%]
+tests/services/test_plex_service.py::test_get_plex_server_status_connected PASSED [ 28%]
+tests/services/test_plex_service.py::test_get_plex_server_status_unauthorized PASSED [ 29%]
+tests/services/test_plex_service.py::test_get_plex_server_status_connection_error PASSED [ 29%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_dedicated_page FAILED [ 30%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_strips_miniseries_suffix FAILED [ 31%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_strips_tv_series_suffix FAILED [ 31%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_embedded_page FAILED [ 32%]
+tests/services/test_scraping_service.py::test_fetch_episode_title_not_found PASSED [ 33%]
+tests/services/test_scraping_service.py::test_fetch_season_episode_count FAILED [ 33%]
+tests/services/test_scraping_service.py::test_fetch_season_episode_count_prefers_titles_over_overview FAILED [ 34%]
+tests/services/test_scraping_service.py::test_fetch_season_episode_count_skips_ongoing_overview PASSED [ 35%]
+tests/services/test_scraping_service.py::test_scrape_1337x_parses_results FAILED [ 35%]
+tests/services/test_scraping_service.py::test_scrape_1337x_no_results PASSED [ 36%]
+tests/services/test_scraping_service.py::test_scrape_1337x_fuzzy_filter FAILED [ 36%]
+tests/services/test_scraping_service.py::test_scrape_1337x_passes_limit PASSED [ 37%]
+tests/services/test_scraping_service.py::test_scrape_yts_parses_results FAILED [ 38%]
+tests/services/test_scraping_service.py::test_scrape_yts_retries_on_validation_failure FAILED [ 38%]
+tests/services/test_scraping_service.py::test_scrape_yts_paginates_browse_pages_to_find_year FAILED [ 39%]
+tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_quality FAILED [ 40%]
+tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_year FAILED [ 40%]
+tests/services/test_scraping_service.py::test_scrape_yts_token_gate_avoids_near_homonyms FAILED [ 41%]
+tests/services/test_scraping_service.py::test_strategy_find_direct_links_magnet FAILED [ 42%]
+tests/services/test_scraping_service.py::test_strategy_find_direct_links_torrent FAILED [ 42%]
+tests/services/test_scraping_service.py::test_strategy_find_direct_links_none FAILED [ 43%]
+tests/services/test_scraping_service.py::test_strategy_contextual_search_keyword FAILED [ 43%]
+tests/services/test_scraping_service.py::test_strategy_contextual_search_query_match FAILED [ 44%]
+tests/services/test_scraping_service.py::test_strategy_contextual_search_unrelated_keyword FAILED [ 45%]
+tests/services/test_scraping_service.py::test_strategy_find_in_tables_single_match FAILED [ 45%]
+tests/services/test_scraping_service.py::test_strategy_find_in_tables_multiple_matches FAILED [ 46%]
+tests/services/test_scraping_service.py::test_strategy_find_in_tables_ignores_unrelated_tables FAILED [ 47%]
+tests/services/test_scraping_service.py::test_score_candidate_links_prefers_magnet FAILED [ 47%]
+tests/services/test_scraping_service.py::test_score_candidate_links_penalizes_ads FAILED [ 48%]
+tests/services/test_scraping_service.py::test_score_candidate_links_prefers_better_match FAILED [ 49%]
+tests/services/test_search_logic.py::test_parse_codec[Some.Movie.x265-x265] PASSED [ 49%]
+tests/services/test_search_logic.py::test_parse_codec[Another HEVC release-x265] PASSED [ 50%]
+tests/services/test_search_logic.py::test_parse_codec[Film X264 edition-x264] PASSED [ 50%]
+tests/services/test_search_logic.py::test_parse_codec[AV1 Showcase 1080p-av1] PASSED [ 51%]
+tests/services/test_search_logic.py::test_parse_codec[H.265 encode-x265] PASSED [ 52%]
+tests/services/test_search_logic.py::test_parse_codec[H 265 Hybrid-x265] PASSED [ 52%]
+tests/services/test_search_logic.py::test_parse_codec[H264 remux-x264] PASSED [ 53%]
+tests/services/test_search_logic.py::test_parse_codec[H 264-FLUX-x264] PASSED [ 54%]
+tests/services/test_search_logic.py::test_parse_codec[Rick and Morty S08E01 1080p WEB H264-LAZYCUNTS [eztv]-x264] PASSED [ 54%]
+tests/services/test_search_logic.py::test_parse_codec[Rick and Morty S08E01 Summer of All Fears 720p MAX WEB-DL DDP5 1 H 264-FLUX [eztv]-x264] PASSED [ 55%]
+tests/services/test_search_logic.py::test_parse_codec[No codec here-None] PASSED [ 56%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[1.5 GB-1610612736.0] PASSED [ 56%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[500 MB-524288000] PASSED [ 57%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[1024 KB-1048576] PASSED [ 57%]
+tests/services/test_search_logic.py::test_parse_size_to_bytes[invalid-0] PASSED [ 58%]
+tests/services/test_search_logic.py::test_score_torrent_result PASSED    [ 59%]
+tests/services/test_search_orchestration.py::test_orchestrate_searches_calls_sites_and_sorts FAILED [ 59%]
+tests/services/test_search_orchestration.py::test_orchestrate_searches_respects_enabled_flag FAILED [ 60%]
+tests/services/test_search_orchestration.py::test_orchestrate_searches_yaml_fallback_for_unknown_site FAILED [ 61%]
+tests/services/test_torrent_service.py::test_process_user_input_magnet_routing PASSED [ 61%]
+tests/services/test_torrent_service.py::test_process_user_input_torrent_url_routing PASSED [ 62%]
+tests/services/test_torrent_service.py::test_process_user_input_webpage_routing PASSED [ 63%]
+tests/services/test_torrent_service.py::test_handle_webpage_url_no_links PASSED [ 63%]
+tests/services/test_torrent_service.py::test_handle_webpage_url_multiple_links PASSED [ 64%]
+tests/services/test_torrent_service.py::test_fetch_metadata_from_magnet_timeout PASSED [ 64%]
+tests/services/test_torrent_service.py::test_fetch_metadata_from_magnet_success PASSED [ 65%]
+tests/test_batch_scanning.py::test_update_batch_triggers_single_scan PASSED [ 66%]
+tests/test_batch_scanning.py::test_update_batch_no_scan_before_completion PASSED [ 66%]
+tests/test_batch_scanning.py::test_update_batch_skip_duplicate_scan PASSED [ 67%]
+tests/test_config.py::test_get_configuration_happy_path PASSED           [ 68%]
+tests/test_config.py::test_get_configuration_missing_file PASSED         [ 68%]
+tests/test_config.py::test_get_configuration_missing_token PASSED        [ 69%]
+tests/test_config.py::test_get_configuration_missing_default_path PASSED [ 70%]
+tests/test_config.py::test_get_configuration_invalid_search_json PASSED  [ 70%]
+tests/test_state.py::test_save_and_load_state_roundtrip PASSED           [ 71%]
+tests/test_state.py::test_load_state_missing_file PASSED                 [ 71%]
+tests/test_state.py::test_load_state_json_error PASSED                   [ 72%]
+tests/test_state.py::test_post_init_resumes_persisted_download PASSED    [ 73%]
+tests/test_state.py::test_post_shutdown_cancels_tasks_and_saves_state PASSED [ 73%]
+tests/test_utils.py::test_format_bytes[0-0B] PASSED                      [ 74%]
+tests/test_utils.py::test_format_bytes[1023-1023.0 B] PASSED             [ 75%]
+tests/test_utils.py::test_format_bytes[1024-1.0 KB] PASSED               [ 75%]
+tests/test_utils.py::test_format_bytes[1536-1.5 KB] PASSED               [ 76%]
+tests/test_utils.py::test_format_bytes[1048576-1.0 MB] PASSED            [ 77%]
+tests/test_utils.py::test_format_bytes[1610612736-1.5 GB] PASSED         [ 77%]
+tests/test_utils.py::test_extract_first_int[S01E05-1] PASSED             [ 78%]
+tests/test_utils.py::test_extract_first_int[Season 12-12] PASSED         [ 78%]
+tests/test_utils.py::test_extract_first_int[No numbers here-None] PASSED [ 79%]
+tests/test_utils.py::test_extract_first_int[-None] PASSED                [ 80%]
+tests/test_utils.py::test_extract_first_int[Episode 5 is the best-5] PASSED [ 80%]
+tests/test_utils.py::test_parse_torrent_name[Movie.Title.2023-expected0] PASSED [ 81%]
+tests/test_utils.py::test_parse_torrent_name[Show.Name.S01E02.1080p-expected1] PASSED [ 82%]
+tests/test_utils.py::test_parse_torrent_name[Show Name 1x02 [1080p]-expected2] PASSED [ 82%]
+tests/test_utils.py::test_parse_torrent_name[Another_Show-S01E02_[x265]-expected3] PASSED [ 83%]
+tests/test_utils.py::test_parse_torrent_name[Unknown.File[x265]-expected4] PASSED [ 84%]
+tests/utils/test_safe_edit_message_fallback.py::test_safe_edit_message_falls_back_to_send PASSED [ 84%]
+tests/utils/test_safe_edit_message_retry_after.py::test_safe_edit_message_retries_on_small_retry_after PASSED [ 85%]
+tests/utils/test_safe_edit_message_retry_after.py::test_safe_edit_message_suppresses_on_large_retry_after PASSED [ 85%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_success PASSED [ 86%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_retries_on_timeout_then_succeeds PASSED [ 87%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_respects_retry_after PASSED [ 87%]
+tests/utils/test_safe_send_message.py::test_safe_send_message_retries_on_network_error_then_raises PASSED [ 88%]
+tests/workflows/test_delete_workflow.py::test_delete_show_happy_path PASSED [ 89%]
+tests/workflows/test_delete_workflow.py::test_delete_workflow_not_found PASSED [ 89%]
+tests/workflows/test_search_workflow.py::test_search_movie_happy_path PASSED [ 90%]
+tests/workflows/test_search_workflow.py::test_search_tv_happy_path PASSED [ 91%]
+tests/workflows/test_search_workflow.py::test_search_cancel_clears_context PASSED [ 91%]
+tests/workflows/test_search_workflow.py::test_resolution_filters_results[search_resolution_4k-expected_titles0] PASSED [ 92%]
+tests/workflows/test_search_workflow.py::test_resolution_filters_results[search_resolution_1080p-expected_titles1] PASSED [ 92%]
+tests/workflows/test_search_workflow.py::test_tv_season_reply_offers_scope_buttons PASSED [ 93%]
+tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_single PASSED [ 94%]
+tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_season FAILED [ 94%]
+tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_season_fallback FAILED [ 95%]
+tests/workflows/test_search_workflow.py::test_present_season_download_confirmation PASSED [ 96%]
+tests/workflows/test_search_workflow.py::test_present_season_download_confirmation_pack PASSED [ 96%]
+tests/workflows/test_search_workflow.py::test_present_season_download_confirmation_pack_has_reject_button PASSED [ 97%]
+tests/workflows/test_search_workflow.py::test_handle_reject_season_pack_triggers_individual PASSED [ 98%]
+tests/workflows/test_search_workflow.py::test_entire_season_skips_pack_and_targets_missing FAILED [ 98%]
+tests/workflows/test_search_workflow.py::test_entire_season_all_owned_exits_early FAILED [ 99%]
+tests/workflows/test_search_workflow_integration.py::test_tv_season_fallback_uses_wiki_titles_and_corrected_title FAILED [100%]
+
+=================================== FAILURES ===================================
+___________ test_dry_run_flow_uses_wiki_year_and_filters_resolution ____________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048be62d0>
+
+    @pytest.mark.asyncio
+    async def test_dry_run_flow_uses_wiki_year_and_filters_resolution(mocker):
+        # Mock Wikipedia years for 'Alien'
+        mocker.patch(
+            "telegram_bot.services.scrapers.wikipedia_scraper.fetch_movie_years_from_wikipedia",
+            new=AsyncMock(return_value=([1979], None)),
+        )
+
+        yts_results = [
+            {
+                "title": "Alien (1979) 1080p",
+                "score": 21,
+                "source": "YTS.mx",
+            },
+        ]
+        x_results = [
+            {
+                "title": "Alien (1979) 1080p [1337x]",
+                "score": 16,
+                "source": "1337x",
+            },
+        ]
+
+        # Mock scrapers
+        m_yts = mocker.patch.object(
+            YtsScraper,
+            "search",
+            new=AsyncMock(return_value=yts_results),
+        )
+        m_1337 = mocker.patch(
+            "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
+            new=AsyncMock(return_value=x_results),
+        )
+
+        ctx = _ctx_with_search_config()
+        title = "Alien"
+        resolution = "1080p"
+
+        years, corrected = await fetch_movie_years_from_wikipedia(title)
+        base_for_search = corrected or title
+        assert years == [1979]
+
+        results = await orchestrate_searches(
+            base_for_search, "movie", ctx, year=str(years[0]), resolution=resolution
+        )
+
+        # Ensure scrapers were called with expected args
+        yts_call = m_yts.await_args
+        x_call = m_1337.await_args
+>       assert yts_call.kwargs["query"] == base_for_search
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'query'
+
+tests/services/test_dry_run_integration.py:117: KeyError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:generic_torrent_scraper.py:456 [SCRAPER] HTTP error fetching https://1337x.to/category-search/Alien+1979/Movies/1/: Client error '403 Forbidden' for url 'https://1337x.to/category-search/Alien+1979/Movies/1/'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+ERROR    telegram_bot.config:generic_torrent_scraper.py:148 [SCRAPER] 1337x: Failed to retrieve search results from https://1337x.to/category-search/Alien+1979/Movies/1/
+_______________ test_dry_run_movie_explicit_year_overrides_wiki ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048c3d310>
+
+    @pytest.mark.asyncio
+    async def test_dry_run_movie_explicit_year_overrides_wiki(mocker):
+        # Wikipedia would return an incorrect or different year, but explicit year should win
+        mocker.patch(
+            "telegram_bot.services.scrapers.wikipedia_scraper.fetch_movie_years_from_wikipedia",
+            new=AsyncMock(return_value=([1983], None)),
+        )
+
+        yts_results = [
+            {
+                "title": "The Thing (1982) 1080p WEB x265 [YTS]",
+                "score": 22,
+                "source": "YTS.mx",
+            },
+        ]
+        x_results = [
+            {"title": "The.Thing.1982.1080p.BluRay.x265", "score": 18, "source": "1337x"},
+        ]
+        m_yts = mocker.patch.object(
+            YtsScraper,
+            "search",
+            new=AsyncMock(return_value=yts_results),
+        )
+        m_1337 = mocker.patch(
+            "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
+            new=AsyncMock(return_value=x_results),
+        )
+
+        ctx = _ctx_with_search_config()
+        title = "The Thing 1982"
+        resolution = "1080p"
+
+        # Emulate dry-run logic: extract explicit year and base
+        import re as _re
+
+        m = _re.search(r"\b(19\d{2}|20\d{2})\b", title)
+        explicit_year = m.group(1) if m else None
+        base = title[: m.start()].strip() if m else title
+
+        years, corrected = await fetch_movie_years_from_wikipedia(base)
+        base_for_search = corrected or base
+>       assert years == [1983]
+E       AssertionError: assert [1982, 2011] == [1983]
+E
+E         At index 0 diff: 1982 != 1983
+E         Left contains one more item: 2011
+E
+E         Full diff:
+E           [
+E         -     1983,...
+E
+E         ...Full output truncated (5 lines hidden), use '-vv' to show
+
+tests/services/test_dry_run_integration.py:167: AssertionError
+____________________ test_dry_run_tv_search_workflow_basic _____________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048be4d70>
+
+    @pytest.mark.asyncio
+    async def test_dry_run_tv_search_workflow_basic(mocker):
+        # TV workflow uses TV websites set; here we only include 1337x TV category
+        ctx = Mock()
+        ctx.bot_data = {
+            "SEARCH_CONFIG": {
+                "websites": {
+                    "movies": [],
+                    "tv": [
+                        {
+                            "name": "1337x",
+                            "enabled": True,
+                            "search_url": "https://1337x.to/category-search/{query}/TV/1/",
+                        }
+                    ],
+                },
+                "preferences": {
+                    "tv": {
+                        "resolutions": {"1080p": 5, "720p": 1},
+                        "codecs": {"x265": 4, "hevc": 4, "x264": 1, "h264": 1},
+                        "uploaders": {"EZTV": 5, "MeGusta": 5},
+                    }
+                },
+            }
+        }
+
+        x_results = [
+            {"title": "My.Show.S01E01.1080p.WEB.x265", "score": 17, "source": "1337x"},
+            {"title": "My.Show.S01E01.720p.WEB.x264", "score": 9, "source": "1337x"},
+        ]
+
+        m_1337 = mocker.patch(
+            "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
+            new=AsyncMock(return_value=x_results),
+        )
+
+        query = "My Show S01E01"
+        resolution = "1080p"
+        results = await orchestrate_searches(query, "tv", ctx, resolution=resolution)
+
+        # 1337x called with query as-is (no year appended for TV)
+        x_call = m_1337.await_args
+>       assert x_call.kwargs["query"] == query
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'kwargs'
+
+tests/services/test_dry_run_integration.py:224: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:generic_torrent_scraper.py:456 [SCRAPER] HTTP error fetching https://1337x.to/category-search/My+Show+S01E01/TV/1/: Client error '403 Forbidden' for url 'https://1337x.to/category-search/My+Show+S01E01/TV/1/'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+ERROR    telegram_bot.config:generic_torrent_scraper.py:148 [SCRAPER] 1337x: Failed to retrieve search results from https://1337x.to/category-search/My+Show+S01E01/TV/1/
+_______________ test_search_parses_magnet_link_from_detail_page ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048c7b770>
+
+    @pytest.mark.asyncio
+    async def test_search_parses_magnet_link_from_detail_page(mocker):
+        """Ensure magnet links are extracted when only available on detail pages."""
+
+        site_config = {
+            "site_name": "TestSite",
+            "base_url": "https://example.com",
+            "search_path": "/search/{query}/{category}/{page}/",
+            "category_mapping": {"movie": "movies"},
+            "results_page_selectors": {
+                "result_row": "tr",
+                "name": "td.name a",
+                "magnet": "td.name a",
+                "seeders": "td.seeds",
+                "leechers": "td.leeches",
+                "size": "td.size",
+            },
+            "details_page_selectors": {"magnet_url": "a[href^='magnet:']"},
+        }
+
+        search_html = (
+            "<table><tr>"
+            '<td class="name"><a href="/torrent/1">Example</a></td>'
+            '<td class="seeds">10</td>'
+            '<td class="leeches">1</td>'
+            '<td class="size">1 GB</td>'
+            "</tr></table>"
+        )
+        detail_html = (
+            "<html><body>"
+            '<a href="magnet:?xt=urn:btih:abcdef&dn=Example">Magnet</a>'
+            "</body></html>"
+        )
+
+        fetch_mock = AsyncMock(side_effect=[search_html, detail_html])
+        mocker.patch.object(GenericTorrentScraper, "_fetch_page", fetch_mock)
+
+        scraper = GenericTorrentScraper(site_config)
+        results = await scraper.search("Example", "movie")
+
+        assert len(results) == 1
+>       assert results[0].magnet_url.startswith("magnet:?xt=urn:btih:abcdef")
+               ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'dict' object has no attribute 'magnet_url'
+
+tests/services/test_generic_torrent_scraper_magnet.py:49: AttributeError
+___________________ test_fetch_episode_title_dedicated_page ____________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481e2150>
+
+    @pytest.mark.asyncio
+    async def test_fetch_episode_title_dedicated_page(mocker):
+        mock_page = mocker.Mock()
+        mock_page.title = "Show"
+        mock_page.url = "http://example.com"
+        mocker.patch("wikipedia.search", return_value=["Show"])
+        mocker.patch("wikipedia.page", return_value=mock_page)
+        mocker.patch(
+            "telegram_bot.services.scraping_service._get_page_html",
+            return_value=DEDICATED_HTML,
+        )
+
+        title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+            "Show", 1, 1
+        )
+>       assert title == "Pilot"
+E       AssertionError: assert None == 'Pilot'
+
+tests/services/test_scraping_service.py:171: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:wikipedia_scraper.py:64 Error fetching URL http://example.com:
+ERROR    telegram_bot.config:wikipedia_scraper.py:187 [WIKI] All page search attempts failed.
+ERROR    telegram_bot.config:wikipedia_scraper.py:64 Error fetching URL http://example.com:
+ERROR    telegram_bot.config:wikipedia_scraper.py:187 [WIKI] All page search attempts failed.
+______________ test_fetch_episode_title_strips_miniseries_suffix _______________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481facc0>
+
+    @pytest.mark.asyncio
+    async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
+        mock_main_page = mocker.Mock()
+        mock_main_page.title = "Show (miniseries)"
+        mock_main_page.url = "http://example.com/show"
+
+        mock_list_page = mocker.Mock()
+        mock_list_page.url = "http://example.com/list"
+
+        mocker.patch("wikipedia.search", return_value=["Show (miniseries)"])
+        page_patch = mocker.patch(
+            "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
+        )
+        mocker.patch(
+            "telegram_bot.services.scraping_service._get_page_html",
+            return_value=DEDICATED_HTML,
+        )
+
+        title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+            "Show", 1, 1
+        )
+
+>       assert title == "Pilot"
+E       AssertionError: assert None == 'Pilot'
+
+tests/services/test_scraping_service.py:197: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:wikipedia_scraper.py:64 Error fetching URL http://example.com/list:
+ERROR    telegram_bot.config:wikipedia_scraper.py:187 [WIKI] All page search attempts failed.
+ERROR    telegram_bot.config:wikipedia_scraper.py:147 [WIKI] An unexpected error occurred during main page search: StopIteration interacts badly with generators and cannot be raised into a Future
+_______________ test_fetch_episode_title_strips_tv_series_suffix _______________
+
+show_title = 'Show', season = 1, episode = 1, _last_resort = False
+
+    async def fetch_episode_title_from_wikipedia(
+        show_title: str,
+        season: int,
+        episode: int,
+        _last_resort: bool = False,
+    ) -> tuple[str | None, str | None]:
+        """
+        Fetches an episode title from Wikipedia, trying a dedicated episode list page first,
+        then falling back to the main show page.
+
+        Returns:
+            A tuple of (episode_title, corrected_show_title). The corrected title is
+            returned if Wikipedia redirects the initial search.
+        """
+        corrected_show_title: str | None = None
+        normalized_input = show_title.strip()
+        cache_key = (normalized_input.lower(), season)
+
+        # Fast path: return from cache if available
+        cached = _WIKI_TITLES_CACHE.get(cache_key)
+        if cached:
+            titles_map, corrected = cached
+            return titles_map.get(episode), corrected
+        canonical_title = normalized_input
+        main_page_url: str | None = None
+
+        # --- Step 1: Find the main show page to get the canonical, corrected title ---
+        try:
+            logger.info(
+                f"[WIKI] Step 1: Finding main page to correct title for '{show_title}'"
+            )
+            search_results = await asyncio.to_thread(wikipedia.search, show_title)
+            if not search_results:
+                logger.error(
+                    f"[WIKI] No Wikipedia page found for '{show_title}'. Aborting."
+                )
+                return None, None
+
+            main_page_title = search_results[0]
+            main_page = await asyncio.to_thread(
+                wikipedia.page, main_page_title, auto_suggest=False, redirect=True
+            )
+            main_page_url = main_page.url
+
+            resolved_title = main_page.title.strip()
+            sanitized_title = _sanitize_wikipedia_title(resolved_title)
+            canonical_title = sanitized_title
+
+            if resolved_title != sanitized_title:
+                logger.info(
+                    f"[WIKI] Normalized resolved title '{resolved_title}' -> '{sanitized_title}'"
+                )
+
+            if canonical_title.casefold() != normalized_input.casefold():
+                corrected_show_title = canonical_title
+                logger.info(
+                    f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'"
+                )
+            else:
+                logger.info("[WIKI] Successfully found main show page with original title.")
+
+        except wikipedia.exceptions.PageError:
+            logger.error(
+                f"[WIKI] Could not find any Wikipedia page for '{show_title}'. Aborting."
+            )
+            # Last-resort retry for TV titles: append qualifier once
+            if not _last_resort:
+                qualified = f"{show_title} (TV series)"
+                logger.info(
+                    f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+                )
+                return await fetch_episode_title_from_wikipedia(
+                    qualified, season, episode, _last_resort=True
+                )
+            return None, None
+        except Exception as e:
+            logger.error(
+                f"[WIKI] An unexpected error occurred during main page search: {e}"
+            )
+            if not _last_resort:
+                qualified = f"{show_title} (TV series)"
+                logger.info(
+                    f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+                )
+                return await fetch_episode_title_from_wikipedia(
+                    qualified, season, episode, _last_resort=True
+                )
+            return None, None
+
+        # --- Step 2: Use the canonical title to find the dedicated episode page ---
+        html_to_scrape: str | None = None
+        try:
+            direct_query = f"List of {canonical_title} episodes"
+            logger.info(
+                f"[WIKI] Step 2: Attempting to find dedicated episode page: '{direct_query}'"
+            )
+            list_page = await asyncio.to_thread(
+                wikipedia.page, direct_query, auto_suggest=False, redirect=True
+            )
+>           html_to_scrape = await _get_page_html(list_page.url)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+telegram_bot/services/scrapers/wikipedia_scraper.py:170:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+telegram_bot/services/scrapers/wikipedia_scraper.py:61: in _get_page_html
+    response.raise_for_status()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Response [404 Not Found]>
+
+    def raise_for_status(self) -> Response:
+        """
+        Raise the `HTTPStatusError` if one occurred.
+        """
+        request = self._request
+        if request is None:
+            raise RuntimeError(
+                "Cannot call `raise_for_status` as the request "
+                "instance has not been set on this response."
+            )
+
+        if self.is_success:
+            return self
+
+        if self.has_redirect_location:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "Redirect location: '{0.headers[location]}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+        else:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+
+        status_class = self.status_code // 100
+        error_types = {
+            1: "Informational response",
+            3: "Redirect response",
+            4: "Client error",
+            5: "Server error",
+        }
+        error_type = error_types.get(status_class, "Invalid status code")
+        message = message.format(self, error_type=error_type)
+>       raise HTTPStatusError(message, request=request, response=self)
+E       httpx.HTTPStatusError: Client error '404 Not Found' for url 'http://example.com/list'
+E       For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/httpx/_models.py:829: HTTPStatusError
+
+During handling of the above exception, another exception occurred:
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481fa3f0>
+
+    @pytest.mark.asyncio
+    async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
+        mock_main_page = mocker.Mock()
+        mock_main_page.title = "Show (TV series)"
+        mock_main_page.url = "http://example.com/show"
+
+        mock_list_page = mocker.Mock()
+        mock_list_page.url = "http://example.com/list"
+
+        mocker.patch("wikipedia.search", return_value=["Show (TV series)"])
+        page_patch = mocker.patch(
+            "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
+        )
+        mocker.patch(
+            "telegram_bot.services.scraping_service._get_page_html",
+            return_value=DEDICATED_HTML,
+        )
+
+>       title, corrected = await scraping_service.fetch_episode_title_from_wikipedia(
+            "Show", 1, 1
+        )
+
+tests/services/test_scraping_service.py:220:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+telegram_bot/services/scrapers/wikipedia_scraper.py:184: in fetch_episode_title_from_wikipedia
+    html_to_scrape = await _get_page_html(main_page_url)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+telegram_bot/services/scrapers/wikipedia_scraper.py:61: in _get_page_html
+    response.raise_for_status()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Response [404 Not Found]>
+
+    def raise_for_status(self) -> Response:
+        """
+        Raise the `HTTPStatusError` if one occurred.
+        """
+        request = self._request
+        if request is None:
+            raise RuntimeError(
+                "Cannot call `raise_for_status` as the request "
+                "instance has not been set on this response."
+            )
+
+        if self.is_success:
+            return self
+
+        if self.has_redirect_location:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "Redirect location: '{0.headers[location]}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+        else:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+
+        status_class = self.status_code // 100
+        error_types = {
+            1: "Informational response",
+            3: "Redirect response",
+            4: "Client error",
+            5: "Server error",
+        }
+        error_type = error_types.get(status_class, "Invalid status code")
+        message = message.format(self, error_type=error_type)
+>       raise HTTPStatusError(message, request=request, response=self)
+E       httpx.HTTPStatusError: Client error '404 Not Found' for url 'http://example.com/show'
+E       For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/httpx/_models.py:829: HTTPStatusError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:wikipedia_scraper.py:180 [WIKI] Unexpected error fetching list page, falling back to main page HTML: Client error '404 Not Found' for url 'http://example.com/list'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+____________________ test_fetch_episode_title_embedded_page ____________________
+
+show_title = 'Show', season = 1, episode = 1, _last_resort = False
+
+    async def fetch_episode_title_from_wikipedia(
+        show_title: str,
+        season: int,
+        episode: int,
+        _last_resort: bool = False,
+    ) -> tuple[str | None, str | None]:
+        """
+        Fetches an episode title from Wikipedia, trying a dedicated episode list page first,
+        then falling back to the main show page.
+
+        Returns:
+            A tuple of (episode_title, corrected_show_title). The corrected title is
+            returned if Wikipedia redirects the initial search.
+        """
+        corrected_show_title: str | None = None
+        normalized_input = show_title.strip()
+        cache_key = (normalized_input.lower(), season)
+
+        # Fast path: return from cache if available
+        cached = _WIKI_TITLES_CACHE.get(cache_key)
+        if cached:
+            titles_map, corrected = cached
+            return titles_map.get(episode), corrected
+        canonical_title = normalized_input
+        main_page_url: str | None = None
+
+        # --- Step 1: Find the main show page to get the canonical, corrected title ---
+        try:
+            logger.info(
+                f"[WIKI] Step 1: Finding main page to correct title for '{show_title}'"
+            )
+            search_results = await asyncio.to_thread(wikipedia.search, show_title)
+            if not search_results:
+                logger.error(
+                    f"[WIKI] No Wikipedia page found for '{show_title}'. Aborting."
+                )
+                return None, None
+
+            main_page_title = search_results[0]
+            main_page = await asyncio.to_thread(
+                wikipedia.page, main_page_title, auto_suggest=False, redirect=True
+            )
+            main_page_url = main_page.url
+
+            resolved_title = main_page.title.strip()
+            sanitized_title = _sanitize_wikipedia_title(resolved_title)
+            canonical_title = sanitized_title
+
+            if resolved_title != sanitized_title:
+                logger.info(
+                    f"[WIKI] Normalized resolved title '{resolved_title}' -> '{sanitized_title}'"
+                )
+
+            if canonical_title.casefold() != normalized_input.casefold():
+                corrected_show_title = canonical_title
+                logger.info(
+                    f"[WIKI] Title was corrected: '{show_title}' -> '{canonical_title}'"
+                )
+            else:
+                logger.info("[WIKI] Successfully found main show page with original title.")
+
+        except wikipedia.exceptions.PageError:
+            logger.error(
+                f"[WIKI] Could not find any Wikipedia page for '{show_title}'. Aborting."
+            )
+            # Last-resort retry for TV titles: append qualifier once
+            if not _last_resort:
+                qualified = f"{show_title} (TV series)"
+                logger.info(
+                    f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+                )
+                return await fetch_episode_title_from_wikipedia(
+                    qualified, season, episode, _last_resort=True
+                )
+            return None, None
+        except Exception as e:
+            logger.error(
+                f"[WIKI] An unexpected error occurred during main page search: {e}"
+            )
+            if not _last_resort:
+                qualified = f"{show_title} (TV series)"
+                logger.info(
+                    f"[WIKI] Retrying with TV qualifier as last resort: '{qualified}'"
+                )
+                return await fetch_episode_title_from_wikipedia(
+                    qualified, season, episode, _last_resort=True
+                )
+            return None, None
+
+        # --- Step 2: Use the canonical title to find the dedicated episode page ---
+        html_to_scrape: str | None = None
+        try:
+            direct_query = f"List of {canonical_title} episodes"
+            logger.info(
+                f"[WIKI] Step 2: Attempting to find dedicated episode page: '{direct_query}'"
+            )
+>           list_page = await asyncio.to_thread(
+                wikipedia.page, direct_query, auto_suggest=False, redirect=True
+            )
+
+telegram_bot/services/scrapers/wikipedia_scraper.py:167:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/asyncio/threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1139: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1143: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <MagicMock name='page' id='140601259434656'>
+args = ('List of Show episodes',)
+kwargs = {'auto_suggest': False, 'redirect': True}
+effect = <list_iterator object at 0x7fe04a8d8a00>, result = PageError('no list')
+
+    def _execute_mock_call(self, /, *args, **kwargs):
+        # separate from _increment_mock_call so that awaited functions are
+        # executed separately from their call, also AsyncMock overrides this method
+
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                result = next(effect)
+                if _is_exception(result):
+>                   raise result
+E                   wikipedia.exceptions.PageError: Page id "no list" does not match any pages. Try another id!
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1202: PageError
+
+During handling of the above exception, another exception occurred:
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0480103e0>
+
+    @pytest.mark.asyncio
+    async def test_fetch_episode_title_embedded_page(mocker):
+        mock_main_page = mocker.Mock()
+        mock_main_page.title = "Show"
+        mock_main_page.url = "http://example.com/main"
+
+        mocker.patch("wikipedia.search", return_value=["Show"])
+        mocker.patch(
+            "wikipedia.page",
+            side_effect=[mock_main_page, wikipedia.exceptions.PageError("no list")],
+        )
+        mocker.patch(
+            "telegram_bot.services.scraping_service._get_page_html",
+            return_value=SIMPLE_EMBEDDED_HTML,
+        )
+
+>       title, _ = await scraping_service.fetch_episode_title_from_wikipedia("Show", 1, 1)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_scraping_service.py:245:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+telegram_bot/services/scrapers/wikipedia_scraper.py:178: in fetch_episode_title_from_wikipedia
+    html_to_scrape = await _get_page_html(main_page_url)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+telegram_bot/services/scrapers/wikipedia_scraper.py:61: in _get_page_html
+    response.raise_for_status()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Response [404 Not Found]>
+
+    def raise_for_status(self) -> Response:
+        """
+        Raise the `HTTPStatusError` if one occurred.
+        """
+        request = self._request
+        if request is None:
+            raise RuntimeError(
+                "Cannot call `raise_for_status` as the request "
+                "instance has not been set on this response."
+            )
+
+        if self.is_success:
+            return self
+
+        if self.has_redirect_location:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "Redirect location: '{0.headers[location]}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+        else:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+
+        status_class = self.status_code // 100
+        error_types = {
+            1: "Informational response",
+            3: "Redirect response",
+            4: "Client error",
+            5: "Server error",
+        }
+        error_type = error_types.get(status_class, "Invalid status code")
+        message = message.format(self, error_type=error_type)
+>       raise HTTPStatusError(message, request=request, response=self)
+E       httpx.HTTPStatusError: Client error '404 Not Found' for url 'http://example.com/main'
+E       For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/httpx/_models.py:829: HTTPStatusError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:wikipedia_scraper.py:174 [WIKI] No dedicated episode page found. Falling back to main show page HTML.
+_______________________ test_fetch_season_episode_count ________________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048c07cb0>
+
+    @pytest.mark.asyncio
+    async def test_fetch_season_episode_count(mocker):
+        mock_page = mocker.Mock()
+        mock_page.url = "http://example.com"
+        mocker.patch("wikipedia.page", return_value=mock_page)
+        mocker.patch(
+            "telegram_bot.services.scraping_service._get_page_html",
+            return_value=SEASON_OVERVIEW_HTML,
+        )
+
+        count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 2)
+>       assert count == 8
+E       assert None == 8
+
+tests/services/test_scraping_service.py:275: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:wikipedia_scraper.py:64 Error fetching URL http://example.com:
+WARNING  telegram_bot.config:wikipedia_scraper.py:1159 [WIKI] No HTML retrieved for 'Show' S02. Unable to determine episode count.
+ERROR    telegram_bot.config:wikipedia_scraper.py:64 Error fetching URL http://example.com:
+WARNING  telegram_bot.config:wikipedia_scraper.py:1159 [WIKI] No HTML retrieved for 'Show (TV series)' S02. Unable to determine episode count.
+_________ test_fetch_season_episode_count_prefers_titles_over_overview _________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048c0e7b0>
+
+    @pytest.mark.asyncio
+    async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
+        mock_page = mocker.Mock()
+        mock_page.url = "http://example.com"
+        mocker.patch("wikipedia.page", return_value=mock_page)
+        mocker.patch(
+            "telegram_bot.services.scraping_service._get_page_html",
+            return_value=DEDICATED_WITH_OVERVIEW_ONGOING_HTML,
+        )
+
+        # Should return the enumerated title count (4), not the overview's 10
+        count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 27)
+>       assert count == 4
+E       assert None == 4
+
+tests/services/test_scraping_service.py:290: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:wikipedia_scraper.py:64 Error fetching URL http://example.com:
+WARNING  telegram_bot.config:wikipedia_scraper.py:1159 [WIKI] No HTML retrieved for 'Show' S27. Unable to determine episode count.
+_______________________ test_scrape_1337x_parses_results _______________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048c07800>
+
+    @pytest.mark.asyncio
+    async def test_scrape_1337x_parses_results(mocker):
+        # This is the response for the initial search results page
+        search_html = """
+        <table class="table-list"><tbody>
+        <tr>
+          <td class="name">
+            <a href="/cat">Movies</a>
+            <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
+          </td>
+          <td class="seeds">10</td>
+          <td class="leeches">0</td>
+          <td class="size">1.5 GB</td>
+          <td class="uploader"><a>Anonymous</a></td>
+        </tr>
+        </tbody></table>
+        """
+
+        # This is the required second response for the torrent detail page
+        detail_html = """
+        <div>
+          <a class="btn-magnet" href="magnet:?xt=urn:btih:FAKEHASH">Magnet Download</a>
+        </div>
+        """
+
+        # The mock client now has TWO responses to give, and they will have a default status_code of 200
+        responses = [DummyResponse(text=search_html), DummyResponse(text=detail_html)]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x265": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"Anonymous": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_1337x(
+            "Sample Movie 2023",
+            "movie",
+            "https://1337x.to/search/{query}/1/",
+            context,
+            base_query_for_filter="Sample Movie",
+        )
+
+        assert len(results) == 1
+>       assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
+               ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'title'
+
+tests/services/test_scraping_service.py:359: KeyError
+________________________ test_scrape_1337x_fuzzy_filter ________________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048c12c30>
+
+    @pytest.mark.asyncio
+    async def test_scrape_1337x_fuzzy_filter(mocker):
+        """Non-matching titles should be filtered out when fuzzy filter is enabled."""
+
+        search_html = """
+        <table class="table-list"><tbody>
+        <tr>
+          <td class="name">
+            <a href="/cat">Movies</a>
+            <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
+          </td>
+          <td class="seeds">10</td>
+          <td class="leeches">0</td>
+          <td class="size">1.5 GB</td>
+          <td class="uploader"><a>Anonymous</a></td>
+        </tr>
+        <tr>
+          <td class="name">
+            <a href="/cat">Movies</a>
+            <a href="/torrent/2/Unrelated.File.2023.1080p.x265/">Unrelated.File.2023.1080p.x265</a>
+          </td>
+          <td class="seeds">5</td>
+          <td class="leeches">0</td>
+          <td class="size">1.0 GB</td>
+          <td class="uploader"><a>Anonymous</a></td>
+        </tr>
+        </tbody></table>
+        """
+
+        detail_good = """
+        <div><a class="btn-magnet" href="magnet:?xt=urn:btih:GOOD">Magnet</a></div>
+        """
+
+        responses = [
+            DummyResponse(text=search_html),
+            DummyResponse(text=detail_good),
+        ]
+        client = DummyClient(responses)
+        mocker.patch("httpx.AsyncClient", return_value=client)
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x265": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"Anonymous": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_1337x(
+            "Sample Movie 2023",
+            "movie",
+            "https://1337x.to/search/{query}/1/",
+            context,
+            base_query_for_filter="Sample Movie",
+        )
+
+        assert len(results) == 1
+>       assert results[0]["title"] == "Sample.Movie.2023.1080p.x265"
+               ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'title'
+
+tests/services/test_scraping_service.py:456: KeyError
+________________________ test_scrape_yts_parses_results ________________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481fa390>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_parses_results(mocker):
+        search_html = """
+        <div class="browse-movie-wrap">
+          <a class="browse-movie-title" href="https://yts.mx/movies/test-movie">Test Movie</a>
+          <div class="browse-movie-year">2023</div>
+        </div>
+        """
+        movie_html = '<div id="movie-info" data-movie-id="1234"></div>'
+        api_json = {
+            "status": "ok",
+            "data": {
+                "movie": {
+                    "title_long": "Test Movie (2023)",
+                    "year": 2023,
+                    "torrents": [
+                        {
+                            "quality": "1080p",
+                            "type": "WEB",
+                            "size_bytes": 1024**3,
+                            "hash": "abcdef",
+                            "seeds": 10,
+                        }
+                    ],
+                }
+            },
+        }
+        responses = [
+            DummyResponse(text=search_html),
+            DummyResponse(text=movie_html),
+            DummyResponse(json_data=api_json),
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Test Movie",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,  # Pass the mock object here
+            year="2023",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:537: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:torrent_scraper.py:501 [SCRAPER ERROR] YTS scrape failed: name '_parse_codec' is not defined
+Traceback (most recent call last):
+  File "/app/telegram_bot/services/scrapers/torrent_scraper.py", line 471, in search
+    _parse_codec(full_title) or "x264"  # Default YTS to x264
+    ^^^^^^^^^^^^
+NameError: name '_parse_codec' is not defined. Did you mean: 'parse_codec'?
+________________ test_scrape_yts_retries_on_validation_failure _________________
+
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7fe0481df3e0>
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481de630>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
+        """YTS scraper retries when API validation fails."""
+        search_html = """
+        <div class="browse-movie-wrap">
+          <a class="browse-movie-title" href="https://yts.mx/movies/test-movie">Test Movie</a>
+          <div class="browse-movie-year">2023</div>
+        </div>
+        """
+        movie_html = '<div id="movie-info" data-movie-id="1234"></div>'
+        bad_api_json = {
+            "status": "ok",
+            "data": {
+                "movie": {
+                    "title_long": "Test Movie (2023)",
+                    "year": 2023,
+                    "torrents": [],  # Missing torrents triggers retry
+                }
+            },
+        }
+        good_api_json = {
+            "status": "ok",
+            "data": {
+                "movie": {
+                    "title_long": "Test Movie (2023)",
+                    "year": 2023,
+                    "torrents": [
+                        {
+                            "quality": "1080p",
+                            "type": "WEB",
+                            "size_bytes": 1024**3,
+                            "hash": "abcdef",
+                            "seeds": 10,
+                        }
+                    ],
+                }
+            },
+        }
+        responses = [
+            DummyResponse(text=search_html),
+            DummyResponse(text=movie_html),
+            DummyResponse(json_data=bad_api_json),
+            DummyResponse(json_data=good_api_json),
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+        mocker.patch("asyncio.sleep", new=AsyncMock())
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        with caplog.at_level(logging.DEBUG):
+            results = await scraping_service.scrape_yts(
+                "Test Movie",
+                "movie",
+                "https://yts.mx/browse-movies/{query}",
+                context,
+                year="2023",
+                resolution="1080p",
+            )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:612: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     telegram_bot.config:torrent_scraper.py:78 [SCRAPER] YTS: Initiating API-based scrape for 'Test Movie' (Year: 2023, Res: 1080p).
+DEBUG    telegram_bot.config:torrent_scraper.py:407 [SCRAPER] YTS API attempt 1 failed validation: missing 'torrents' entries. Found 0 torrents, expected >=1. Retrying in 1s.
+DEBUG    telegram_bot.config:torrent_scraper.py:420 [SCRAPER] YTS API attempt 2 succeeded in 0.00s with 1 torrents.
+ERROR    telegram_bot.config:torrent_scraper.py:501 [SCRAPER ERROR] YTS scrape failed: name '_parse_codec' is not defined
+Traceback (most recent call last):
+  File "/app/telegram_bot/services/scrapers/torrent_scraper.py", line 471, in search
+    _parse_codec(full_title) or "x264"  # Default YTS to x264
+    ^^^^^^^^^^^^
+NameError: name '_parse_codec' is not defined. Did you mean: 'parse_codec'?
+_____________ test_scrape_yts_paginates_browse_pages_to_find_year ______________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481d3050>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
+        """When page 1 has no matching year, the scraper paginates to find older films."""
+        # Page 1: no matching movies for the given year
+        search_html_p1 = """
+        <div class="browse-movie-wrap">
+          <a class="browse-movie-title" href="https://yts.mx/movies/alien-xyz">Alien Something</a>
+          <div class="browse-movie-year">2003</div>
+        </div>
+        """
+        # Page 2: contains the correct 1979 entry
+        search_html_p2 = """
+        <div class="browse-movie-wrap">
+          <a class="browse-movie-title" href="https://yts.mx/movies/alien-1979">Alien</a>
+          <div class="browse-movie-year">1979</div>
+        </div>
+        """
+        movie_html = '<div id="movie-info" data-movie-id="1234"></div>'
+        api_json = {
+            "status": "ok",
+            "data": {
+                "movie": {
+                    "title_long": "Alien (1979)",
+                    "year": 1979,
+                    "torrents": [
+                        {
+                            "quality": "1080p",
+                            "type": "WEB",
+                            "size_bytes": 1024**3,
+                            "hash": "abcdef",
+                            "seeds": 10,
+                        }
+                    ],
+                }
+            },
+        }
+
+        responses = [
+            DummyResponse(text=search_html_p1),  # browse page 1
+            DummyResponse(text=search_html_p2),  # browse page 2
+            DummyResponse(text=movie_html),  # movie page
+            DummyResponse(json_data=api_json),  # details API
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Alien",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:684: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:torrent_scraper.py:501 [SCRAPER ERROR] YTS scrape failed: name '_parse_codec' is not defined
+Traceback (most recent call last):
+  File "/app/telegram_bot/services/scrapers/torrent_scraper.py", line 471, in search
+    _parse_codec(full_title) or "x264"  # Default YTS to x264
+    ^^^^^^^^^^^^
+NameError: name '_parse_codec' is not defined. Did you mean: 'parse_codec'?
+_________________ test_scrape_yts_api_fallback_relaxes_quality _________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481d3c20>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
+        """API fallback tries again without quality when the first pass returns 0."""
+        # No browse matches -> triggers API fallback
+        search_html = """
+        <div class="other"></div>
+        """
+        # Attempt 1 (year+quality): 0 movies
+        api_empty = {"status": "ok", "data": {"movie_count": 0}}
+        # Attempt 2 (year only): has one movie with 1080p torrent
+        api_with_movie = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Test Movie (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "abcdef",
+                                "seeds": 7,
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=search_html),  # browse page 1 (no choices)
+            DummyResponse(text=search_html),  # browse page 2 (still no choices)
+            DummyResponse(text=search_html),  # browse page 3
+            DummyResponse(text=search_html),  # browse page 4
+            DummyResponse(text=search_html),  # browse page 5
+            DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+            DummyResponse(json_data=api_with_movie),  # API attempt 2 (year only)
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Test Movie",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:753: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:302 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+__________________ test_scrape_yts_api_fallback_relaxes_year ___________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481d0320>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_api_fallback_relaxes_year(mocker):
+        """API fallback eventually drops year param and filters locally by year."""
+        # No browse matches -> triggers API fallback
+        search_html = '<div class="other"></div>'
+        api_empty = {"status": "ok", "data": {"movie_count": 0}}
+        # Attempt 3 (no year param): include multiple years, only target year remains
+        api_all_years = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Alien (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "abcd11",
+                                "seeds": 5,
+                            }
+                        ],
+                    },
+                    {
+                        "title_long": "Alien (2012)",
+                        "year": 2012,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "efgh22",
+                                "seeds": 9,
+                            }
+                        ],
+                    },
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=search_html),  # browse page 1
+            DummyResponse(text=search_html),  # browse page 2
+            DummyResponse(text=search_html),  # browse page 3
+            DummyResponse(text=search_html),  # browse page 4
+            DummyResponse(text=search_html),  # browse page 5
+            DummyResponse(json_data=api_empty),  # API attempt 1 (year+quality)
+            DummyResponse(json_data=api_empty),  # API attempt 2 (year only)
+            DummyResponse(json_data=api_all_years),  # API attempt 3 (no year param)
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Alien",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+        # Only the 1979 entry should remain after local filtering
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:834: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:302 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+_______________ test_scrape_yts_token_gate_avoids_near_homonyms ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048010950>
+
+    @pytest.mark.asyncio
+    async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
+        """With a year present, token gate avoids false matches like 'The Dunes' for 'Dune'."""
+        # Page 1 contains 'The Dunes' (fails token gate), then pages 2-5 empty -> fallback
+        browse_dunes = """
+        <div class="browse-movie-wrap">
+          <a class="browse-movie-title" href="https://yts.mx/movies/the-dunes-1979">The Dunes</a>
+          <div class="browse-movie-year">1979</div>
+        </div>
+        """
+        browse_empty = '<div class="other"></div>'
+
+        api_with_movie = {
+            "status": "ok",
+            "data": {
+                "movies": [
+                    {
+                        "title_long": "Dune (1979)",
+                        "year": 1979,
+                        "torrents": [
+                            {
+                                "quality": "1080p",
+                                "type": "WEB",
+                                "size_bytes": 1024**3,
+                                "hash": "aaaaaa",
+                                "seeds": 3,
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+
+        responses = [
+            DummyResponse(text=browse_dunes),  # page 1 (gated out)
+            DummyResponse(text=browse_empty),  # page 2
+            DummyResponse(text=browse_empty),  # page 3
+            DummyResponse(text=browse_empty),  # page 4
+            DummyResponse(text=browse_empty),  # page 5
+            DummyResponse(json_data=api_with_movie),  # API fallback
+        ]
+        mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+
+        context = Mock()
+        context.bot_data = {
+            "SEARCH_CONFIG": {
+                "preferences": {
+                    "movies": {
+                        "codecs": {"x264": 5},
+                        "resolutions": {"1080p": 3},
+                        "uploaders": {"YTS": 2},
+                    }
+                }
+            }
+        }
+
+        results = await scraping_service.scrape_yts(
+            "Dune",
+            "movie",
+            "https://yts.mx/browse-movies/{query}",
+            context,
+            year="1979",
+            resolution="1080p",
+        )
+
+>       assert len(results) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/services/test_scraping_service.py:907: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:302 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+____________________ test_strategy_find_direct_links_magnet ____________________
+
+    def test_strategy_find_direct_links_magnet():
+        html = '<a href="magnet:?xt=urn:btih:123">Magnet</a>'
+        soup = BeautifulSoup(html, "lxml")
+>       links = scraping_service._strategy_find_direct_links(soup)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_find_direct_links'
+
+tests/services/test_scraping_service.py:914: AttributeError
+___________________ test_strategy_find_direct_links_torrent ____________________
+
+    def test_strategy_find_direct_links_torrent():
+        html = '<a href="https://example.com/file.torrent">Download</a>'
+        soup = BeautifulSoup(html, "lxml")
+>       links = scraping_service._strategy_find_direct_links(soup)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_find_direct_links'
+
+tests/services/test_scraping_service.py:921: AttributeError
+_____________________ test_strategy_find_direct_links_none _____________________
+
+    def test_strategy_find_direct_links_none():
+        html = '<a href="/other">Link</a>'
+        soup = BeautifulSoup(html, "lxml")
+>       links = scraping_service._strategy_find_direct_links(soup)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_find_direct_links'
+
+tests/services/test_scraping_service.py:928: AttributeError
+___________________ test_strategy_contextual_search_keyword ____________________
+
+    def test_strategy_contextual_search_keyword():
+        html = '<a href="/download/123">Download Torrent</a>'
+        soup = BeautifulSoup(html, "lxml")
+>       links = scraping_service._strategy_contextual_search(soup, "Query")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_contextual_search'
+
+tests/services/test_scraping_service.py:935: AttributeError
+_________________ test_strategy_contextual_search_query_match __________________
+
+    def test_strategy_contextual_search_query_match():
+        html = '<a href="/details.php?id=456">My Show S01E01 1080p</a>'
+        soup = BeautifulSoup(html, "lxml")
+>       links = scraping_service._strategy_contextual_search(soup, "My Show")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_contextual_search'
+
+tests/services/test_scraping_service.py:942: AttributeError
+______________ test_strategy_contextual_search_unrelated_keyword _______________
+
+    def test_strategy_contextual_search_unrelated_keyword():
+        html = '<a href="/about">About our download policy</a>'
+        soup = BeautifulSoup(html, "lxml")
+>       links = scraping_service._strategy_contextual_search(soup, "My Show")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_contextual_search'
+
+tests/services/test_scraping_service.py:949: AttributeError
+__________________ test_strategy_find_in_tables_single_match ___________________
+
+    def test_strategy_find_in_tables_single_match():
+        html = '<table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>'
+        soup = BeautifulSoup(html, "lxml")
+>       results = scraping_service._strategy_find_in_tables(soup, "My Show")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_find_in_tables'
+
+tests/services/test_scraping_service.py:956: AttributeError
+________________ test_strategy_find_in_tables_multiple_matches _________________
+
+    def test_strategy_find_in_tables_multiple_matches():
+        html = """
+        <table>
+          <tr><td>My Show S01E01</td><td><a href="/e1">DL</a></td></tr>
+          <tr><td>My Show S01E02</td><td><a href="/e2">DL</a></td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+>       results = scraping_service._strategy_find_in_tables(soup, "My Show")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_find_in_tables'
+
+tests/services/test_scraping_service.py:968: AttributeError
+____________ test_strategy_find_in_tables_ignores_unrelated_tables _____________
+
+    def test_strategy_find_in_tables_ignores_unrelated_tables():
+        html = """
+        <table><tr><td>Other</td><td><a href="/x">X</a></td></tr></table>
+        <table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+>       results = scraping_service._strategy_find_in_tables(soup, "My Show")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_strategy_find_in_tables'
+
+tests/services/test_scraping_service.py:978: AttributeError
+__________________ test_score_candidate_links_prefers_magnet ___________________
+
+    def test_score_candidate_links_prefers_magnet():
+        html = (
+            '<div><a href="magnet:?xt=urn:btih:1">Magnet</a></div>'
+            '<div><a href="/context">Download Torrent</a></div>'
+            '<table><tr><td>My Show</td><td><a href="/table">Link</a></td></tr></table>'
+        )
+        soup = BeautifulSoup(html, "lxml")
+        links = {"magnet:?xt=urn:btih:1", "/context", "/table"}
+        table_links = {"/table": 80.0}
+>       best = scraping_service._score_candidate_links(links, "My Show", table_links, soup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_score_candidate_links'
+
+tests/services/test_scraping_service.py:991: AttributeError
+___________________ test_score_candidate_links_penalizes_ads ___________________
+
+    def test_score_candidate_links_penalizes_ads():
+        html = (
+            '<div class="ad"><a href="/bad">My Show 1080p</a></div>'
+            '<div><a href="/good">My Show 1080p</a></div>'
+        )
+        soup = BeautifulSoup(html, "lxml")
+        links = {"/bad", "/good"}
+>       best = scraping_service._score_candidate_links(links, "My Show", {}, soup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_score_candidate_links'
+
+tests/services/test_scraping_service.py:1002: AttributeError
+_______________ test_score_candidate_links_prefers_better_match ________________
+
+    def test_score_candidate_links_prefers_better_match():
+        html = (
+            '<div><a href="/high">My Show Episode</a></div>'
+            '<div><a href="/low">Another Show</a></div>'
+        )
+        soup = BeautifulSoup(html, "lxml")
+        links = {"/high", "/low"}
+>       best = scraping_service._score_candidate_links(links, "My Show Episode", {}, soup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'telegram_bot.services.scraping_service' has no attribute '_score_candidate_links'
+
+tests/services/test_scraping_service.py:1013: AttributeError
+_______________ test_orchestrate_searches_calls_sites_and_sorts ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048bf7ec0>
+
+    @pytest.mark.asyncio
+    async def test_orchestrate_searches_calls_sites_and_sorts(mocker):
+        ctx = _ctx_with_config(
+            websites_movies=[
+                {
+                    "name": "YTS.mx",
+                    "enabled": True,
+                    "search_url": "https://yts.mx/browse-movies/{query}/all/all/0/latest/0/all",
+                },
+                {
+                    "name": "1337x",
+                    "enabled": True,
+                    "search_url": "https://1337x.to/category-search/{query}/Movies/1/",
+                },
+            ]
+        )
+
+        yts_results = [
+            {"title": "Alien (1979) 1080p", "score": 20, "source": "YTS.mx"},
+            {"title": "Alien (1979) 720p", "score": 10, "source": "YTS.mx"},
+        ]
+        txx_results = [
+            {"title": "Alien.1979.1080p", "score": 15, "source": "1337x"},
+        ]
+
+        m_yts = mocker.patch(
+            "telegram_bot.services.scraping_service.scrape_yts",
+            new=AsyncMock(return_value=yts_results),
+        )
+        m_1337 = mocker.patch(
+            "telegram_bot.services.scraping_service.scrape_1337x",
+            new=AsyncMock(return_value=txx_results),
+        )
+
+        results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
+
+        # Both scrapers called
+>       assert m_yts.await_count == 1
+E       AssertionError: assert 0 == 1
+E        +  where 0 = <AsyncMock id='140601269901824'>.await_count
+
+tests/services/test_search_orchestration.py:77: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:torrent_scraper.py:302 [SCRAPER] YTS Stage 1: No movies found matching year '1979'. Trying API fallback.
+ERROR    telegram_bot.config:generic_torrent_scraper.py:456 [SCRAPER] HTTP error fetching https://1337x.to/category-search/Alien+1979/Movies/1/: Client error '403 Forbidden' for url 'https://1337x.to/category-search/Alien+1979/Movies/1/'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+ERROR    telegram_bot.config:generic_torrent_scraper.py:148 [SCRAPER] 1337x: Failed to retrieve search results from https://1337x.to/category-search/Alien+1979/Movies/1/
+_______________ test_orchestrate_searches_respects_enabled_flag ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481d3230>
+
+    @pytest.mark.asyncio
+    async def test_orchestrate_searches_respects_enabled_flag(mocker):
+        ctx = _ctx_with_config(
+            websites_movies=[
+                {
+                    "name": "YTS.mx",
+                    "enabled": False,
+                    "search_url": "https://yts.mx/browse-movies/{query}",
+                },
+                {
+                    "name": "1337x",
+                    "enabled": True,
+                    "search_url": "https://1337x.to/category-search/{query}/Movies/1/",
+                },
+            ]
+        )
+
+        m_yts = mocker.patch(
+            "telegram_bot.services.scraping_service.scrape_yts",
+            new=AsyncMock(return_value=[]),
+        )
+        m_1337 = mocker.patch(
+            "telegram_bot.services.scraping_service.scrape_1337x",
+            new=AsyncMock(
+                return_value=[{"title": "Alien.1979.1080p", "score": 5, "source": "1337x"}]
+            ),
+        )
+
+        results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
+>       assert results and results[0]["source"] == "1337x"
+E       assert ([])
+
+tests/services/test_search_orchestration.py:122: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    telegram_bot.config:generic_torrent_scraper.py:456 [SCRAPER] HTTP error fetching https://1337x.to/category-search/Alien+1979/Movies/1/: Client error '403 Forbidden' for url 'https://1337x.to/category-search/Alien+1979/Movies/1/'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+ERROR    telegram_bot.config:generic_torrent_scraper.py:148 [SCRAPER] 1337x: Failed to retrieve search results from https://1337x.to/category-search/Alien+1979/Movies/1/
+___________ test_orchestrate_searches_yaml_fallback_for_unknown_site ___________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe048c05280>
+
+    @pytest.mark.asyncio
+    async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
+        ctx = _ctx_with_config(
+            websites_movies=[
+                {
+                    "name": "EZTV",
+                    "enabled": True,
+                    "search_url": "https://eztv.re/search/{query}",
+                },
+            ]
+        )
+
+        m_yaml = mocker.patch(
+            "telegram_bot.services.scraping_service.scrape_yaml_site",
+            new=AsyncMock(
+                return_value=[{"title": "Alien (1979) EZ", "score": 9, "source": "EZTV"}]
+            ),
+        )
+
+        results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
+>       assert results and results[0]["source"] == "EZTV"
+E       assert ([])
+
+tests/services/test_search_orchestration.py:148: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  telegram_bot.config:generic_web_scraper.py:267 [SCRAPER] No YAML config found for site 'EZTV' — skipping.
+____________________ test_handle_tv_scope_selection_season _____________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0481cbef0>
+context = namespace(bot=namespace(send_message=<AsyncMock id='140601177379888'>, delete_message=<AsyncMock id='140601177383920'>), user_data={}, bot_data={})
+make_callback_query = <function make_callback_query.<locals>._make at 0x7fe0480f5300>
+make_message = <function make_message.<locals>._make at 0x7fe0480f65c0>
+
+    @pytest.mark.asyncio
+    async def test_handle_tv_scope_selection_season(
+        mocker, context, make_callback_query, make_message
+    ):
+        mocker.patch(
+            "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+        )
+>       mocker.patch(
+            "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+            new=AsyncMock(return_value=2),
+        )
+
+tests/workflows/test_search_workflow.py:253:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:448: in __call__
+    return self._start_patch(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:266: in _start_patch
+    mocked: MockType = p.start()
+                       ^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1624: in start
+    result = self.__enter__()
+             ^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'telegram_bot.workflows.search_workflow.scraping_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'telegram_bot.workflows.search_workflow' has no attribute 'scraping_service'
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/pkgutil.py:528: AttributeError
+________________ test_handle_tv_scope_selection_season_fallback ________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0433c15b0>
+context = namespace(bot=namespace(send_message=<AsyncMock id='140601177414960'>, delete_message=<AsyncMock id='140601177418848'>), user_data={}, bot_data={})
+make_callback_query = <function make_callback_query.<locals>._make at 0x7fe0480f7100>
+make_message = <function make_message.<locals>._make at 0x7fe0480f6de0>
+
+    @pytest.mark.asyncio
+    async def test_handle_tv_scope_selection_season_fallback(
+        mocker, context, make_callback_query, make_message
+    ):
+        mocker.patch(
+            "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+        )
+>       mocker.patch(
+            "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+            new=AsyncMock(return_value=2),
+        )
+
+tests/workflows/test_search_workflow.py:302:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:448: in __call__
+    return self._start_patch(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:266: in _start_patch
+    mocked: MockType = p.start()
+                       ^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1624: in start
+    result = self.__enter__()
+             ^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'telegram_bot.workflows.search_workflow.scraping_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'telegram_bot.workflows.search_workflow' has no attribute 'scraping_service'
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/pkgutil.py:528: AttributeError
+______________ test_entire_season_skips_pack_and_targets_missing _______________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe04806ec90>
+context = namespace(bot=namespace(send_message=<AsyncMock id='140601270159408'>, delete_message=<AsyncMock id='140601270192320'>), user_data={}, bot_data={})
+make_callback_query = <function make_callback_query.<locals>._make at 0x7fe0480f5b20>
+make_message = <function make_message.<locals>._make at 0x7fe043375260>
+
+    @pytest.mark.asyncio
+    async def test_entire_season_skips_pack_and_targets_missing(
+        mocker, context, make_callback_query, make_message
+    ):
+        # Mock messaging and data sources
+        mocker.patch(
+            "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+        )
+>       mocker.patch(
+            "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+            new=AsyncMock(return_value=5),
+        )
+
+tests/workflows/test_search_workflow.py:430:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:448: in __call__
+    return self._start_patch(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:266: in _start_patch
+    mocked: MockType = p.start()
+                       ^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1624: in start
+    result = self.__enter__()
+             ^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'telegram_bot.workflows.search_workflow.scraping_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'telegram_bot.workflows.search_workflow' has no attribute 'scraping_service'
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/pkgutil.py:528: AttributeError
+___________________ test_entire_season_all_owned_exits_early ___________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe0480348f0>
+context = namespace(bot=namespace(send_message=<AsyncMock id='140601257581104'>, delete_message=<AsyncMock id='140601259262224'>), user_data={}, bot_data={})
+make_callback_query = <function make_callback_query.<locals>._make at 0x7fe043376160>
+make_message = <function make_message.<locals>._make at 0x7fe043375760>
+
+    @pytest.mark.asyncio
+    async def test_entire_season_all_owned_exits_early(
+        mocker, context, make_callback_query, make_message
+    ):
+        edit_mock = mocker.patch(
+            "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+        )
+>       mocker.patch(
+            "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+            new=AsyncMock(return_value=3),
+        )
+
+tests/workflows/test_search_workflow.py:510:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:448: in __call__
+    return self._start_patch(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:266: in _start_patch
+    mocked: MockType = p.start()
+                       ^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1624: in start
+    result = self.__enter__()
+             ^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'telegram_bot.workflows.search_workflow.scraping_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'telegram_bot.workflows.search_workflow' has no attribute 'scraping_service'
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/pkgutil.py:528: AttributeError
+_________ test_tv_season_fallback_uses_wiki_titles_and_corrected_title _________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x7fe04806e8a0>
+
+    @pytest.mark.asyncio
+    async def test_tv_season_fallback_uses_wiki_titles_and_corrected_title(mocker):
+        # Mock episode titles and corrected show title from Wikipedia
+>       mocker.patch(
+            "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+            new=AsyncMock(return_value=({1: "Pilot"}, "Show (TV series)")),
+        )
+
+tests/workflows/test_search_workflow_integration.py:14:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:448: in __call__
+    return self._start_patch(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pytest_mock/plugin.py:266: in _start_patch
+    mocked: MockType = p.start()
+                       ^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1624: in start
+    result = self.__enter__()
+             ^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/unittest/mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'telegram_bot.workflows.search_workflow.scraping_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'telegram_bot.workflows.search_workflow' has no attribute 'scraping_service'
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/pkgutil.py:528: AttributeError
+=========================== short test summary info ============================
+FAILED tests/services/test_dry_run_integration.py::test_dry_run_flow_uses_wiki_year_and_filters_resolution
+FAILED tests/services/test_dry_run_integration.py::test_dry_run_movie_explicit_year_overrides_wiki
+FAILED tests/services/test_dry_run_integration.py::test_dry_run_tv_search_workflow_basic
+FAILED tests/services/test_generic_torrent_scraper_magnet.py::test_search_parses_magnet_link_from_detail_page
+FAILED tests/services/test_scraping_service.py::test_fetch_episode_title_dedicated_page
+FAILED tests/services/test_scraping_service.py::test_fetch_episode_title_strips_miniseries_suffix
+FAILED tests/services/test_scraping_service.py::test_fetch_episode_title_strips_tv_series_suffix
+FAILED tests/services/test_scraping_service.py::test_fetch_episode_title_embedded_page
+FAILED tests/services/test_scraping_service.py::test_fetch_season_episode_count
+FAILED tests/services/test_scraping_service.py::test_fetch_season_episode_count_prefers_titles_over_overview
+FAILED tests/services/test_scraping_service.py::test_scrape_1337x_parses_results
+FAILED tests/services/test_scraping_service.py::test_scrape_1337x_fuzzy_filter
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_parses_results
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_retries_on_validation_failure
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_paginates_browse_pages_to_find_year
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_quality
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_api_fallback_relaxes_year
+FAILED tests/services/test_scraping_service.py::test_scrape_yts_token_gate_avoids_near_homonyms
+FAILED tests/services/test_scraping_service.py::test_strategy_find_direct_links_magnet
+FAILED tests/services/test_scraping_service.py::test_strategy_find_direct_links_torrent
+FAILED tests/services/test_scraping_service.py::test_strategy_find_direct_links_none
+FAILED tests/services/test_scraping_service.py::test_strategy_contextual_search_keyword
+FAILED tests/services/test_scraping_service.py::test_strategy_contextual_search_query_match
+FAILED tests/services/test_scraping_service.py::test_strategy_contextual_search_unrelated_keyword
+FAILED tests/services/test_scraping_service.py::test_strategy_find_in_tables_single_match
+FAILED tests/services/test_scraping_service.py::test_strategy_find_in_tables_multiple_matches
+FAILED tests/services/test_scraping_service.py::test_strategy_find_in_tables_ignores_unrelated_tables
+FAILED tests/services/test_scraping_service.py::test_score_candidate_links_prefers_magnet
+FAILED tests/services/test_scraping_service.py::test_score_candidate_links_penalizes_ads
+FAILED tests/services/test_scraping_service.py::test_score_candidate_links_prefers_better_match
+FAILED tests/services/test_search_orchestration.py::test_orchestrate_searches_calls_sites_and_sorts
+FAILED tests/services/test_search_orchestration.py::test_orchestrate_searches_respects_enabled_flag
+FAILED tests/services/test_search_orchestration.py::test_orchestrate_searches_yaml_fallback_for_unknown_site
+FAILED tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_season
+FAILED tests/workflows/test_search_workflow.py::test_handle_tv_scope_selection_season_fallback
+FAILED tests/workflows/test_search_workflow.py::test_entire_season_skips_pack_and_targets_missing
+FAILED tests/workflows/test_search_workflow.py::test_entire_season_all_owned_exits_early
+FAILED tests/workflows/test_search_workflow_integration.py::test_tv_season_fallback_uses_wiki_titles_and_corrected_title
+======================= 38 failed, 119 passed in 57.14s ========================

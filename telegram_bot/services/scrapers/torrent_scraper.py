@@ -21,6 +21,8 @@ from ..generic_torrent_scraper import GenericTorrentScraper, load_site_config
 async def scrape_1337x(
     query: str,
     media_type: str,
+    site_url: str | None = None,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
     **kwargs: Any,
 ) -> list[dict[str, Any]]:
     """Scrape 1337x using the generic scraper framework."""
@@ -36,11 +38,65 @@ async def scrape_1337x(
         logger.error(f"[SCRAPER] Failed to load 1337x config: {exc}")
         return []
 
+    # Get preferences for scoring
+    prefs_key = "movies" if "movie" in media_type else "tv"
+    preferences = {}
+    if context:
+        preferences = (
+            context.bot_data.get("SEARCH_CONFIG", {})
+            .get("preferences", {})
+            .get(prefs_key, {})
+        )
+
     scraper = GenericTorrentScraper(site_config)
-    return await scraper.search(query, media_type, **kwargs)
+    raw_results = await scraper.search(query, media_type, **kwargs)
+
+    results: list[dict[str, Any]] = []
+    for item in raw_results:
+        # GenericTorrentScraper returns dicts of TorrentData
+        name = item.get("name", "")
+        seeders = item.get("seeders", 0)
+        uploader = item.get("uploader") or "Anonymous"
+
+        score = score_torrent_result(name, uploader, preferences, seeders=seeders)
+        if score <= 0:
+            continue
+
+        parsed_name = parse_torrent_name(name)
+        results.append(
+            {
+                "title": name,
+                "page_url": item.get("magnet_url"),
+                "score": score,
+                "source": item.get("source_site", "1337x"),
+                "uploader": uploader,
+                "size_gb": item.get("size_bytes", 0) / (1024**3),
+                "codec": parse_codec(name),
+                "seeders": seeders,
+                "leechers": item.get("leechers", 0),
+                "year": parsed_name.get("year"),
+            }
+        )
+    return results
 
 
 from .base_scraper import Scraper
+
+
+async def scrape_yts(
+    query: str,
+    media_type: str,
+    site_url: str | None = None,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+    **kwargs: Any,
+) -> list[dict[str, Any]]:
+    """Wrapper for YTS scraper to match the generic scraper function signature."""
+    if context:
+        kwargs["context"] = context
+
+    scraper = YtsScraper()
+    return await scraper.search(query, media_type, **kwargs)
+
 
 class YtsScraper(Scraper):
     """
@@ -62,7 +118,9 @@ class YtsScraper(Scraper):
         )
 
         if not context:
-            logger.warning("[SCRAPER] YTS: No context provided. Cannot get preferences.")
+            logger.warning(
+                "[SCRAPER] YTS: No context provided. Cannot get preferences."
+            )
             return []
 
         preferences = (
@@ -91,7 +149,9 @@ class YtsScraper(Scraper):
                     # Require at least one non-stopword token from query to appear in candidate
                     cand_tokens = _tokens(title_text)
                     return (
-                        any(t in cand_tokens for t in base_tokens) if base_tokens else True
+                        any(t in cand_tokens for t in base_tokens)
+                        if base_tokens
+                        else True
                     )
 
                 # Stage 1: Scrape search results to find the movie's page URL
@@ -113,7 +173,9 @@ class YtsScraper(Scraper):
 
                 def _collect_choices_from_soup(soup: BeautifulSoup) -> dict[str, str]:
                     out: dict[str, str] = {}
-                    for movie_wrapper in soup.find_all("div", class_="browse-movie-wrap"):
+                    for movie_wrapper in soup.find_all(
+                        "div", class_="browse-movie-wrap"
+                    ):
                         if not isinstance(movie_wrapper, Tag):
                             continue
                         year_tag = movie_wrapper.find("div", class_="browse-movie-year")
@@ -161,7 +223,9 @@ class YtsScraper(Scraper):
                         out: list[dict[str, Any]] = []
                         for mv in movies:
                             try:
-                                mv_title = mv.get("title_long") or mv.get("title") or query
+                                mv_title = (
+                                    mv.get("title_long") or mv.get("title") or query
+                                )
                                 mv_year = mv.get("year")
                                 if year and mv_year and str(mv_year) != str(year):
                                     continue
@@ -176,7 +240,9 @@ class YtsScraper(Scraper):
                                         and resolution.lower() not in quality
                                     ):
                                         continue
-                                    size_gb = (tor.get("size_bytes", 0) or 0) / (1024**3)
+                                    size_gb = (tor.get("size_bytes", 0) or 0) / (
+                                        1024**3
+                                    )
                                     if size_gb > MAX_TORRENT_SIZE_GB:
                                         continue
                                     info_hash = tor.get("hash")
@@ -229,7 +295,9 @@ class YtsScraper(Scraper):
                                 "[SCRAPER] YTS API fallback request failed: %s", exc
                             )
                             return []
-                        data = payload.get("data") if isinstance(payload, dict) else None
+                        data = (
+                            payload.get("data") if isinstance(payload, dict) else None
+                        )
                         movies = data.get("movies") if isinstance(data, dict) else None
                         if not isinstance(movies, list):
                             return []
@@ -266,7 +334,9 @@ class YtsScraper(Scraper):
                         return results
 
                     # Attempt 3: drop year filter from request but filter in-code by year
-                    params_no_year = {k: v for k, v in base_params.items() if k != "year"}
+                    params_no_year = {
+                        k: v for k, v in base_params.items() if k != "year"
+                    }
                     results_all_years = await _call_list_movies(params_no_year)
                     if results_all_years:
                         # _build_results_from_movies() already filters by 'year' via closure
@@ -276,7 +346,9 @@ class YtsScraper(Scraper):
                         )
                         return results_all_years
 
-                    logger.info("[SCRAPER] YTS API fallback finished. Found 0 torrents.")
+                    logger.info(
+                        "[SCRAPER] YTS API fallback finished. Found 0 torrents."
+                    )
                     return []
 
                 if not choices:
@@ -292,7 +364,9 @@ class YtsScraper(Scraper):
                         return []
 
                 # Use a more robust scorer and apply token gating if year is provided
-                best_match = process.extractOne(query, choices, scorer=fuzz.token_set_ratio)
+                best_match = process.extractOne(
+                    query, choices, scorer=fuzz.token_set_ratio
+                )
                 is_confident = bool(
                     best_match
                     and len(best_match) == 3
@@ -338,7 +412,9 @@ class YtsScraper(Scraper):
                     return await _api_fallback()
 
                 # Stage 3: Call the YTS API with the movie ID and validate
-                api_url = f"https://yts.mx/api/v2/movie_details.json?movie_id={movie_id}"
+                api_url = (
+                    f"https://yts.mx/api/v2/movie_details.json?movie_id={movie_id}"
+                )
                 api_data: dict[str, Any] | None = None
                 movie_data: dict[str, Any] | None = None
                 torrents: list[dict[str, Any]] = []
@@ -369,7 +445,9 @@ class YtsScraper(Scraper):
                         api_data.get("data") if isinstance(api_data, dict) else None
                     )
                     movie_data = (
-                        _data_field.get("movie") if isinstance(_data_field, dict) else None
+                        _data_field.get("movie")
+                        if isinstance(_data_field, dict)
+                        else None
                     )
                     torrents = (
                         movie_data.get("torrents", [])
@@ -377,7 +455,9 @@ class YtsScraper(Scraper):
                         else []
                     )
                     conditions = []
-                    status = api_data.get("status") if isinstance(api_data, dict) else None
+                    status = (
+                        api_data.get("status") if isinstance(api_data, dict) else None
+                    )
                     if status != "ok":
                         conditions.append(f"status != 'ok' (got {status!r})")
                     if not movie_data:
@@ -450,7 +530,7 @@ class YtsScraper(Scraper):
 
                             seeders_count = torrent.get("seeds", 0)
                             parsed_codec = (
-                                _parse_codec(full_title) or "x264"  # Default YTS to x264
+                                parse_codec(full_title) or "x264"  # Default YTS to x264
                             )
                             score = score_torrent_result(
                                 full_title, "YTS", preferences, seeders=seeders_count
@@ -482,4 +562,3 @@ class YtsScraper(Scraper):
         except Exception as e:
             logger.error(f"[SCRAPER ERROR] YTS scrape failed: {e}", exc_info=True)
             return []
-

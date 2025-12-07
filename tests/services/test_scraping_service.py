@@ -8,6 +8,7 @@ from unittest.mock import Mock, AsyncMock
 import wikipedia
 from bs4 import BeautifulSoup
 from telegram_bot.services import scraping_service
+from telegram_bot.services.scrapers import generic_web_scraper
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -17,16 +18,18 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 # (e.g., Wikipedia title caches across the same show/season).
 @pytest.fixture(autouse=True)
 def _clear_wiki_caches():
+    from telegram_bot.services.scrapers import wikipedia_scraper
+
     try:
-        scraping_service._WIKI_TITLES_CACHE.clear()  # type: ignore[attr-defined]
+        wikipedia_scraper._WIKI_TITLES_CACHE.clear()
     except Exception:
         pass
     try:
-        scraping_service._WIKI_SOUP_CACHE.clear()  # type: ignore[attr-defined]
+        wikipedia_scraper._WIKI_SOUP_CACHE.clear()
     except Exception:
         pass
     try:
-        scraping_service._WIKI_MOVIE_CACHE.clear()  # type: ignore[attr-defined]
+        wikipedia_scraper._WIKI_MOVIE_CACHE.clear()
     except Exception:
         pass
 
@@ -161,7 +164,7 @@ async def test_fetch_episode_title_dedicated_page(mocker):
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=DEDICATED_HTML,
     )
 
@@ -186,7 +189,7 @@ async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
         "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
     )
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=DEDICATED_HTML,
     )
 
@@ -213,7 +216,7 @@ async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
         "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
     )
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=DEDICATED_HTML,
     )
 
@@ -238,7 +241,7 @@ async def test_fetch_episode_title_embedded_page(mocker):
         side_effect=[mock_main_page, wikipedia.exceptions.PageError("no list")],
     )
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=SIMPLE_EMBEDDED_HTML,
     )
 
@@ -253,7 +256,7 @@ async def test_fetch_episode_title_not_found(mocker):
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=NO_EPISODE_HTML,
     )
 
@@ -267,7 +270,7 @@ async def test_fetch_season_episode_count(mocker):
     mock_page.url = "http://example.com"
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=SEASON_OVERVIEW_HTML,
     )
 
@@ -281,7 +284,7 @@ async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
     mock_page.url = "http://example.com"
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=DEDICATED_WITH_OVERVIEW_ONGOING_HTML,
     )
 
@@ -296,7 +299,7 @@ async def test_fetch_season_episode_count_skips_ongoing_overview(mocker):
     mock_page.url = "http://example.com"
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia_scraper._get_page_html",
         return_value=OVERVIEW_ONGOING_ONLY_HTML,
     )
 
@@ -911,49 +914,49 @@ async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
 def test_strategy_find_direct_links_magnet():
     html = '<a href="magnet:?xt=urn:btih:123">Magnet</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_find_direct_links(soup)
+    links = generic_web_scraper._strategy_find_direct_links(soup)
     assert links == {"magnet:?xt=urn:btih:123"}
 
 
 def test_strategy_find_direct_links_torrent():
     html = '<a href="https://example.com/file.torrent">Download</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_find_direct_links(soup)
+    links = generic_web_scraper._strategy_find_direct_links(soup)
     assert links == {"https://example.com/file.torrent"}
 
 
 def test_strategy_find_direct_links_none():
     html = '<a href="/other">Link</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_find_direct_links(soup)
+    links = generic_web_scraper._strategy_find_direct_links(soup)
     assert links == set()
 
 
 def test_strategy_contextual_search_keyword():
     html = '<a href="/download/123">Download Torrent</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_contextual_search(soup, "Query")
+    links = generic_web_scraper._strategy_contextual_search(soup, "Query")
     assert "/download/123" in links
 
 
 def test_strategy_contextual_search_query_match():
     html = '<a href="/details.php?id=456">My Show S01E01 1080p</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_contextual_search(soup, "My Show")
+    links = generic_web_scraper._strategy_contextual_search(soup, "My Show")
     assert "/details.php?id=456" in links
 
 
 def test_strategy_contextual_search_unrelated_keyword():
     html = '<a href="/about">About our download policy</a>'
     soup = BeautifulSoup(html, "lxml")
-    links = scraping_service._strategy_contextual_search(soup, "My Show")
+    links = generic_web_scraper._strategy_contextual_search(soup, "My Show")
     assert "/about" in links
 
 
 def test_strategy_find_in_tables_single_match():
     html = '<table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>'
     soup = BeautifulSoup(html, "lxml")
-    results = scraping_service._strategy_find_in_tables(soup, "My Show")
+    results = generic_web_scraper._strategy_find_in_tables(soup, "My Show")
     assert "/dl" in results
 
 
@@ -965,7 +968,7 @@ def test_strategy_find_in_tables_multiple_matches():
     </table>
     """
     soup = BeautifulSoup(html, "lxml")
-    results = scraping_service._strategy_find_in_tables(soup, "My Show")
+    results = generic_web_scraper._strategy_find_in_tables(soup, "My Show")
     assert {"/e1", "/e2"}.issubset(results.keys())
 
 
@@ -975,7 +978,7 @@ def test_strategy_find_in_tables_ignores_unrelated_tables():
     <table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>
     """
     soup = BeautifulSoup(html, "lxml")
-    results = scraping_service._strategy_find_in_tables(soup, "My Show")
+    results = generic_web_scraper._strategy_find_in_tables(soup, "My Show")
     assert "/dl" in results and "/x" not in results
 
 
@@ -988,7 +991,9 @@ def test_score_candidate_links_prefers_magnet():
     soup = BeautifulSoup(html, "lxml")
     links = {"magnet:?xt=urn:btih:1", "/context", "/table"}
     table_links = {"/table": 80.0}
-    best = scraping_service._score_candidate_links(links, "My Show", table_links, soup)
+    best = generic_web_scraper._score_candidate_links(
+        links, "My Show", table_links, soup
+    )
     assert best == "magnet:?xt=urn:btih:1"
 
 
@@ -999,7 +1004,7 @@ def test_score_candidate_links_penalizes_ads():
     )
     soup = BeautifulSoup(html, "lxml")
     links = {"/bad", "/good"}
-    best = scraping_service._score_candidate_links(links, "My Show", {}, soup)
+    best = generic_web_scraper._score_candidate_links(links, "My Show", {}, soup)
     assert best == "/good"
 
 
@@ -1010,5 +1015,7 @@ def test_score_candidate_links_prefers_better_match():
     )
     soup = BeautifulSoup(html, "lxml")
     links = {"/high", "/low"}
-    best = scraping_service._score_candidate_links(links, "My Show Episode", {}, soup)
+    best = generic_web_scraper._score_candidate_links(
+        links, "My Show Episode", {}, soup
+    )
     assert best == "/high"

@@ -1,7 +1,7 @@
 # telegram_bot/services/scrapers/base_scraper.py
 
 from abc import ABC, abstractmethod
-from typing import Any, List
+from typing import Any
 
 
 class Scraper(ABC):

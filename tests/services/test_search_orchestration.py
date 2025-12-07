@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from telegram_bot.services.search_logic import orchestrate_searches
+from telegram_bot.services.scrapers.torrent_scraper import YtsScraper
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -62,12 +63,11 @@ async def test_orchestrate_searches_calls_sites_and_sorts(mocker):
         {"title": "Alien.1979.1080p", "score": 15, "source": "1337x"},
     ]
 
-    m_yts = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yts",
-        new=AsyncMock(return_value=yts_results),
+    m_yts = mocker.patch.object(
+        YtsScraper, "search", new=AsyncMock(return_value=yts_results)
     )
     m_1337 = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_1337x",
+        "telegram_bot.services.search_logic.scrape_1337x",
         new=AsyncMock(return_value=txx_results),
     )
 
@@ -107,12 +107,9 @@ async def test_orchestrate_searches_respects_enabled_flag(mocker):
         ]
     )
 
-    m_yts = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yts",
-        new=AsyncMock(return_value=[]),
-    )
+    m_yts = mocker.patch.object(YtsScraper, "search", new=AsyncMock(return_value=[]))
     m_1337 = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_1337x",
+        "telegram_bot.services.search_logic.scrape_1337x",
         new=AsyncMock(
             return_value=[{"title": "Alien.1979.1080p", "score": 5, "source": "1337x"}]
         ),
@@ -138,7 +135,7 @@ async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
     )
 
     m_yaml = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yaml_site",
+        "telegram_bot.services.search_logic.scrape_yaml_site",
         new=AsyncMock(
             return_value=[{"title": "Alien (1979) EZ", "score": 9, "source": "EZTV"}]
         ),
