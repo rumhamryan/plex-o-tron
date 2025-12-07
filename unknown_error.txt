@@ -1,0 +1,104 @@
+Dec 07 01:22:37 pc python[2640]: [2025-12-07 01:22:37] [ERROR] An unhandled exception occurred:
+Dec 07 01:22:37 pc python[2640]: Traceback (most recent call last):
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+Dec 07 01:22:37 pc python[2640]:     yield
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+Dec 07 01:22:37 pc python[2640]:     resp = await self._pool.handle_async_request(req)
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+Dec 07 01:22:37 pc python[2640]:     raise exc from None
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+Dec 07 01:22:37 pc python[2640]:     response = await connection.handle_async_request(
+Dec 07 01:22:37 pc python[2640]:                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 103, in handle_async_request
+Dec 07 01:22:37 pc python[2640]:     return await self._connection.handle_async_request(request)
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_async/http11.py", line 136, in handle_async_request
+Dec 07 01:22:37 pc python[2640]:     raise exc
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_async/http11.py", line 106, in handle_async_request
+Dec 07 01:22:37 pc python[2640]:     ) = await self._receive_response_headers(**kwargs)
+Dec 07 01:22:37 pc python[2640]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_async/http11.py", line 177, in _receive_response_headers
+Dec 07 01:22:37 pc python[2640]:     event = await self._receive_event(timeout=timeout)
+Dec 07 01:22:37 pc python[2640]:             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_async/http11.py", line 217, in _receive_event
+Dec 07 01:22:37 pc python[2640]:     data = await self._network_stream.read(
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_backends/anyio.py", line 32, in read
+Dec 07 01:22:37 pc python[2640]:     with map_exceptions(exc_map):
+Dec 07 01:22:37 pc python[2640]:   File "/home/ryan/python3.12/lib/python3.12/contextlib.py", line 155, in __exit__
+Dec 07 01:22:37 pc python[2640]:     self.gen.throw(value)
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+Dec 07 01:22:37 pc python[2640]:     raise to_exc(exc) from exc
+Dec 07 01:22:37 pc python[2640]: httpcore.ReadError
+Dec 07 01:22:37 pc python[2640]: The above exception was the direct cause of the following exception:
+Dec 07 01:22:37 pc python[2640]: Traceback (most recent call last):
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 273, in do_request
+Dec 07 01:22:37 pc python[2640]:     res = await self._client.request(
+Dec 07 01:22:37 pc python[2640]:           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1540, in request
+Dec 07 01:22:37 pc python[2640]:     return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1629, in send
+Dec 07 01:22:37 pc python[2640]:     response = await self._send_handling_auth(
+Dec 07 01:22:37 pc python[2640]:                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+Dec 07 01:22:37 pc python[2640]:     response = await self._send_handling_redirects(
+Dec 07 01:22:37 pc python[2640]:                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+Dec 07 01:22:37 pc python[2640]:     response = await self._send_single_request(request)
+Dec 07 01:22:37 pc python[2640]:                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1730, in _send_single_request
+Dec 07 01:22:37 pc python[2640]:     response = await transport.handle_async_request(request)
+Dec 07 01:22:37 pc python[2640]:                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+Dec 07 01:22:37 pc python[2640]:     with map_httpcore_exceptions():
+Dec 07 01:22:37 pc python[2640]:   File "/home/ryan/python3.12/lib/python3.12/contextlib.py", line 155, in __exit__
+Dec 07 01:22:37 pc python[2640]:     self.gen.throw(value)
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+Dec 07 01:22:37 pc python[2640]:     raise mapped_exc(message) from exc
+Dec 07 01:22:37 pc python[2640]: httpx.ReadError
+Dec 07 01:22:37 pc python[2640]: The above exception was the direct cause of the following exception:
+Dec 07 01:22:37 pc python[2640]: Traceback (most recent call last):
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/ext/_utils/networkloop.py", line 115, in network_retry_loop
+Dec 07 01:22:37 pc python[2640]:     if not await do_action():
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/ext/_utils/networkloop.py", line 108, in do_action
+Dec 07 01:22:37 pc python[2640]:     return action_cb_task.result()
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 340, in polling_action_cb
+Dec 07 01:22:37 pc python[2640]:     updates = await self.bot.get_updates(
+Dec 07 01:22:37 pc python[2640]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 670, in get_updates
+Dec 07 01:22:37 pc python[2640]:     updates = await super().get_updates(
+Dec 07 01:22:37 pc python[2640]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 4611, in get_updates
+Dec 07 01:22:37 pc python[2640]:     await self._post(
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 698, in _post
+Dec 07 01:22:37 pc python[2640]:     return await self._do_post(
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 370, in _do_post
+Dec 07 01:22:37 pc python[2640]:     return await super()._do_post(
+Dec 07 01:22:37 pc python[2640]:            ^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/_bot.py", line 727, in _do_post
+Dec 07 01:22:37 pc python[2640]:     result = await request.post(
+Dec 07 01:22:37 pc python[2640]:              ^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 197, in post
+Dec 07 01:22:37 pc python[2640]:     result = await self._request_wrapper(
+Dec 07 01:22:37 pc python[2640]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 304, in _request_wrapper
+Dec 07 01:22:37 pc python[2640]:     code, payload = await self.do_request(
+Dec 07 01:22:37 pc python[2640]:                     ^^^^^^^^^^^^^^^^^^^^^^
+Dec 07 01:22:37 pc python[2640]:   File "/opt/plex-o-tron/.venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 297, in do_request
+Dec 07 01:22:37 pc python[2640]:     raise NetworkError(f"httpx.{err.__class__.__name__}: {err}") from err
+Dec 07 01:22:37 pc python[2640]: telegram.error.NetworkError: httpx.ReadError:
+Dec 07 01:22:37 pc python[2640]: --- DETAILED EXCEPTION REPORT ---
+Dec 07 01:22:37 pc python[2640]: [2025-12-07 01:22:37] [ERROR] DETAILED EXCEPTION REPORT:
+Dec 07 01:22:37 pc python[2640]: An exception was raised while handling an update
+Dec 07 01:22:37 pc python[2640]: <pre>update = &quot;None&quot;</pre>
+Dec 07 01:22:37 pc python[2640]: <pre>context.chat_data = None</pre>
+Dec 07 01:22:37 pc python[2640]: <pre>context.user_data = None</pre>
+Dec 07 01:22:37 pc python[2640]: <b>Traceback:</b>
+Dec 07 01:22:37 pc python[2640]: <pre>NoneType: None
+Dec 07 01:22:37 pc python[2640]: </pre>
+Dec 07 01:22:37 pc python[2640]: --- END OF REPORT ---

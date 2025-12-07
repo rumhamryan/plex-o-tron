@@ -3,8 +3,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 import pytest
 
-from telegram_bot.services import scraping_service
+from telegram_bot.services.scrapers import YtsScraper, scrape_1337x
 from telegram_bot.services.search_logic import orchestrate_searches
+from telegram_bot.services.scrapers.wikipedia_scraper import fetch_movie_years_from_wikipedia
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -68,24 +69,18 @@ def _ctx_with_search_config():
 async def test_dry_run_flow_uses_wiki_year_and_filters_resolution(mocker):
     # Mock Wikipedia years for 'Alien'
     mocker.patch(
-        "telegram_bot.services.scraping_service.fetch_movie_years_from_wikipedia",
+        "telegram_bot.services.scrapers.wikipedia_scraper.fetch_movie_years_from_wikipedia",
         new=AsyncMock(return_value=([1979], None)),
     )
 
     # Mock scrapers
-    yts_results = [
-        {"title": "Alien (1979) 1080p WEB x265 [YTS]", "score": 21, "source": "YTS.mx"},
-        {"title": "Alien (1979) 720p WEB x264 [YTS]", "score": 11, "source": "YTS.mx"},
-    ]
-    x_results = [
-        {"title": "Alien.1979.1080p.BluRay.x265", "score": 16, "source": "1337x"},
-    ]
-    m_yts = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yts",
+    m_yts = mocker.patch.object(
+        YtsScraper,
+        "search",
         new=AsyncMock(return_value=yts_results),
     )
     m_1337 = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_1337x",
+        "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
         new=AsyncMock(return_value=x_results),
     )
 
@@ -104,8 +99,8 @@ async def test_dry_run_flow_uses_wiki_year_and_filters_resolution(mocker):
     # Ensure scrapers were called with expected args
     yts_call = m_yts.await_args
     x_call = m_1337.await_args
-    assert yts_call.args[0] == base_for_search
-    assert x_call.args[0] == f"{base_for_search} 1979"
+    assert yts_call.kwargs["query"] == base_for_search
+    assert x_call.kwargs["query"] == f"{base_for_search} 1979"
 
     filtered = _filter_by_resolution(results, resolution)
     assert filtered and all("1080p" in r["title"].lower() for r in filtered)
@@ -117,7 +112,7 @@ async def test_dry_run_flow_uses_wiki_year_and_filters_resolution(mocker):
 async def test_dry_run_movie_explicit_year_overrides_wiki(mocker):
     # Wikipedia would return an incorrect or different year, but explicit year should win
     mocker.patch(
-        "telegram_bot.services.scraping_service.fetch_movie_years_from_wikipedia",
+        "telegram_bot.services.scrapers.wikipedia_scraper.fetch_movie_years_from_wikipedia",
         new=AsyncMock(return_value=([1983], None)),
     )
 
@@ -131,12 +126,13 @@ async def test_dry_run_movie_explicit_year_overrides_wiki(mocker):
     x_results = [
         {"title": "The.Thing.1982.1080p.BluRay.x265", "score": 18, "source": "1337x"},
     ]
-    m_yts = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yts",
+    m_yts = mocker.patch.object(
+        YtsScraper,
+        "search",
         new=AsyncMock(return_value=yts_results),
     )
     m_1337 = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_1337x",
+        "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
         new=AsyncMock(return_value=x_results),
     )
 
@@ -151,8 +147,7 @@ async def test_dry_run_movie_explicit_year_overrides_wiki(mocker):
     explicit_year = m.group(1) if m else None
     base = title[: m.start()].strip() if m else title
 
-    # Wikipedia still queried, but we must prefer explicit_year in orchestrate
-    years, corrected = await scraping_service.fetch_movie_years_from_wikipedia(base)
+    years, corrected = await fetch_movie_years_from_wikipedia(base)
     base_for_search = corrected or base
     assert years == [1983]
     assert explicit_year == "1982"
@@ -164,8 +159,8 @@ async def test_dry_run_movie_explicit_year_overrides_wiki(mocker):
     # Ensure scrapers called with explicit year
     yts_call = m_yts.await_args
     x_call = m_1337.await_args
-    assert yts_call.args[0] == base_for_search
-    assert x_call.args[0] == f"{base_for_search} 1982"
+    assert yts_call.kwargs["query"] == base_for_search
+    assert x_call.kwargs["query"] == f"{base_for_search} 1982"
     assert all("1982" in r["title"] for r in results)
 
 
@@ -201,7 +196,7 @@ async def test_dry_run_tv_search_workflow_basic(mocker):
     ]
 
     m_1337 = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_1337x",
+        "telegram_bot.services.scrapers.torrent_scraper.scrape_1337x",
         new=AsyncMock(return_value=x_results),
     )
 
@@ -211,8 +206,7 @@ async def test_dry_run_tv_search_workflow_basic(mocker):
 
     # 1337x called with query as-is (no year appended for TV)
     x_call = m_1337.await_args
-    assert x_call.args[0] == query
-
+    assert x_call.kwargs["query"] == query
     # Filter and assert top result is 1080p
     filtered = _filter_by_resolution(results, resolution)
     assert filtered and filtered[0]["title"].lower().find("1080p") != -1

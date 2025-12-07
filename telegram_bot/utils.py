@@ -74,6 +74,22 @@ def extract_first_int(text: str) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def parse_size_to_bytes(size_str: str) -> int:
+    """Convert strings like ``'1.5 GB'`` or ``'500 MB'`` to bytes."""
+    size_str = size_str.lower().replace(",", "")
+    match = re.search(r"([\d.]+)", size_str)
+    if not match:
+        return 0
+    value = float(match.group(1))
+    if "gb" in size_str:
+        return int(value * 1024**3)
+    if "mb" in size_str:
+        return int(value * 1024**2)
+    if "kb" in size_str:
+        return int(value * 1024)
+    return int(value)
+
+
 async def safe_edit_message(
     bot_or_message: Bot | Message,
     text: str,
