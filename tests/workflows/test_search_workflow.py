@@ -251,7 +251,8 @@ async def test_handle_tv_scope_selection_season(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
     mocker.patch(
-        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        "telegram_bot.workflows.search_workflow.scrapers.fetch_season_episode_count_from_wikipedia",
+        "telegram_bot.workflows.search_workflow.scrapers.fetch_season_episode_count_from_wikipedia",
         new=AsyncMock(return_value=2),
     )
     orch_mock = mocker.patch(
@@ -428,7 +429,7 @@ async def test_entire_season_skips_pack_and_targets_missing(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
     mocker.patch(
-        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        "telegram_bot.workflows.search_workflow.scrapers.fetch_season_episode_count_from_wikipedia",
         new=AsyncMock(return_value=5),
     )
     mocker.patch(
@@ -508,7 +509,7 @@ async def test_entire_season_all_owned_exits_early(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
     mocker.patch(
-        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        "telegram_bot.workflows.search_workflow.scrapers.fetch_season_episode_count_from_wikipedia",
         new=AsyncMock(return_value=3),
     )
     mocker.patch(
