@@ -7,6 +7,7 @@ from telegram_bot.services.scrapers import torrent_scraper
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent.parent))
 
+
 class DummyResponse:
     def __init__(self, text="", json_data=None, status_code=200):
         self.text = text
@@ -36,7 +37,9 @@ class DummyClient:
         self._index += 1
         return response
 
+
 # --- 1337x Tests (using GenericTorrentScraper) ---
+
 
 @pytest.mark.asyncio
 async def test_scrape_1337x_parses_results(mocker):
@@ -180,7 +183,10 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
 @pytest.mark.asyncio
 async def test_scrape_1337x_passes_limit(mocker):
     mock_search = AsyncMock(return_value=[])
-    mocker.patch("telegram_bot.services.scrapers.torrent_scraper.GenericTorrentScraper.search", mock_search)
+    mocker.patch(
+        "telegram_bot.services.scrapers.torrent_scraper.GenericTorrentScraper.search",
+        mock_search,
+    )
 
     context = Mock()
     context.bot_data = {
@@ -188,7 +194,11 @@ async def test_scrape_1337x_passes_limit(mocker):
     }
 
     await torrent_scraper.scrape_1337x(
-        "query", "movie", search_url="https://example.com/{query}", context=context, limit=7
+        "query",
+        "movie",
+        search_url="https://example.com/{query}",
+        context=context,
+        limit=7,
     )
 
     mock_search.assert_awaited_once()
@@ -196,6 +206,7 @@ async def test_scrape_1337x_passes_limit(mocker):
 
 
 # --- YTS Tests (using YtsScraper in torrent_scraper.py) ---
+
 
 @pytest.mark.asyncio
 async def test_scrape_yts_parses_results(mocker):

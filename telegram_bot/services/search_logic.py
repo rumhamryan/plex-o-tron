@@ -49,7 +49,6 @@ async def orchestrate_searches(
 
     yts_scraper = scrapers.YtsScraper()
 
-
     tasks = []
     for site_info in sites_to_scrape:
         if not isinstance(site_info, dict):
@@ -143,7 +142,6 @@ async def orchestrate_searches(
         f"[SEARCH] Orchestration complete. Returning {len(all_results)} sorted results."
     )
     return all_results
-
 
 
 # --- Local Filesystem Searching (for Delete workflow) ---

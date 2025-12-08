@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 import pytest
 
-from telegram_bot.services.scrapers import YtsScraper, scrape_1337x
+from telegram_bot.services.scrapers import YtsScraper
 from telegram_bot.services.search_logic import orchestrate_searches
 from telegram_bot.services.scrapers import wikipedia_scraper
 

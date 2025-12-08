@@ -10,6 +10,7 @@ from telegram_bot.services.scrapers.generic_web_scraper import (
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent.parent))
 
+
 def test_strategy_find_direct_links_magnet():
     html = '<a href="magnet:?xt=urn:btih:123">Magnet</a>'
     soup = BeautifulSoup(html, "lxml")

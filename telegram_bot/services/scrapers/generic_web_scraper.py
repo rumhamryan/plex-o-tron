@@ -311,6 +311,7 @@ async def scrape_yaml_site(
     )
     return results
 
+
 async def _get_page_html(url: str) -> str | None:
     """Fetches the HTML content of a URL."""
     try:

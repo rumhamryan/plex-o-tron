@@ -3,6 +3,7 @@
 import re
 from typing import Any
 
+
 def score_torrent_result(
     title: str, uploader: str, preferences: dict[str, Any], seeders: int = 0
 ) -> int:

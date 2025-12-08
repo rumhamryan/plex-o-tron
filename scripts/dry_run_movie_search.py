@@ -64,7 +64,9 @@ SEARCH_CONFIG: dict[str, Any] = {
 }
 
 
-def _filter_by_resolution(results: list[dict[str, Any]], resolution: str) -> list[dict[str, Any]]:
+def _filter_by_resolution(
+    results: list[dict[str, Any]], resolution: str
+) -> list[dict[str, Any]]:
     res = resolution.lower()
     if res == "2160p":
         pats = ("2160p", "4k")

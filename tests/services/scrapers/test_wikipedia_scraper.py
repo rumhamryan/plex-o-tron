@@ -1,11 +1,11 @@
 import sys
 from pathlib import Path
 import pytest
-from unittest.mock import Mock, AsyncMock
 import wikipedia
 from telegram_bot.services.scrapers import wikipedia_scraper
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent.parent))
+
 
 # Ensure per-test isolation by clearing any module-level caches used by the
 # wikipedia_scraper. This prevents earlier tests from influencing later ones.
@@ -23,6 +23,7 @@ def _clear_wiki_caches():
         wikipedia_scraper._WIKI_MOVIE_CACHE.clear()  # type: ignore[attr-defined]
     except Exception:
         pass
+
 
 DEDICATED_HTML = """
 <table class="wikitable">
@@ -90,6 +91,7 @@ OVERVIEW_ONGOING_ONLY_HTML = """
 </table>
 """
 
+
 @pytest.mark.asyncio
 async def test_fetch_episode_title_dedicated_page(mocker):
     mock_page = mocker.Mock()
@@ -107,6 +109,7 @@ async def test_fetch_episode_title_dedicated_page(mocker):
     )
     assert title == "Pilot"
     assert corrected is None
+
 
 @pytest.mark.asyncio
 async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
@@ -134,6 +137,7 @@ async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
     assert corrected is None
     assert page_patch.call_args_list[1].args[0] == "List of Show episodes"
 
+
 @pytest.mark.asyncio
 async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
     mock_main_page = mocker.Mock()
@@ -160,6 +164,7 @@ async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
     assert corrected is None
     assert page_patch.call_args_list[1].args[0] == "List of Show episodes"
 
+
 @pytest.mark.asyncio
 async def test_fetch_episode_title_embedded_page(mocker):
     mock_main_page = mocker.Mock()
@@ -179,6 +184,7 @@ async def test_fetch_episode_title_embedded_page(mocker):
     title, _ = await wikipedia_scraper.fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title == "Pilot"
 
+
 @pytest.mark.asyncio
 async def test_fetch_episode_title_not_found(mocker):
     mock_page = mocker.Mock()
@@ -193,6 +199,7 @@ async def test_fetch_episode_title_not_found(mocker):
     title, _ = await wikipedia_scraper.fetch_episode_title_from_wikipedia("Show", 1, 1)
     assert title is None
 
+
 @pytest.mark.asyncio
 async def test_fetch_season_episode_count(mocker):
     mock_page = mocker.Mock()
@@ -206,6 +213,7 @@ async def test_fetch_season_episode_count(mocker):
     count = await wikipedia_scraper.fetch_season_episode_count_from_wikipedia("Show", 2)
     assert count == 8
 
+
 @pytest.mark.asyncio
 async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
     mock_page = mocker.Mock()
@@ -217,8 +225,11 @@ async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
     )
 
     # Should return the enumerated title count (4), not the overview's 10
-    count = await wikipedia_scraper.fetch_season_episode_count_from_wikipedia("Show", 27)
+    count = await wikipedia_scraper.fetch_season_episode_count_from_wikipedia(
+        "Show", 27
+    )
     assert count == 4
+
 
 @pytest.mark.asyncio
 async def test_fetch_season_episode_count_skips_ongoing_overview(mocker):
@@ -231,5 +242,7 @@ async def test_fetch_season_episode_count_skips_ongoing_overview(mocker):
     )
 
     # No titles are present and overview is marked ongoing -> expect None
-    count = await wikipedia_scraper.fetch_season_episode_count_from_wikipedia("Show", 27)
+    count = await wikipedia_scraper.fetch_season_episode_count_from_wikipedia(
+        "Show", 27
+    )
     assert count is None

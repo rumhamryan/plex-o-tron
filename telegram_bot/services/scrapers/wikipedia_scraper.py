@@ -3,7 +3,6 @@
 import asyncio
 import re
 import warnings
-from typing import Any
 
 import httpx
 import wikipedia
@@ -1198,7 +1197,7 @@ async def fetch_season_episode_count_from_wikipedia(
         if not isinstance(header_row, Tag):
             continue
 
-        headers = [th.get_text(strip=True).lower() for th in header_row.find_all("th") ]
+        headers = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
         # Check if this looks like the right table
         if headers and "season" in headers[0] and any("episode" in h for h in headers):
             overview_table = table
