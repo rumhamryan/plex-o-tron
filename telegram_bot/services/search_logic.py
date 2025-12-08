@@ -10,8 +10,7 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ..config import logger
-from .scrapers import scrape_1337x, YtsScraper, scrape_yaml_site
-from .scrapers.scoring import score_torrent_result, parse_codec
+from . import scrapers
 
 # --- Type Aliases for Readability ---
 ScraperCoroutine = Coroutine[Any, Any, list[dict[str, Any]]]
@@ -45,11 +44,10 @@ async def orchestrate_searches(
 
     # A dedicated scraper for EZTV would need to be created in the future.
     scraper_map: dict[str, ScraperFunction] = {
-        "1337x": scrape_1337x,
+        "1337x": scrapers.scrape_1337x,
     }
 
-    yts_scraper = YtsScraper()
-
+    yts_scraper = scrapers.YtsScraper()
 
     tasks = []
     for site_info in sites_to_scrape:
@@ -121,7 +119,7 @@ async def orchestrate_searches(
                     f"[SEARCH] Creating search task for '{site_name}' (YAML) with query: '{query}'"
                 )
                 task = asyncio.create_task(
-                    scrape_yaml_site(
+                    scrapers.scrape_yaml_site(
                         search_query,
                         media_type,
                         site_url,
@@ -144,7 +142,6 @@ async def orchestrate_searches(
         f"[SEARCH] Orchestration complete. Returning {len(all_results)} sorted results."
     )
     return all_results
-
 
 
 # --- Local Filesystem Searching (for Delete workflow) ---

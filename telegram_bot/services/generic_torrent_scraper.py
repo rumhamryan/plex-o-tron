@@ -15,7 +15,7 @@ from thefuzz import fuzz
 
 from ..config import logger
 from ..utils import parse_torrent_name, parse_size_to_bytes
-
+from .scrapers.base_scraper import Scraper
 
 
 # Cache for site configurations to avoid repeated disk reads.
@@ -71,12 +71,6 @@ def load_site_config(config_path: Path) -> dict[str, Any]:
     return data
 
 
-
-
-from .scrapers.base_scraper import Scraper
-from ..config import logger
-from ..utils import parse_torrent_name, parse_size_to_bytes
-
 class GenericTorrentScraper(Scraper):
     """Scrape torrent sites based on a configuration file.
 
@@ -124,7 +118,9 @@ class GenericTorrentScraper(Scraper):
         limit = kwargs.get("limit", 15)
         try:
             if not isinstance(query, str) or not query.strip():
-                logger.warning("[SCRAPER] Empty query provided to GenericTorrentScraper")
+                logger.warning(
+                    "[SCRAPER] Empty query provided to GenericTorrentScraper"
+                )
                 return []
 
             category_path = self.category_mapping.get(media_type)
@@ -171,7 +167,9 @@ class GenericTorrentScraper(Scraper):
             # are unlikely to be worth downloading.
             results = self._parse_and_select_top_results(search_area, limit)
             if not results:
-                logger.info(f"[SCRAPER] {self.site_name}: Parsed 0 torrents for '{query}'")
+                logger.info(
+                    f"[SCRAPER] {self.site_name}: Parsed 0 torrents for '{query}'"
+                )
                 return []
 
             # --- Two-stage filtering to improve precision ---
@@ -286,7 +284,10 @@ class GenericTorrentScraper(Scraper):
                             return 3
                         if b_norm == q_norm:
                             return 3
-                        if q_tokens.issubset(b_tokens) and len(b_tokens - q_tokens) <= 1:
+                        if (
+                            q_tokens.issubset(b_tokens)
+                            and len(b_tokens - q_tokens) <= 1
+                        ):
                             return 2
                         if fuzz.ratio(q_norm, b_norm) >= 90:
                             return 2
@@ -321,7 +322,10 @@ class GenericTorrentScraper(Scraper):
             )
             return [r.__dict__ for r in final_results]
         except Exception as e:
-            logger.error(f"An unexpected error occurred in GenericTorrentScraper.search: {e}", exc_info=True)
+            logger.error(
+                f"An unexpected error occurred in GenericTorrentScraper.search: {e}",
+                exc_info=True,
+            )
             return []
 
     def _extract_data_from_row(self, row: Tag) -> Optional[TorrentData]:
@@ -461,7 +465,9 @@ class GenericTorrentScraper(Scraper):
         except httpx.RequestError as exc:
             logger.error(f"[SCRAPER] Request error fetching {url}: {exc}")
         except Exception as exc:
-            logger.error(f"[SCRAPER] Unexpected error fetching {url}: {exc}", exc_info=True)
+            logger.error(
+                f"[SCRAPER] Unexpected error fetching {url}: {exc}", exc_info=True
+            )
         return None
 
     def _extract_text(self, root: Tag, selector: Any) -> str:

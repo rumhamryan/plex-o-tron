@@ -62,23 +62,25 @@ async def test_orchestrate_searches_calls_sites_and_sorts(mocker):
         {"title": "Alien.1979.1080p", "score": 15, "source": "1337x"},
     ]
 
-    m_yts = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yts",
-        new=AsyncMock(return_value=yts_results),
-    )
+    # Mock YtsScraper class
+    m_yts_cls = mocker.patch("telegram_bot.services.scrapers.YtsScraper")
+    m_yts_instance = m_yts_cls.return_value
+    m_yts_instance.search = AsyncMock(return_value=yts_results)
+
+    # Mock scrape_1337x function
     m_1337 = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_1337x",
+        "telegram_bot.services.scrapers.scrape_1337x",
         new=AsyncMock(return_value=txx_results),
     )
 
     results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
 
     # Both scrapers called
-    assert m_yts.await_count == 1
+    assert m_yts_instance.search.await_count == 1
     assert m_1337.await_count == 1
 
     # 1337x receives year appended to query; YTS does not
-    yts_call = m_yts.await_args
+    yts_call = m_yts_instance.search.await_args
     x_call = m_1337.await_args
 
     assert yts_call.args[0] == "Alien"  # query as-is
@@ -107,12 +109,12 @@ async def test_orchestrate_searches_respects_enabled_flag(mocker):
         ]
     )
 
-    m_yts = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yts",
-        new=AsyncMock(return_value=[]),
-    )
+    m_yts_cls = mocker.patch("telegram_bot.services.scrapers.YtsScraper")
+    m_yts_instance = m_yts_cls.return_value
+    m_yts_instance.search = AsyncMock(return_value=[])
+
     m_1337 = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_1337x",
+        "telegram_bot.services.scrapers.scrape_1337x",
         new=AsyncMock(
             return_value=[{"title": "Alien.1979.1080p", "score": 5, "source": "1337x"}]
         ),
@@ -121,7 +123,7 @@ async def test_orchestrate_searches_respects_enabled_flag(mocker):
     results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
     assert results and results[0]["source"] == "1337x"
     # YTS disabled, so not called
-    assert m_yts.await_count == 0
+    assert m_yts_instance.search.await_count == 0
     assert m_1337.await_count == 1
 
 
@@ -138,7 +140,7 @@ async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
     )
 
     m_yaml = mocker.patch(
-        "telegram_bot.services.scraping_service.scrape_yaml_site",
+        "telegram_bot.services.scrapers.scrape_yaml_site",
         new=AsyncMock(
             return_value=[{"title": "Alien (1979) EZ", "score": 9, "source": "EZTV"}]
         ),

@@ -46,4 +46,4 @@ async def test_search_parses_magnet_link_from_detail_page(mocker):
     results = await scraper.search("Example", "movie")
 
     assert len(results) == 1
-    assert results[0].magnet_url.startswith("magnet:?xt=urn:btih:abcdef")
+    assert results[0]["magnet_url"].startswith("magnet:?xt=urn:btih:abcdef")
