@@ -1,11 +1,8 @@
 import sys
 from pathlib import Path
 import pytest
-from telegram_bot.services.search_logic import (
-    _parse_codec,
-    _parse_size_to_gb,
-    score_torrent_result,
-)
+from telegram_bot.services.search_logic import _parse_size_to_gb
+from telegram_bot.utils import _parse_codec, score_torrent_result
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 

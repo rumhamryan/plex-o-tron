@@ -3,8 +3,7 @@ from typing import Any
 from telegram.ext import ContextTypes
 
 from ...config import logger
-from ..search_logic import _parse_codec, score_torrent_result
-from ...utils import parse_torrent_name
+from ...utils import _parse_codec, score_torrent_result, parse_torrent_name
 from ..generic_torrent_scraper import GenericTorrentScraper, load_site_config
 
 

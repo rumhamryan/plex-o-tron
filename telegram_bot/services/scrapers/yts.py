@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ...config import logger, MAX_TORRENT_SIZE_GB
-from ..search_logic import _parse_codec, score_torrent_result
+from ...utils import _parse_codec, score_torrent_result
 
 
 async def scrape_yts(
