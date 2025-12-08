@@ -82,9 +82,6 @@ async def scrape_1337x(
     return results
 
 
-from .base_scraper import Scraper
-
-
 class YtsScraper(Scraper):
     """
     Scraper for YTS.mx.
@@ -244,7 +241,7 @@ class YtsScraper(Scraper):
                                     )
                                     magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(str(mv_title))}{trackers}"
                                     seeders_count = int(tor.get("seeds", 0) or 0)
-                                    parsed_codec = _parse_codec(title_full) or "x264"
+                                    parsed_codec = parse_codec(title_full) or "x264"
                                     score = score_torrent_result(
                                         title_full,
                                         "YTS",

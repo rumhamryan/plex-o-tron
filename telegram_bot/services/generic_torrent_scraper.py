@@ -15,6 +15,7 @@ from thefuzz import fuzz
 
 from ..config import logger
 from ..utils import parse_torrent_name, parse_size_to_bytes
+from .scrapers.base_scraper import Scraper
 
 
 # Cache for site configurations to avoid repeated disk reads.
@@ -68,9 +69,6 @@ def load_site_config(config_path: Path) -> dict[str, Any]:
 
     _config_cache[resolved_path] = data
     return data
-
-
-from .scrapers.base_scraper import Scraper
 
 
 class GenericTorrentScraper(Scraper):

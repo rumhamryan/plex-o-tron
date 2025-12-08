@@ -1123,7 +1123,7 @@ async def fetch_season_episode_count_from_wikipedia(
             # Also attempt to log what autosuggest would have done for diagnostics
             try:
                 auto_page = await asyncio.to_thread(
-                    wikipedia.page, show_title, auto_suggest=T
+                    wikipedia.page, show_title, auto_suggest=True
                 )
                 logger.debug(
                     f"[WIKI] Autosuggest diagnostic -> title: '{getattr(auto_page, 'title', '?')}', url: {getattr(auto_page, 'url', '?')}"

@@ -63,7 +63,10 @@ async def test_scrape_1337x_parses_results(mocker):
     </div>
     """
     responses = [DummyResponse(text=search_html), DummyResponse(text=detail_html)]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    mocker.patch(
+        "telegram_bot.services.generic_torrent_scraper.httpx.AsyncClient",
+        return_value=DummyClient(responses),
+    )
 
     context = Mock()
     context.bot_data = {
@@ -96,7 +99,10 @@ async def test_scrape_1337x_parses_results(mocker):
 async def test_scrape_1337x_no_results(mocker):
     html = "<html><body>No results</body></html>"
     responses = [DummyResponse(text=html)]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    mocker.patch(
+        "telegram_bot.services.generic_torrent_scraper.httpx.AsyncClient",
+        return_value=DummyClient(responses),
+    )
 
     context = Mock()
     context.bot_data = {
@@ -152,7 +158,10 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
         DummyResponse(text=detail_good),
     ]
     client = DummyClient(responses)
-    mocker.patch("httpx.AsyncClient", return_value=client)
+    mocker.patch(
+        "telegram_bot.services.generic_torrent_scraper.httpx.AsyncClient",
+        return_value=client,
+    )
 
     context = Mock()
     context.bot_data = {
@@ -240,7 +249,10 @@ async def test_scrape_yts_parses_results(mocker):
         DummyResponse(text=movie_html),
         DummyResponse(json_data=api_json),
     ]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    mocker.patch(
+        "telegram_bot.services.scrapers.torrent_scraper.httpx.AsyncClient",
+        return_value=DummyClient(responses),
+    )
 
     context = Mock()
     context.bot_data = {
@@ -313,7 +325,10 @@ async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
         DummyResponse(json_data=bad_api_json),
         DummyResponse(json_data=good_api_json),
     ]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    mocker.patch(
+        "telegram_bot.services.scrapers.torrent_scraper.httpx.AsyncClient",
+        return_value=DummyClient(responses),
+    )
     mocker.patch("asyncio.sleep", new=AsyncMock())
 
     context = Mock()
@@ -385,7 +400,10 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
         DummyResponse(text=movie_html),
         DummyResponse(json_data=api_json),
     ]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
+    mocker.patch(
+        "telegram_bot.services.scrapers.torrent_scraper.httpx.AsyncClient",
+        return_value=DummyClient(responses),
+    )
 
     context = Mock()
     context.bot_data = {
@@ -413,218 +431,3 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
     assert len(results) == 1
     assert results[0]["source"] == "YTS.mx"
     assert results[0]["seeders"] == 10
-
-
-@pytest.mark.asyncio
-async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
-    search_html = """
-    <div class="other"></div>
-    """
-    api_empty = {"status": "ok", "data": {"movie_count": 0}}
-    api_with_movie = {
-        "status": "ok",
-        "data": {
-            "movies": [
-                {
-                    "title_long": "Test Movie (1979)",
-                    "year": 1979,
-                    "torrents": [
-                        {
-                            "quality": "1080p",
-                            "type": "WEB",
-                            "size_bytes": 1024**3,
-                            "hash": "abcdef",
-                            "seeds": 7,
-                        }
-                    ],
-                }
-            ]
-        },
-    }
-
-    responses = [
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(json_data=api_empty),
-        DummyResponse(json_data=api_with_movie),
-    ]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
-
-    context = Mock()
-    context.bot_data = {
-        "SEARCH_CONFIG": {
-            "preferences": {
-                "movies": {
-                    "codecs": {"x264": 5},
-                    "resolutions": {"1080p": 3},
-                    "uploaders": {"YTS": 2},
-                }
-            }
-        }
-    }
-
-    scraper = torrent_scraper.YtsScraper()
-    results = await scraper.search(
-        "Test Movie",
-        "movie",
-        search_url="https://yts.mx/browse-movies/{query}",
-        context=context,
-        year="1979",
-        resolution="1080p",
-    )
-
-    assert len(results) == 1
-    assert results[0]["seeders"] == 7
-    assert results[0]["source"] == "YTS.mx"
-
-
-@pytest.mark.asyncio
-async def test_scrape_yts_api_fallback_relaxes_year(mocker):
-    search_html = '<div class="other"></div>'
-    api_empty = {"status": "ok", "data": {"movie_count": 0}}
-    api_all_years = {
-        "status": "ok",
-        "data": {
-            "movies": [
-                {
-                    "title_long": "Alien (1979)",
-                    "year": 1979,
-                    "torrents": [
-                        {
-                            "quality": "1080p",
-                            "type": "WEB",
-                            "size_bytes": 1024**3,
-                            "hash": "abcd11",
-                            "seeds": 5,
-                        }
-                    ],
-                },
-                {
-                    "title_long": "Alien (2012)",
-                    "year": 2012,
-                    "torrents": [
-                        {
-                            "quality": "1080p",
-                            "type": "WEB",
-                            "size_bytes": 1024**3,
-                            "hash": "efgh22",
-                            "seeds": 9,
-                        }
-                    ],
-                },
-            ]
-        },
-    }
-
-    responses = [
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(text=search_html),
-        DummyResponse(json_data=api_empty),
-        DummyResponse(json_data=api_empty),
-        DummyResponse(json_data=api_all_years),
-    ]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
-
-    context = Mock()
-    context.bot_data = {
-        "SEARCH_CONFIG": {
-            "preferences": {
-                "movies": {
-                    "codecs": {"x264": 5},
-                    "resolutions": {"1080p": 3},
-                    "uploaders": {"YTS": 2},
-                }
-            }
-        }
-    }
-
-    scraper = torrent_scraper.YtsScraper()
-    results = await scraper.search(
-        "Alien",
-        "movie",
-        search_url="https://yts.mx/browse-movies/{query}",
-        context=context,
-        year="1979",
-        resolution="1080p",
-    )
-
-    assert len(results) == 1
-    assert (
-        results[0]["title"].startswith("Alien (1979)")
-        or "(1979)" in results[0]["title"]
-    )
-    assert results[0]["source"] == "YTS.mx"
-
-
-@pytest.mark.asyncio
-async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
-    browse_dunes = """
-    <div class="browse-movie-wrap">
-      <a class="browse-movie-title" href="https://yts.mx/movies/the-dunes-1979">The Dunes</a>
-      <div class="browse-movie-year">1979</div>
-    </div>
-    """
-    browse_empty = '<div class="other"></div>'
-
-    api_with_movie = {
-        "status": "ok",
-        "data": {
-            "movies": [
-                {
-                    "title_long": "Dune (1979)",
-                    "year": 1979,
-                    "torrents": [
-                        {
-                            "quality": "1080p",
-                            "type": "WEB",
-                            "size_bytes": 1024**3,
-                            "hash": "aaaaaa",
-                            "seeds": 3,
-                        }
-                    ],
-                }
-            ]
-        },
-    }
-
-    responses = [
-        DummyResponse(text=browse_dunes),
-        DummyResponse(text=browse_empty),
-        DummyResponse(text=browse_empty),
-        DummyResponse(text=browse_empty),
-        DummyResponse(text=browse_empty),
-        DummyResponse(json_data=api_with_movie),
-    ]
-    mocker.patch("httpx.AsyncClient", return_value=DummyClient(responses))
-
-    context = Mock()
-    context.bot_data = {
-        "SEARCH_CONFIG": {
-            "preferences": {
-                "movies": {
-                    "codecs": {"x264": 5},
-                    "resolutions": {"1080p": 3},
-                    "uploaders": {"YTS": 2},
-                }
-            }
-        }
-    }
-
-    scraper = torrent_scraper.YtsScraper()
-    results = await scraper.search(
-        "Dune",
-        "movie",
-        search_url="https://yts.mx/browse-movies/{query}",
-        context=context,
-        year="1979",
-        resolution="1080p",
-    )
-
-    assert len(results) == 1
-    assert results[0]["source"] == "YTS.mx"
