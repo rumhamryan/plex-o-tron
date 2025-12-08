@@ -161,7 +161,7 @@ async def test_fetch_episode_title_dedicated_page(mocker):
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=DEDICATED_HTML,
     )
 
@@ -186,7 +186,7 @@ async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
         "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
     )
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=DEDICATED_HTML,
     )
 
@@ -213,7 +213,7 @@ async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
         "wikipedia.page", side_effect=[mock_main_page, mock_list_page]
     )
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=DEDICATED_HTML,
     )
 
@@ -238,7 +238,7 @@ async def test_fetch_episode_title_embedded_page(mocker):
         side_effect=[mock_main_page, wikipedia.exceptions.PageError("no list")],
     )
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=SIMPLE_EMBEDDED_HTML,
     )
 
@@ -253,7 +253,7 @@ async def test_fetch_episode_title_not_found(mocker):
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=NO_EPISODE_HTML,
     )
 
@@ -267,7 +267,7 @@ async def test_fetch_season_episode_count(mocker):
     mock_page.url = "http://example.com"
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=SEASON_OVERVIEW_HTML,
     )
 
@@ -281,7 +281,7 @@ async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
     mock_page.url = "http://example.com"
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=DEDICATED_WITH_OVERVIEW_ONGOING_HTML,
     )
 
@@ -296,7 +296,7 @@ async def test_fetch_season_episode_count_skips_ongoing_overview(mocker):
     mock_page.url = "http://example.com"
     mocker.patch("wikipedia.page", return_value=mock_page)
     mocker.patch(
-        "telegram_bot.services.scraping_service._get_page_html",
+        "telegram_bot.services.scrapers.wikipedia._get_page_html",
         return_value=OVERVIEW_ONGOING_ONLY_HTML,
     )
 
