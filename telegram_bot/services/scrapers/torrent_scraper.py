@@ -21,6 +21,8 @@ from ..generic_torrent_scraper import GenericTorrentScraper, load_site_config
 async def scrape_1337x(
     query: str,
     media_type: str,
+    _search_url: str | None = None,
+    _context: ContextTypes.DEFAULT_TYPE | None = None,
     **kwargs: Any,
 ) -> list[dict[str, Any]]:
     """Scrape 1337x using the generic scraper framework."""
@@ -37,7 +39,49 @@ async def scrape_1337x(
         return []
 
     scraper = GenericTorrentScraper(site_config)
-    return await scraper.search(query, media_type, **kwargs)
+    raw_results = await scraper.search(query, media_type, **kwargs)
+
+    results: list[dict[str, Any]] = []
+    preferences = {}
+    if _context:
+        prefs_key = "movies" if "movie" in media_type else "tv"
+        preferences = (
+            _context.bot_data.get("SEARCH_CONFIG", {})
+            .get("preferences", {})
+            .get(prefs_key, {})
+        )
+
+    for item in raw_results:
+        name = item.get("name", "")
+        magnet = item.get("magnet_url")
+        uploader = item.get("uploader") or "Anonymous"
+        size_bytes = item.get("size_bytes", 0)
+        seeders = item.get("seeders", 0)
+        leechers = item.get("leechers", 0)
+        source = item.get("source_site", "1337x")
+
+        score = score_torrent_result(
+            name, uploader, preferences, seeders=seeders
+        )
+        if score <= 0:
+            continue
+
+        parsed_name = parse_torrent_name(name)
+        results.append(
+            {
+                "title": name,
+                "page_url": magnet,
+                "score": score,
+                "source": source,
+                "uploader": uploader,
+                "size_gb": size_bytes / (1024**3),
+                "codec": parse_codec(name),
+                "seeders": seeders,
+                "leechers": leechers,
+                "year": parsed_name.get("year"),
+            }
+        )
+    return results
 
 
 from .base_scraper import Scraper
@@ -450,7 +494,7 @@ class YtsScraper(Scraper):
 
                             seeders_count = torrent.get("seeds", 0)
                             parsed_codec = (
-                                _parse_codec(full_title) or "x264"  # Default YTS to x264
+                                parse_codec(full_title) or "x264"  # Default YTS to x264
                             )
                             score = score_torrent_result(
                                 full_title, "YTS", preferences, seeders=seeders_count

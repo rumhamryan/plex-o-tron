@@ -18,7 +18,7 @@ from ..config import (
     logger,
 )
 from ..utils import format_bytes, safe_edit_message, parse_torrent_name
-from .scraping_service import fetch_episode_title_from_wikipedia
+from .scrapers import fetch_episode_title_from_wikipedia
 
 
 def generate_plex_filename(parsed_info: dict[str, Any], original_extension: str) -> str:

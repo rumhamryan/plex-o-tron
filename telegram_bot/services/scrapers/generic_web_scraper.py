@@ -296,7 +296,7 @@ async def scrape_yaml_site(
                 "source": item.source_site,
                 "uploader": item.uploader or "Anonymous",
                 "size_gb": item.size_bytes / (1024**3),
-                "codec": _parse_codec(item.name),
+                "codec": parse_codec(item.name),
                 "seeders": item.seeders,
                 "leechers": item.leechers,
                 "year": parsed_name.get("year"),
