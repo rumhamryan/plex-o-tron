@@ -564,7 +564,7 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"All episodes for *{escape_markdown(str(title), version=2)}* "
-                    f"S{int(season):02d} already exist in your library\. Nothing to download\."
+                    f"S{int(season):02d} already exist in your library\\. Nothing to download\\."
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
@@ -578,7 +578,7 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"Detected {have}/{total} episodes already in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
-                    "I will only fetch the missing episodes\. Choose a resolution:"
+                    "I will only fetch the missing episodes\\. Choose a resolution:"
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
@@ -587,7 +587,7 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"No existing episodes found in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
-                    "You may download a season pack if available\. Choose a resolution:"
+                    "You may download a season pack if available\\. Choose a resolution:"
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
@@ -1099,7 +1099,7 @@ async def _perform_tv_season_search_with_resolution(
                     message,
                     text=(
                         f"All episodes for *{escape_markdown(title, version=2)}* "
-                        f"S{int(season):02d} already exist in your library\."
+                        f"S{int(season):02d} already exist in your library\\."
                     ),
                     parse_mode=ParseMode.MARKDOWN_V2,
                 )

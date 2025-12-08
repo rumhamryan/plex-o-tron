@@ -1,4 +1,6 @@
 import pytest
+from typing import cast
+from telegram.ext import Application  # Imported for typing cast
 
 from telegram_bot.services import download_manager
 
@@ -30,12 +32,11 @@ async def test_update_batch_triggers_single_scan(monkeypatch):
         return "\n\nPlex scan started"
 
     monkeypatch.setattr(download_manager, "_trigger_plex_scan", fake_scan)
-
-    source_dict = {"batch_id": batch_id}
     parsed_info = {"title": "Rick and Morty", "season": 1}
 
+    source_dict = {"batch_id": batch_id}
     msg = await download_manager._update_batch_and_maybe_scan(
-        app, source_dict, "Done", parsed_info
+        cast(Application, app), source_dict, "Done", parsed_info
     )
 
     # Scan called exactly once, scanned flag set
@@ -61,12 +62,11 @@ async def test_update_batch_no_scan_before_completion(monkeypatch):
         raise AssertionError("Scan should not be triggered before completion")
 
     monkeypatch.setattr(download_manager, "_trigger_plex_scan", fake_scan)
-
-    source_dict = {"batch_id": batch_id}
     parsed_info = {"title": "Some Show", "season": 2}
 
+    source_dict = {"batch_id": batch_id}
     msg = await download_manager._update_batch_and_maybe_scan(
-        app, source_dict, "Done", parsed_info
+        cast(Application, app), source_dict, "Done", parsed_info
     )
 
     assert app.bot_data["DOWNLOAD_BATCHES"][batch_id]["done"] == 2
@@ -94,7 +94,7 @@ async def test_update_batch_skip_duplicate_scan(monkeypatch):
     parsed_info = {"title": "Show", "season": 1}
 
     msg = await download_manager._update_batch_and_maybe_scan(
-        app, source_dict, "Done", parsed_info
+        cast(Application, app), source_dict, "Done", parsed_info
     )
 
     assert msg == "Done"

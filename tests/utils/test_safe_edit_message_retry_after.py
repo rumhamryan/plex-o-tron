@@ -14,7 +14,7 @@ from telegram_bot.utils import safe_edit_message
 async def test_safe_edit_message_retries_on_small_retry_after(mocker, make_message):
     # Arrange: message with bot, edit fails once with small RetryAfter then succeeds
     msg = make_message("orig", message_id=42)
-    edit_mock = AsyncMock(side_effect=[RetryAfter(0.2), None])
+    edit_mock = AsyncMock(side_effect=[RetryAfter(1), None])
     mocker.patch.object(type(msg), "edit_text", new=edit_mock)
     sleep_mock = mocker.patch("asyncio.sleep", new=AsyncMock())
 
@@ -30,7 +30,7 @@ async def test_safe_edit_message_retries_on_small_retry_after(mocker, make_messa
 async def test_safe_edit_message_suppresses_on_large_retry_after(mocker, make_message):
     # Arrange: first call hits a large RetryAfter; subsequent call within window is suppressed
     msg = make_message("orig", message_id=77)
-    edit_mock = AsyncMock(side_effect=[RetryAfter(60.0)])
+    edit_mock = AsyncMock(side_effect=[RetryAfter(60)])
     mocker.patch.object(type(msg), "edit_text", new=edit_mock)
 
     # Fix monotonic so suppression window stays active across calls

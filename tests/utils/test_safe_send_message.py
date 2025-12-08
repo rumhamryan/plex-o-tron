@@ -47,7 +47,7 @@ async def test_safe_send_message_retries_on_timeout_then_succeeds(mocker):
 async def test_safe_send_message_respects_retry_after(mocker):
     # Arrange
     message = SimpleNamespace(message_id=1)
-    send = AsyncMock(side_effect=[RetryAfter(0.5), message])
+    send = AsyncMock(side_effect=[RetryAfter(1), message])
     bot = SimpleNamespace(send_message=send)
     sleep_mock = mocker.patch("asyncio.sleep", new=AsyncMock())
 

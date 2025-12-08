@@ -15,10 +15,13 @@ import asyncio
 import argparse
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 
-from telegram_bot.services.scraping_service import fetch_movie_years_from_wikipedia
+from telegram_bot.services.scrapers.wikipedia_scraper import (
+    fetch_movie_years_from_wikipedia,
+)
 from telegram_bot.services.search_logic import orchestrate_searches
+from telegram.ext import ContextTypes
 
 
 class _FakeContext:
@@ -68,6 +71,7 @@ def _filter_by_resolution(
     results: list[dict[str, Any]], resolution: str
 ) -> list[dict[str, Any]]:
     res = resolution.lower()
+    pats: tuple[str, ...]
     if res == "2160p":
         pats = ("2160p", "4k")
     elif res == "1080p":
@@ -113,7 +117,11 @@ async def _run_for_title(title: str, *, resolution: str = "1080p") -> None:
     for y in candidate_years:
         print(f"Using search base='{base_for_search}' year={y} res={resolution}")
         results = await orchestrate_searches(
-            base_for_search, "movie", ctx, year=y, resolution=resolution
+            base_for_search,
+            "movie",
+            cast(ContextTypes.DEFAULT_TYPE, ctx),
+            year=y,
+            resolution=resolution,
         )
         filtered = _filter_by_resolution(results, resolution)
 

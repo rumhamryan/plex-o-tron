@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import urllib.parse
 import time
-from typing import Any
+from typing import Any, Tuple
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -14,8 +14,12 @@ from thefuzz import fuzz, process
 
 from ...config import logger, MAX_TORRENT_SIZE_GB
 from .scoring import parse_codec, score_torrent_result
+from .base_scraper import Scraper
 from ...utils import parse_torrent_name
 from ..generic_torrent_scraper import GenericTorrentScraper, load_site_config
+
+
+BestMatchResult = Tuple[str, int, str]  # (matched_string, score, key)
 
 
 async def scrape_1337x(
@@ -348,7 +352,8 @@ class YtsScraper(Scraper):
                         return []
 
                 # Use a more robust scorer and apply token gating if year is provided
-                best_match = process.extractOne(
+                BestMatchResult = Tuple[str, int, str]  # (matched_string, score, key)
+                best_match: BestMatchResult | None = process.extractOne(  # type:ignore
                     query, choices, scorer=fuzz.token_set_ratio
                 )
                 is_confident = bool(
@@ -372,6 +377,9 @@ class YtsScraper(Scraper):
                         return []
 
                 # The URL is the third element (the key from the choices dict).
+                assert (
+                    best_match is not None
+                )  # Satisfy type checker for subsequent access
                 best_page_url = best_match[2]
                 if not isinstance(best_page_url, str):
                     logger.error(

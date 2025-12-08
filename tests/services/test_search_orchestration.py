@@ -80,8 +80,8 @@ async def test_orchestrate_searches_calls_sites_and_sorts(mocker):
     assert m_1337.await_count == 1
 
     # 1337x receives year appended to query; YTS does not
-    yts_call = m_yts_instance.search.await_args
-    x_call = m_1337.await_args
+    yts_call = m_yts_instance.search.call_args
+    x_call = m_1337.call_args
 
     assert yts_call.args[0] == "Alien"  # query as-is
     assert x_call.args[0] == "Alien 1979"  # year appended
@@ -150,7 +150,7 @@ async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
     assert results and results[0]["source"] == "EZTV"
 
     # Ensure YAML path used with site_name and base_query_for_filter
-    call = m_yaml.await_args
+    call = m_yaml.call_args
     # Positional args: query, media_type, _search_url_template, context
     assert call.args[0].startswith("Alien")
     assert call.kwargs.get("site_name") == "EZTV"

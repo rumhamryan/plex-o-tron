@@ -91,7 +91,7 @@ async def test_progress_reporter_tv_paused(mocker):
     assert "⏸️ *Paused:*" in kwargs["text"]
     assert "S01E02" in kwargs["text"]
     assert "*State:* *paused*" in kwargs["text"]
-    assert "*Speed:* 0\.00 MB/s" in kwargs["text"]
+    assert "*Speed:* 0\\.00 MB/s" in kwargs["text"]
     btn = kwargs["reply_markup"].inline_keyboard[0][0]
     assert btn.text == "▶️ Resume"
     assert btn.callback_data == "pause_resume"
@@ -490,7 +490,7 @@ async def test_handle_pause_resume_toggles_state(
             self.paused = False
 
         def status(self):
-            flags = lt.torrent_flags.paused if self.paused else 0
+            flags = lt.torrent_flags.paused if self.paused else 0  # type:ignore
             return SimpleNamespace(flags=flags)
 
         def pause(self):
