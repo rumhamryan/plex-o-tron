@@ -1,6 +1,7 @@
 import httpx
 from ...config import logger
 
+
 async def _get_page_html(url: str) -> str | None:
     """Fetches the HTML content of a URL."""
     try:
