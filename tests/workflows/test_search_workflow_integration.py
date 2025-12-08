@@ -12,7 +12,7 @@ from telegram_bot.workflows import search_workflow
 async def test_tv_season_fallback_uses_wiki_titles_and_corrected_title(mocker):
     # Mock episode titles and corrected show title from Wikipedia
     mocker.patch(
-        "telegram_bot.workflows.search_workflow.fetch_episode_titles_for_season",
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
         new=AsyncMock(return_value=({1: "Pilot"}, "Show (TV series)")),
     )
 

@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ..config import logger
-from . import scrapers
+from . import scraping_service
 
 # --- Type Aliases for Readability ---
 ScraperCoroutine = Coroutine[Any, Any, list[dict[str, Any]]]
@@ -44,10 +44,9 @@ async def orchestrate_searches(
 
     # A dedicated scraper for EZTV would need to be created in the future.
     scraper_map: dict[str, ScraperFunction] = {
-        "1337x": scrapers.scrape_1337x,
+        "1337x": scraping_service.scrape_1337x,
+        "YTS.mx": scraping_service.scrape_yts,
     }
-
-    yts_scraper = scrapers.YtsScraper()
 
     tasks = []
     for site_info in sites_to_scrape:
@@ -88,17 +87,7 @@ async def orchestrate_searches(
                 k: v for k, v in kwargs.items() if k != "base_query_for_filter"
             }
 
-            if site_name == "YTS.mx":
-                logger.info(
-                    f"[SEARCH] Creating search task for 'YTS.mx' with query: '{query}'"
-                )
-                task = asyncio.create_task(
-                    yts_scraper.search(
-                        search_query, media_type, context=context, **extra_kwargs
-                    )
-                )
-                tasks.append(task)
-            elif scraper_func is not None:
+            if site_name == "1337x" and scraper_func is not None:
                 logger.info(
                     f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
                 )
@@ -113,13 +102,23 @@ async def orchestrate_searches(
                     )
                 )
                 tasks.append(task)
+            elif scraper_func is not None:
+                logger.info(
+                    f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
+                )
+                task = asyncio.create_task(
+                    scraper_func(
+                        search_query, media_type, site_url, context, **extra_kwargs
+                    )
+                )
+                tasks.append(task)
             else:
                 # Fallback: try YAML-backed generic scraper by site name
                 logger.info(
                     f"[SEARCH] Creating search task for '{site_name}' (YAML) with query: '{query}'"
                 )
                 task = asyncio.create_task(
-                    scrapers.scrape_yaml_site(
+                    scraping_service.scrape_yaml_site(
                         search_query,
                         media_type,
                         site_url,
@@ -142,6 +141,85 @@ async def orchestrate_searches(
         f"[SEARCH] Orchestration complete. Returning {len(all_results)} sorted results."
     )
     return all_results
+
+
+# --- Result Scoring and Parsing ---
+
+
+def score_torrent_result(
+    title: str, uploader: str, preferences: dict[str, Any], seeders: int = 0
+) -> int:  # <--- CHANGE THIS
+    """
+    Scores a torrent result based on user preferences (codecs, uploaders, etc.).
+    This version correctly handles a dictionary of preferences with weighted scores.
+    """
+    score = 0
+    title_lower = title.lower()
+
+    # Score based on codecs (e.g., "x265": 2)
+    for codec, value in preferences.get("codecs", {}).items():
+        if codec.lower() in title_lower:
+            score += value
+
+    # Score based on resolutions/quality (e.g., "1080p": 5)
+    for quality, value in preferences.get("resolutions", {}).items():
+        if quality.lower() in title_lower:
+            score += value
+
+    # Score based on trusted uploaders (e.g., "MeGusta": 5)
+    for trusted_uploader, value in preferences.get("uploaders", {}).items():
+        if trusted_uploader.lower() == uploader.lower():
+            score += value
+
+    # Add the raw seeder count directly to the score
+    score += seeders
+
+    return score
+
+
+_CODEC_PATTERNS = {
+    # Prefer more specific/modern codecs first
+    "av1": re.compile(r"(?i)\bav1\b"),
+    # x265 / HEVC / H.265 with common variants (spaces/dots)
+    "x265": re.compile(r"(?i)\b(?:x\s*265|h\s*[.\s]?265|hevc)\b"),
+    # x264 / AVC / H.264 with common variants (spaces/dots)
+    "x264": re.compile(r"(?i)\b(?:x\s*264|h\s*[.\s]?264|h264|avc)\b"),
+}
+
+
+def _parse_codec(title: str) -> str | None:
+    """Extracts codec information from a torrent title.
+
+    Handles common variants and spacing/punctuation, e.g.:
+    - "H264", "H.264", "H 264", "x264", "AVC" -> "x264"
+    - "H265", "H.265", "H 265", "x265", "HEVC" -> "x265"
+    - "AV1" -> "av1"
+    """
+    for normalized, pattern in _CODEC_PATTERNS.items():
+        if pattern.search(title):
+            return normalized
+    return None
+
+
+def _parse_size_to_gb(size_str: str) -> float:
+    """Converts size strings like '1.5 GB' or '500 MB' to a float in GB."""
+    size_str = size_str.lower().replace(",", "")
+    try:
+        size_match = re.search(r"([\d.]+)", size_str)
+        if not size_match:
+            return 0.0
+
+        size_val = float(size_match.group(1))
+        if "gb" in size_str:
+            return size_val
+        if "mb" in size_str:
+            return size_val / 1024
+        if "kb" in size_str:
+            return size_val / (1024 * 1024)
+
+    except (ValueError, TypeError):
+        return 0.0
+    return 0.0
 
 
 # --- Local Filesystem Searching (for Delete workflow) ---

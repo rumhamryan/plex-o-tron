@@ -16,13 +16,7 @@ from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 
 from ..config import logger, MAX_TORRENT_SIZE_GB
-from ..services import search_logic, torrent_service, plex_service
-from ..services.scrapers import (
-    fetch_movie_years_from_wikipedia,
-    fetch_episode_titles_for_season,
-    fetch_total_seasons_from_wikipedia,
-    fetch_season_episode_count_from_wikipedia,
-)
+from ..services import search_logic, torrent_service, scraping_service, plex_service
 from ..services.media_manager import validate_and_enrich_torrent
 from ..utils import safe_edit_message, parse_torrent_name, safe_send_message
 from ..ui.views import send_confirmation_prompt
@@ -139,7 +133,9 @@ async def _handle_movie_title_reply(chat_id, query, context):
 
         # Use Wikipedia to resolve movie years first; fall back to site-derived years if needed
         try:
-            years, corrected = await fetch_movie_years_from_wikipedia(title)
+            years, corrected = await scraping_service.fetch_movie_years_from_wikipedia(
+                title
+            )
         except Exception:
             years, corrected = [], None
 
@@ -224,7 +220,9 @@ async def _handle_tv_title_reply(chat_id, query, context):
     )
 
     try:
-        seasons_count = await fetch_total_seasons_from_wikipedia(sanitized_title)
+        seasons_count = await scraping_service.fetch_total_seasons_from_wikipedia(
+            sanitized_title
+        )
     except Exception:
         seasons_count = None
 
@@ -479,8 +477,10 @@ async def _handle_tv_scope_selection(
         # Gate Wikipedia network call on SEARCH_CONFIG to keep tests lightweight
         if context.bot_data.get("SEARCH_CONFIG"):
             try:
-                episode_count = await fetch_season_episode_count_from_wikipedia(
-                    str(title), int(season)
+                episode_count = (
+                    await scraping_service.fetch_season_episode_count_from_wikipedia(
+                        str(title), int(season)
+                    )
                 )
             except Exception:
                 episode_count = None
@@ -533,7 +533,11 @@ async def _handle_tv_scope_selection(
             "Verifying season details on Wikipedia\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        episode_count = await fetch_season_episode_count_from_wikipedia(title, season)
+        episode_count = (
+            await scraping_service.fetch_season_episode_count_from_wikipedia(
+                title, season
+            )
+        )
         logger.info(
             f"[WIKI] Episode count lookup complete for '{title}' S{int(season):02d}: {episode_count}."
         )
@@ -1116,7 +1120,7 @@ async def _perform_tv_season_search_with_resolution(
             (
                 titles_map,
                 corrected_title,
-            ) = await fetch_episode_titles_for_season(title, season)
+            ) = await scraping_service.fetch_episode_titles_for_season(title, season)
             logger.info(
                 f"[WIKI] Retrieved {len(titles_map)} episode titles for '{title}' S{season:02d}."
             )

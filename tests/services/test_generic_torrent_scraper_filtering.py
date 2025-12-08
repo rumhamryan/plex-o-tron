@@ -49,4 +49,4 @@ async def test_two_stage_filtering_prefers_precise_single_token_match(mocker):
     # prefers exact token-equivalent titles over broader ones like
     # "Dune Part Two". Therefore, only the base title match remains.
     assert len(results) == 1
-    assert "Dune 1984" in results[0]["name"]
+    assert "Dune 1984" in results[0].name

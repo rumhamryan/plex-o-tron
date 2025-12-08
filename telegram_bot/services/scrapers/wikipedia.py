@@ -1,15 +1,13 @@
-# telegram_bot/services/scrapers/wikipedia_scraper.py
-
 import asyncio
 import re
 import warnings
 
-import httpx
 import wikipedia
 from bs4 import BeautifulSoup, Tag, GuessedAtParserWarning
 
 from ...config import logger
 from ...utils import extract_first_int
+from .utils import _get_page_html
 
 # --- Wikipedia caching (per-process) ---
 # Caches per-season episode titles and corrected show title to avoid repeated
@@ -49,29 +47,11 @@ warnings.filterwarnings(
 )
 
 
-# --- Helper Functions ---
-
-
-async def _get_page_html(url: str) -> str | None:
-    """Fetches the HTML content of a URL."""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.text
-    except httpx.RequestError as e:
-        logger.error(f"Error fetching URL {url}: {e}")
-        return None
-
-
 # --- Wikipedia Scraping ---
 
 
 async def fetch_episode_title_from_wikipedia(
-    show_title: str,
-    season: int,
-    episode: int,
-    _last_resort: bool = False,
+    show_title: str, season: int, episode: int, _last_resort: bool = False
 ) -> tuple[str | None, str | None]:
     """
     Fetches an episode title from Wikipedia, trying a dedicated episode list page first,
@@ -184,7 +164,7 @@ async def fetch_episode_title_from_wikipedia(
 
     if not html_to_scrape:
         logger.error("[WIKI] All page search attempts failed.")
-        # As a last resort, retry with a TV-qualified title if not already tried
+        # As a last resort, retry with a TV-series qualified title if not already tried
         if not _last_resort:
             qualified = f"{show_title} (TV series)"
             logger.info(
@@ -221,8 +201,7 @@ async def fetch_episode_title_from_wikipedia(
 
 
 async def fetch_movie_years_from_wikipedia(
-    movie_title: str,
-    _last_resort: bool = False,
+    movie_title: str, _last_resort: bool = False
 ) -> tuple[list[int], str | None]:
     """
     Resolve a movie's likely release year(s) from Wikipedia and optionally return a
@@ -511,14 +490,13 @@ async def fetch_movie_years_from_wikipedia(
 
 
 async def fetch_episode_titles_for_season(
-    show_title: str,
-    season: int,
-    _last_resort: bool = False,
+    show_title: str, season: int, _last_resort: bool = False
 ) -> tuple[dict[int, str], str | None]:
     """Fetch all episode titles for a given season in one pass.
 
     Returns a mapping of episode number to title and an optional corrected
-    show title if Wikipedia redirects. Results are cached per (show_title, season).
+    show title if Wikipedia redirects.
+    Results are cached per (show_title, season).
     """
     cache_key = (show_title.strip().lower(), season)
     cached = _WIKI_TITLES_CACHE.get(cache_key)
@@ -640,8 +618,7 @@ async def fetch_episode_titles_for_season(
 
 
 async def fetch_total_seasons_from_wikipedia(
-    show_title: str,
-    _last_resort: bool = False,
+    show_title: str, _last_resort: bool = False
 ) -> int | None:
     """Determine the total number of seasons for a TV show using Wikipedia.
 
@@ -802,9 +779,7 @@ async def fetch_total_seasons_from_wikipedia(
 
 
 async def _parse_episode_tables(
-    soup: BeautifulSoup,
-    season: int,
-    episode: int,
+    soup: BeautifulSoup, season: int, episode: int
 ) -> str | None:
     """
     Orchestrates different strategies to parse episode titles from tables.
@@ -851,8 +826,7 @@ async def _parse_episode_tables(
 
 
 async def _extract_titles_for_season(
-    soup: BeautifulSoup,
-    season: int,
+    soup: BeautifulSoup, season: int
 ) -> dict[int, str]:
     """Extracts a mapping of episode number -> title for a given season.
 
@@ -894,7 +868,7 @@ async def _extract_titles_for_season(
         if anchor and anchor.get_text(strip=True):
             return anchor.get_text(strip=True)
         text_full = title_cell.get_text(" ", strip=True)
-        m = re.search("[\"“”'‘’]([^\"“”'‘’]+)[\"“”'‘’]", text_full)
+        m = re.search("[\\\"“”'‘’]([^\\\"“”'‘’]+)[\\\"“”'‘’]", text_full)
         if m:
             return m.group(1).strip()
         return text_full.strip('"')
@@ -966,9 +940,7 @@ async def _extract_titles_for_season(
 
 
 async def _extract_title_from_dedicated_table(
-    table: Tag,
-    season: int,
-    episode: int,
+    table: Tag, season: int, episode: int
 ) -> str | None:
     """
     (FOR DEDICATED PAGES) Extracts a title from a complex wikitable, typically
@@ -976,7 +948,7 @@ async def _extract_title_from_dedicated_table(
     that may include overall episode numbers.
     """
     # This logic is restored from the previously working version for dedicated pages
-    for row in table.find_all("tr")[1:]:
+    for row in table.find_all("tr")[1:]:  # Skip header row
         if not isinstance(row, Tag):
             continue
 
@@ -1009,15 +981,13 @@ async def _extract_title_from_dedicated_table(
 
 
 async def _extract_title_from_embedded_table(
-    table: Tag,
-    season: int,
-    episode: int,
+    table: Tag, season: int, episode: int
 ) -> str | None:
     """
     (FOR EMBEDDED PAGES) Extracts a title from a simpler table structure,
     typically found on a show's main page under an "Episodes" header.
     """
-    for row in table.find_all("tr")[1:]:
+    for row in table.find_all("tr")[1:]:  # Skip header
         if not isinstance(row, Tag):
             continue
 
@@ -1050,9 +1020,7 @@ async def _extract_title_from_embedded_table(
 
 
 async def fetch_season_episode_count_from_wikipedia(
-    show_title: str,
-    season: int,
-    _last_resort: bool = False,
+    show_title: str, season: int, _last_resort: bool = False
 ) -> int | None:
     """Fetches the number of episodes for a given season from Wikipedia."""
     logger.info(
@@ -1077,7 +1045,7 @@ async def fetch_season_episode_count_from_wikipedia(
     except wikipedia.exceptions.PageError:
         # Fallback to the main show page if the list page doesn't exist
         try:
-            logger.info(
+            logger.debug(
                 f"[WIKI] Dedicated list page missing. Performing search-first fallback for '{show_title}'."
             )
             # Search-first approach to avoid autosuggest mis-corrections like 'allen earth'
@@ -1123,7 +1091,7 @@ async def fetch_season_episode_count_from_wikipedia(
             # Also attempt to log what autosuggest would have done for diagnostics
             try:
                 auto_page = await asyncio.to_thread(
-                    wikipedia.page, show_title, auto_suggest=True
+                    wikipedia.page, show_title, auto_suggest=True, redirect=True
                 )
                 logger.debug(
                     f"[WIKI] Autosuggest diagnostic -> title: '{getattr(auto_page, 'title', '?')}', url: {getattr(auto_page, 'url', '?')}"

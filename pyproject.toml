@@ -64,7 +64,6 @@ explicit_package_bases = true
 
 # Pytest configuration
 [tool.pytest.ini_options]
-testpaths = ["tests"]
 filterwarnings = [
     # Suppress BeautifulSoup parser guess warning emitted by the wikipedia lib
     "ignore::bs4.GuessedAtParserWarning",

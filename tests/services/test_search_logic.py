@@ -1,11 +1,11 @@
 import sys
 from pathlib import Path
 import pytest
-from telegram_bot.services.scrapers.scoring import (
-    parse_codec,
+from telegram_bot.services.search_logic import (
+    _parse_codec,
+    _parse_size_to_gb,
     score_torrent_result,
 )
-from telegram_bot.utils import parse_size_to_bytes
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -30,20 +30,20 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
     ],
 )
 def test_parse_codec(title, expected):
-    assert parse_codec(title) == expected
+    assert _parse_codec(title) == expected
 
 
 @pytest.mark.parametrize(
     "size_str, expected",
     [
-        ("1.5 GB", 1.5 * 1024**3),
-        ("500 MB", 500 * 1024**2),
-        ("1024 KB", 1024 * 1024),
-        ("invalid", 0),
+        ("1.5 GB", 1.5),
+        ("500 MB", 500 / 1024),
+        ("1024 KB", 1024 / (1024 * 1024)),
+        ("invalid", 0.0),
     ],
 )
-def test_parse_size_to_bytes(size_str, expected):
-    assert parse_size_to_bytes(size_str) == pytest.approx(expected)
+def test_parse_size_to_gb(size_str, expected):
+    assert _parse_size_to_gb(size_str) == pytest.approx(expected)
 
 
 def test_score_torrent_result():

@@ -24,7 +24,7 @@ from telegram_bot.services.media_manager import (
     get_dominant_file_type,
     parse_torrent_name,
 )
-from telegram_bot.services.scrapers import find_magnet_link_on_page
+from telegram_bot.services.scraping_service import find_magnet_link_on_page
 
 
 async def process_user_input(
