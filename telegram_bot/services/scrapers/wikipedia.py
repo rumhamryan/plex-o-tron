@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup, Tag, GuessedAtParserWarning
 
 from ...config import logger
 from ...utils import extract_first_int
-from .utils import _get_page_html
 
 # --- Wikipedia caching (per-process) ---
 # Caches per-season episode titles and corrected show title to avoid repeated
@@ -41,6 +40,19 @@ def _sanitize_wikipedia_title(title: str) -> str:
     return cleaned or title
 
 
+async def _fetch_html_from_page(page: wikipedia.WikipediaPage) -> str | None:
+    """Fetches HTML content from a WikipediaPage object in a thread-safe manner."""
+
+    def _get_html():
+        try:
+            return page.html
+        except Exception as e:
+            logger.error(f"[WIKI] Error fetching HTML for '{page.title}': {e}")
+            return None
+
+    return await asyncio.to_thread(_get_html)
+
+
 # Suppress noisy BeautifulSoup parser guess warnings originating from wikipedia lib only
 warnings.filterwarnings(
     "ignore", category=GuessedAtParserWarning, module=r"^wikipedia\.wikipedia$"
@@ -72,6 +84,7 @@ async def fetch_episode_title_from_wikipedia(
         return titles_map.get(episode), corrected
     canonical_title = normalized_input
     main_page_url: str | None = None
+    main_page: wikipedia.WikipediaPage | None = None
 
     # --- Step 1: Find the main show page to get the canonical, corrected title ---
     try:
@@ -146,21 +159,21 @@ async def fetch_episode_title_from_wikipedia(
         list_page = await asyncio.to_thread(
             wikipedia.page, direct_query, auto_suggest=False, redirect=True
         )
-        html_to_scrape = await _get_page_html(list_page.url)
+        html_to_scrape = await _fetch_html_from_page(list_page)
         logger.info("[WIKI] Found and will use dedicated episode page.")
 
     except wikipedia.exceptions.PageError:
         logger.warning(
             "[WIKI] No dedicated episode page found. Falling back to main show page HTML."
         )
-        if main_page_url:
-            html_to_scrape = await _get_page_html(main_page_url)
+        if main_page:
+            html_to_scrape = await _fetch_html_from_page(main_page)
     except Exception as e:
         logger.error(
             f"[WIKI] Unexpected error fetching list page, falling back to main page HTML: {e}"
         )
-        if main_page_url:
-            html_to_scrape = await _get_page_html(main_page_url)
+        if main_page:
+            html_to_scrape = await _fetch_html_from_page(main_page)
 
     if not html_to_scrape:
         logger.error("[WIKI] All page search attempts failed.")
@@ -340,8 +353,8 @@ async def fetch_movie_years_from_wikipedia(
                     years.append(int(m.group(1)))
                 else:
                     # Fallback 2: fetch HTML and parse infobox release dates
-                    if page_url:
-                        html = await _get_page_html(page_url)
+                    if page:
+                        html = await _fetch_html_from_page(page)
                         if html:
                             soup = BeautifulSoup(html, "lxml")
                             infobox = soup.find(
@@ -394,7 +407,7 @@ async def fetch_movie_years_from_wikipedia(
             disamb_page = await asyncio.to_thread(
                 wikipedia.page, disamb_title, auto_suggest=False, redirect=True
             )
-            html = await _get_page_html(getattr(disamb_page, "url", ""))
+            html = await _fetch_html_from_page(disamb_page)
             if html:
                 soup = BeautifulSoup(html, "lxml")
                 for a in soup.find_all("a", href=True):
@@ -426,7 +439,7 @@ async def fetch_movie_years_from_wikipedia(
             disamb_page = await asyncio.to_thread(
                 wikipedia.page, fallback_disamb, auto_suggest=False, redirect=True
             )
-            html = await _get_page_html(getattr(disamb_page, "url", ""))
+            html = await _fetch_html_from_page(disamb_page)
             if html:
                 soup = BeautifulSoup(html, "lxml")
                 for a in soup.find_all("a", href=True):
@@ -509,6 +522,7 @@ async def fetch_episode_titles_for_season(
     corrected_show_title: str | None = None
     canonical_title = show_title
     main_page_url: str | None = None
+    main_page: wikipedia.WikipediaPage | None = None
 
     # Step 1: Resolve main show page to get canonical title
     try:
@@ -565,7 +579,7 @@ async def fetch_episode_titles_for_season(
             wikipedia.page, direct_query_user, auto_suggest=False, redirect=True
         )
         logger.debug(f"[WIKI] List page URL: {list_page_user.url}")
-        html_to_scrape = await _get_page_html(list_page_user.url)
+        html_to_scrape = await _fetch_html_from_page(list_page_user)
     except Exception:
         try:
             # If that failed, try with canonical title next
@@ -577,13 +591,13 @@ async def fetch_episode_titles_for_season(
                 wikipedia.page, direct_query_canon, auto_suggest=False, redirect=True
             )
             logger.debug(f"[WIKI] List page URL: {list_page_canon.url}")
-            html_to_scrape = await _get_page_html(list_page_canon.url)
+            html_to_scrape = await _fetch_html_from_page(list_page_canon)
         except Exception:
-            if main_page_url:
+            if main_page:
                 logger.info(
                     f"[WIKI] Dedicated list page not found. Falling back to main page for '{canonical_title}'."
                 )
-                html_to_scrape = await _get_page_html(main_page_url)
+                html_to_scrape = await _fetch_html_from_page(main_page)
 
     if not html_to_scrape:
         logger.warning(
@@ -632,6 +646,7 @@ async def fetch_total_seasons_from_wikipedia(
     """
     canonical_title = show_title
     main_page_url: str | None = None
+    main_page: wikipedia.WikipediaPage | None = None
 
     # Step 1: Resolve main show page to get canonical title
     try:
@@ -684,13 +699,13 @@ async def fetch_total_seasons_from_wikipedia(
             wikipedia.page, direct_query, auto_suggest=False, redirect=True
         )
         logger.debug(f"[WIKI] List page URL: {list_page.url}")
-        html_to_scrape = await _get_page_html(list_page.url)
+        html_to_scrape = await _fetch_html_from_page(list_page)
     except Exception:
-        if main_page_url:
+        if main_page:
             logger.info(
                 f"[WIKI] Dedicated list page not found. Falling back to main page for '{canonical_title}'."
             )
-            html_to_scrape = await _get_page_html(main_page_url)
+            html_to_scrape = await _fetch_html_from_page(main_page)
 
     if not html_to_scrape:
         logger.warning(
@@ -1041,7 +1056,7 @@ async def fetch_season_episode_count_from_wikipedia(
         logger.debug(
             f"[WIKI] List page resolved -> title: '{getattr(list_page, 'title', '?')}', url: {getattr(list_page, 'url', '?')}"
         )
-        html_to_scrape = await _get_page_html(list_page.url)
+        html_to_scrape = await _fetch_html_from_page(list_page)
     except wikipedia.exceptions.PageError:
         # Fallback to the main show page if the list page doesn't exist
         try:
@@ -1066,7 +1081,7 @@ async def fetch_season_episode_count_from_wikipedia(
             logger.debug(
                 f"[WIKI] Fallback main page -> title: '{getattr(main_page, 'title', '?')}', url: {getattr(main_page, 'url', '?')}"
             )
-            html_to_scrape = await _get_page_html(main_page.url)
+            html_to_scrape = await _fetch_html_from_page(main_page)
         except wikipedia.exceptions.DisambiguationError as e:
             # Pick the first disambiguation option deterministically and log choices
             options_preview = e.options[:5] if hasattr(e, "options") else []
@@ -1081,7 +1096,7 @@ async def fetch_season_episode_count_from_wikipedia(
                 logger.debug(
                     f"[WIKI] Disambiguation choice -> title: '{getattr(chosen_page, 'title', '?')}', url: {getattr(chosen_page, 'url', '?')}"
                 )
-                html_to_scrape = await _get_page_html(chosen_page.url)
+                html_to_scrape = await _fetch_html_from_page(chosen_page)
             except Exception as e2:
                 logger.error(
                     f"[WIKI] Failed to resolve disambiguation for '{show_title}': {e2}"
