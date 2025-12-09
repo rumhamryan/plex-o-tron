@@ -158,7 +158,7 @@ async def test_fetch_episode_title_dedicated_page(mocker):
     mock_page = mocker.Mock()
     mock_page.title = "Show"
     mock_page.url = "http://example.com"
-    mock_page.html = DEDICATED_HTML
+    mock_page.html.return_value = DEDICATED_HTML
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch("wikipedia.page", return_value=mock_page)
 
@@ -177,7 +177,7 @@ async def test_fetch_episode_title_strips_miniseries_suffix(mocker):
 
     mock_list_page = mocker.Mock()
     mock_list_page.url = "http://example.com/list"
-    mock_list_page.html = DEDICATED_HTML
+    mock_list_page.html.return_value = DEDICATED_HTML
 
     mocker.patch("wikipedia.search", return_value=["Show (miniseries)"])
     page_patch = mocker.patch(
@@ -201,7 +201,7 @@ async def test_fetch_episode_title_strips_tv_series_suffix(mocker):
 
     mock_list_page = mocker.Mock()
     mock_list_page.url = "http://example.com/list"
-    mock_list_page.html = DEDICATED_HTML
+    mock_list_page.html.return_value = DEDICATED_HTML
 
     mocker.patch("wikipedia.search", return_value=["Show (TV series)"])
     page_patch = mocker.patch(
@@ -222,7 +222,7 @@ async def test_fetch_episode_title_embedded_page(mocker):
     mock_main_page = mocker.Mock()
     mock_main_page.title = "Show"
     mock_main_page.url = "http://example.com/main"
-    mock_main_page.html = SIMPLE_EMBEDDED_HTML
+    mock_main_page.html.return_value = SIMPLE_EMBEDDED_HTML
 
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch(
@@ -238,7 +238,7 @@ async def test_fetch_episode_title_embedded_page(mocker):
 async def test_fetch_episode_title_not_found(mocker):
     mock_page = mocker.Mock()
     mock_page.url = "http://example.com"
-    mock_page.html = NO_EPISODE_HTML
+    mock_page.html.return_value = NO_EPISODE_HTML
     mocker.patch("wikipedia.search", return_value=["Show"])
     mocker.patch("wikipedia.page", return_value=mock_page)
 
@@ -250,7 +250,7 @@ async def test_fetch_episode_title_not_found(mocker):
 async def test_fetch_season_episode_count(mocker):
     mock_page = mocker.Mock()
     mock_page.url = "http://example.com"
-    mock_page.html = SEASON_OVERVIEW_HTML
+    mock_page.html.return_value = SEASON_OVERVIEW_HTML
     mocker.patch("wikipedia.page", return_value=mock_page)
 
     count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 2)
@@ -261,7 +261,7 @@ async def test_fetch_season_episode_count(mocker):
 async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
     mock_page = mocker.Mock()
     mock_page.url = "http://example.com"
-    mock_page.html = DEDICATED_WITH_OVERVIEW_ONGOING_HTML
+    mock_page.html.return_value = DEDICATED_WITH_OVERVIEW_ONGOING_HTML
     mocker.patch("wikipedia.page", return_value=mock_page)
 
     # Should return the enumerated title count (4), not the overview's 10
@@ -273,7 +273,7 @@ async def test_fetch_season_episode_count_prefers_titles_over_overview(mocker):
 async def test_fetch_season_episode_count_skips_ongoing_overview(mocker):
     mock_page = mocker.Mock()
     mock_page.url = "http://example.com"
-    mock_page.html = OVERVIEW_ONGOING_ONLY_HTML
+    mock_page.html.return_value = OVERVIEW_ONGOING_ONLY_HTML
     mocker.patch("wikipedia.page", return_value=mock_page)
 
     # No titles are present and overview is marked ongoing -> expect None

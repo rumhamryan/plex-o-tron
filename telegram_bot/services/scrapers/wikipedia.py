@@ -41,7 +41,7 @@ async def _fetch_html_from_page(page: wikipedia.WikipediaPage) -> str | None:
 
     def _get_html():
         try:
-            return page.html
+            return page.html()
         except Exception as e:
             logger.error(f"[WIKI] Error fetching HTML for '{page.title}': {e}")
             return None

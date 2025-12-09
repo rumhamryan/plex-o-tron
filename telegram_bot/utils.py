@@ -379,7 +379,7 @@ _CODEC_PATTERNS = {
 }
 
 
-def _parse_codec(title: str) -> str | None:
+def parse_codec(title: str) -> str | None:
     """Extracts codec information from a torrent title.
 
     Handles common variants and spacing/punctuation, e.g.:

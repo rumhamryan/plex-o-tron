@@ -1,10 +1,6 @@
-import sys
-from pathlib import Path
 import pytest
 from telegram_bot.services.search_logic import _parse_size_to_gb
-from telegram_bot.utils import _parse_codec, score_torrent_result
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+from telegram_bot.utils import parse_codec, score_torrent_result
 
 
 @pytest.mark.parametrize(
@@ -26,8 +22,8 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
         ("No codec here", None),
     ],
 )
-def test_parse_codec(title, expected):
-    assert _parse_codec(title) == expected
+def testparse_codec(title, expected):
+    assert parse_codec(title) == expected
 
 
 @pytest.mark.parametrize(

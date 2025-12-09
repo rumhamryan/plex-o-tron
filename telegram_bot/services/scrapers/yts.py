@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ...config import logger, MAX_TORRENT_SIZE_GB
-from ...utils import _parse_codec, score_torrent_result
+from ...utils import parse_codec, score_torrent_result
 
 
 async def scrape_yts(
@@ -153,7 +153,7 @@ async def scrape_yts(
                                 )
                                 magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(str(mv_title))}{trackers}"
                                 seeders_count = int(tor.get("seeds", 0) or 0)
-                                parsed_codec = _parse_codec(title_full) or "x264"
+                                parsed_codec = parse_codec(title_full) or "x264"
                                 score = score_torrent_result(
                                     title_full,
                                     "YTS",
@@ -412,7 +412,7 @@ async def scrape_yts(
 
                         seeders_count = torrent.get("seeds", 0)
                         parsed_codec = (
-                            _parse_codec(full_title) or "x264"  # Default YTS to x264
+                            parse_codec(full_title) or "x264"  # Default YTS to x264
                         )
                         score = score_torrent_result(
                             full_title, "YTS", preferences, seeders=seeders_count

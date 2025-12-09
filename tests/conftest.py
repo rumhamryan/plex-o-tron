@@ -12,7 +12,7 @@ os.environ.setdefault("PTB_TIMEDELTA", "1")
 from telegram import Update, Message, Chat, User, CallbackQuery, Bot  # noqa: E402
 
 # Ensure root path is available for imports
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 @pytest.fixture

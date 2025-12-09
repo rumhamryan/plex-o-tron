@@ -3,7 +3,7 @@ from typing import Any
 from telegram.ext import ContextTypes
 
 from ...config import logger
-from ...utils import _parse_codec, score_torrent_result, parse_torrent_name
+from ...utils import parse_codec, score_torrent_result, parse_torrent_name
 from ..generic_torrent_scraper import GenericTorrentScraper, load_site_config
 
 
@@ -63,7 +63,7 @@ async def scrape_1337x(
                 "source": item.source_site,
                 "uploader": item.uploader or "Anonymous",
                 "size_gb": item.size_bytes / (1024**3),
-                "codec": _parse_codec(item.name),
+                "codec": parse_codec(item.name),
                 "seeders": item.seeders,
                 "leechers": item.leechers,
                 "year": parsed_name.get("year"),

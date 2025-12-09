@@ -16,6 +16,10 @@ async def test_search_movie_happy_path(
     mocker, context, make_callback_query, make_message
 ):
     mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_movie_years_from_wikipedia",
+        new=AsyncMock(return_value=([2010], "Inception")),
+    )
+    mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message",
         new=AsyncMock(),
     )
@@ -72,6 +76,14 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message",
         new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_total_seasons_from_wikipedia",
+        new=AsyncMock(return_value=5),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        new=AsyncMock(return_value=10),
     )
     mocker.patch("telegram_bot.workflows.search_workflow._send_prompt", new=AsyncMock())
     orchestrate_mock = mocker.patch(
@@ -207,6 +219,10 @@ async def test_resolution_filters_results(
 
 @pytest.mark.asyncio
 async def test_tv_season_reply_offers_scope_buttons(mocker, context, make_message):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_total_seasons_from_wikipedia",
+        new=AsyncMock(return_value=5),
+    )
     send_mock = mocker.patch.object(
         context.bot, "send_message", AsyncMock(return_value=make_message())
     )
@@ -226,6 +242,10 @@ async def test_tv_season_reply_offers_scope_buttons(mocker, context, make_messag
 async def test_handle_tv_scope_selection_single(
     mocker, context, make_callback_query, make_message
 ):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        new=AsyncMock(return_value=10),
+    )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
@@ -247,6 +267,14 @@ async def test_handle_tv_scope_selection_single(
 async def test_handle_tv_scope_selection_season(
     mocker, context, make_callback_query, make_message
 ):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+        new=AsyncMock(return_value=({}, None)),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
+        new=AsyncMock(return_value=set()),
+    )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
@@ -296,6 +324,10 @@ async def test_handle_tv_scope_selection_season(
 async def test_handle_tv_scope_selection_season_fallback(
     mocker, context, make_callback_query, make_message
 ):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+        new=AsyncMock(return_value=({1: "Episode 1", 2: "Episode 2"}, None)),
+    )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
@@ -391,6 +423,10 @@ async def test_present_season_download_confirmation_pack_has_reject_button(
 async def test_handle_reject_season_pack_triggers_individual(
     mocker, context, make_update, make_callback_query, make_message
 ):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+        new=AsyncMock(return_value=({}, None)),
+    )
     # Arrange minimal state and mocks
     context.user_data["tv_base_title"] = "Show"
     context.user_data["search_season_number"] = 1
@@ -423,6 +459,10 @@ async def test_handle_reject_season_pack_triggers_individual(
 async def test_entire_season_skips_pack_and_targets_missing(
     mocker, context, make_callback_query, make_message
 ):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+        new=AsyncMock(return_value=({i: f"Ep {i}" for i in range(1, 6)}, None)),
+    )
     # Mock messaging and data sources
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
