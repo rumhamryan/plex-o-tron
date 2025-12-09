@@ -1,5 +1,9 @@
 site_name: "1337x"
 base_url: "https://1337x.to"
+# Known mirrors that often remain reachable when the primary domain is blocked by Cloudflare carriers
+mirror_base_urls:
+  - "https://www.1377x.to"
+  - "https://1337xx.to"
 
 # Map internal media types to site categories
 category_mapping:

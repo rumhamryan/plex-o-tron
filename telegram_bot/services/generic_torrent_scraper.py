@@ -97,7 +97,9 @@ class GenericTorrentScraper:
 
     def __init__(self, site_config: dict[str, Any]) -> None:
         self.config = site_config
-        self.base_url: str = site_config["base_url"].rstrip("/")
+        self.base_url_candidates = self._build_base_url_rotation(site_config)
+        self.base_url: str = self.base_url_candidates[0]
+        self._last_successful_base_url: str | None = self.base_url
         self.search_path: str = site_config["search_path"]
         self.category_mapping: dict[str, str] = site_config["category_mapping"]
         self.results_selectors: dict[str, Any] = site_config["results_page_selectors"]
@@ -145,17 +147,32 @@ class GenericTorrentScraper:
         search_path = self.search_path.format(
             query=formatted_query, category=category_path, page=1
         )
-        search_url = urllib.parse.urljoin(self.base_url, search_path)
 
-        logger.info(
-            f"[SCRAPER] {self.site_name}: Fetching search results from {search_url}"
-        )
-        search_html = await self._fetch_page(search_url)
-        if not search_html:
+        search_html: str | None = None
+        active_base_url: str | None = None
+        for base_url in self._iter_base_url_candidates():
+            search_url = urllib.parse.urljoin(f"{base_url}/", search_path.lstrip("/"))
+            logger.info(
+                f"[SCRAPER] {self.site_name}: Fetching search results from {search_url}"
+            )
+            page_html = await self._fetch_page(search_url, referer_base_url=base_url)
+            if page_html:
+                search_html = page_html
+                active_base_url = base_url
+                break
+            logger.warning(
+                f"[SCRAPER] {self.site_name}: Failed to retrieve search results from {search_url}; "
+                "trying next mirror"
+            )
+
+        if not search_html or not active_base_url:
             logger.error(
-                f"[SCRAPER] {self.site_name}: Failed to retrieve search results from {search_url}"
+                f"[SCRAPER] {self.site_name}: Unable to retrieve search results from any configured base URL"
             )
             return []
+
+        self.base_url = active_base_url
+        self._last_successful_base_url = active_base_url
 
         soup = BeautifulSoup(search_html, "lxml")
 
@@ -424,9 +441,12 @@ class GenericTorrentScraper:
             if magnet_link:
                 item.magnet_url = magnet_link
 
-    async def _fetch_page(self, url: str) -> str | None:
+    async def _fetch_page(
+        self, url: str, *, referer_base_url: str | None = None
+    ) -> str | None:
         """Fetch ``url`` and return the response text, handling errors."""
 
+        referer_base = (referer_base_url or self.base_url or "").rstrip("/")
         headers = {
             # Some torrent sites (e.g. 1337x) return HTTP 403 unless common
             # browser headers are supplied. These values mimic a typical
@@ -440,8 +460,9 @@ class GenericTorrentScraper:
                 "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,"
                 "image/webp,*/*;q=0.8"
             ),
-            "Referer": f"{self.base_url}/",
         }
+        if referer_base:
+            headers["Referer"] = f"{referer_base}/"
 
         logger.debug(f"[SCRAPER] {self.site_name}: GET {url}")
 
@@ -484,3 +505,50 @@ class GenericTorrentScraper:
         # Strip all non-digit characters to robustly parse these values.
         cleaned = re.sub(r"[^\d]", "", text)
         return int(cleaned) if cleaned else 0
+
+    def _build_base_url_rotation(self, site_config: dict[str, Any]) -> list[str]:
+        """Normalize the primary base URL plus any mirrors into a unique list."""
+
+        def _normalize(url: str) -> str:
+            return url.strip().rstrip("/")
+
+        raw_base = site_config.get("base_url")
+        base_urls: list[str] = []
+        if isinstance(raw_base, str):
+            base_urls.append(raw_base)
+        elif isinstance(raw_base, list):
+            base_urls.extend([item for item in raw_base if isinstance(item, str)])
+        else:
+            raise ValueError("base_url must be a string or list of strings")
+
+        mirrors = site_config.get("mirror_base_urls", [])
+        if isinstance(mirrors, list):
+            base_urls.extend([item for item in mirrors if isinstance(item, str)])
+        elif mirrors:
+            logger.warning(
+                "[SCRAPER] mirror_base_urls expected list of strings for %s",
+                site_config.get("site_name", ""),
+            )
+
+        normalized: list[str] = []
+        for candidate in base_urls:
+            cleaned = _normalize(candidate)
+            if cleaned and cleaned not in normalized:
+                normalized.append(cleaned)
+
+        if not normalized:
+            raise ValueError("At least one valid base URL must be provided")
+        return normalized
+
+    def _iter_base_url_candidates(self) -> list[str]:
+        """Return base URLs ordered with the last success first."""
+        ordered: list[str] = []
+        seen: set[str] = set()
+        if isinstance(self._last_successful_base_url, str):
+            ordered.append(self._last_successful_base_url)
+            seen.add(self._last_successful_base_url)
+        for candidate in self.base_url_candidates:
+            if candidate not in seen:
+                ordered.append(candidate)
+                seen.add(candidate)
+        return ordered
