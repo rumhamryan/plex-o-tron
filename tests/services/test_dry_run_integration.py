@@ -35,9 +35,9 @@ def _ctx_with_search_config():
             "websites": {
                 "movies": [
                     {
-                        "name": "YTS.mx",
+                        "name": "yts.lt",
                         "enabled": True,
-                        "search_url": "https://yts.mx/browse-movies/{query}/all/all/0/latest/0/all",
+                        "search_url": "https://yts.lt/browse-movies/{query}/all/all/0/latest/0/all",
                     },
                     {
                         "name": "1337x",
@@ -74,8 +74,8 @@ async def test_dry_run_flow_uses_wiki_year_and_filters_resolution(mocker):
 
     # Mock scrapers
     yts_results = [
-        {"title": "Alien (1979) 1080p WEB x265 [YTS]", "score": 21, "source": "YTS.mx"},
-        {"title": "Alien (1979) 720p WEB x264 [YTS]", "score": 11, "source": "YTS.mx"},
+        {"title": "Alien (1979) 1080p WEB x265 [YTS]", "score": 21, "source": "yts.lt"},
+        {"title": "Alien (1979) 720p WEB x264 [YTS]", "score": 11, "source": "yts.lt"},
     ]
     x_results = [
         {"title": "Alien.1979.1080p.BluRay.x265", "score": 16, "source": "1337x"},
@@ -125,7 +125,7 @@ async def test_dry_run_movie_explicit_year_overrides_wiki(mocker):
         {
             "title": "The Thing (1982) 1080p WEB x265 [YTS]",
             "score": 22,
-            "source": "YTS.mx",
+            "source": "yts.lt",
         },
     ]
     x_results = [

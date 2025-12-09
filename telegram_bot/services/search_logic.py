@@ -45,7 +45,11 @@ async def orchestrate_searches(
     # A dedicated scraper for EZTV would need to be created in the future.
     scraper_map: dict[str, ScraperFunction] = {
         "1337x": scraping_service.scrape_1337x,
-        "YTS.mx": scraping_service.scrape_yts,
+        "1337x.to": scraping_service.scrape_1337x,
+        "1337x torrents": scraping_service.scrape_1337x,
+        "yts": scraping_service.scrape_yts,
+        "yts.lt": scraping_service.scrape_yts,
+        "yts.mx": scraping_service.scrape_yts,
     }
 
     tasks = []
@@ -58,9 +62,12 @@ async def orchestrate_searches(
 
         if site_info.get("enabled", True):
             site_name = site_info.get("name")
+            normalized_name = (
+                site_name.strip().lower() if isinstance(site_name, str) else None
+            )
             site_url = site_info.get("search_url")
 
-            if not isinstance(site_name, str) or not site_name:
+            if not isinstance(site_name, str) or not site_name or not normalized_name:
                 logger.warning(
                     f"[SEARCH] Skipping site due to missing or invalid 'name' key: {site_info}"
                 )
@@ -76,10 +83,10 @@ async def orchestrate_searches(
             year = kwargs.get("year")
 
             # Only append the year for the 1337x scraper.
-            if site_name == "1337x" and year:
+            if normalized_name and normalized_name.startswith("1337x") and year:
                 search_query += f" {year}"
 
-            scraper_func = scraper_map.get(site_name)
+            scraper_func = scraper_map.get(normalized_name) if normalized_name else None
 
             # Allow callers to override the string used for fuzzy filtering.
             base_filter = kwargs.get("base_query_for_filter", query)
@@ -87,7 +94,11 @@ async def orchestrate_searches(
                 k: v for k, v in kwargs.items() if k != "base_query_for_filter"
             }
 
-            if site_name == "1337x" and scraper_func is not None:
+            if (
+                normalized_name
+                and normalized_name.startswith("1337x")
+                and scraper_func is not None
+            ):
                 logger.info(
                     f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
                 )

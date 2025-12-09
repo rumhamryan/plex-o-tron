@@ -42,9 +42,9 @@ async def test_orchestrate_searches_calls_sites_and_sorts(mocker):
     ctx = _ctx_with_config(
         websites_movies=[
             {
-                "name": "YTS.mx",
+                "name": "yts.lt",
                 "enabled": True,
-                "search_url": "https://yts.mx/browse-movies/{query}/all/all/0/latest/0/all",
+                "search_url": "https://yts.lt/browse-movies/{query}/all/all/0/latest/0/all",
             },
             {
                 "name": "1337x",
@@ -55,8 +55,8 @@ async def test_orchestrate_searches_calls_sites_and_sorts(mocker):
     )
 
     yts_results = [
-        {"title": "Alien (1979) 1080p", "score": 20, "source": "YTS.mx"},
-        {"title": "Alien (1979) 720p", "score": 10, "source": "YTS.mx"},
+        {"title": "Alien (1979) 1080p", "score": 20, "source": "yts.lt"},
+        {"title": "Alien (1979) 720p", "score": 10, "source": "yts.lt"},
     ]
     txx_results = [
         {"title": "Alien.1979.1080p", "score": 15, "source": "1337x"},
@@ -95,9 +95,9 @@ async def test_orchestrate_searches_respects_enabled_flag(mocker):
     ctx = _ctx_with_config(
         websites_movies=[
             {
-                "name": "YTS.mx",
+                "name": "yts.lt",
                 "enabled": False,
-                "search_url": "https://yts.mx/browse-movies/{query}",
+                "search_url": "https://yts.lt/browse-movies/{query}",
             },
             {
                 "name": "1337x",
@@ -153,3 +153,30 @@ async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
     assert call.args[0].startswith("Alien")
     assert call.kwargs.get("site_name") == "EZTV"
     assert call.kwargs.get("base_query_for_filter") == "Alien"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_handles_yts_name_variants(mocker):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "YTS.LT",  # Mixed case to ensure normalization
+                "enabled": True,
+                "search_url": "https://yts.lt/browse-movies/{query}/all/all/0/latest/0/all",
+            }
+        ]
+    )
+
+    m_yts = mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_yts",
+        new=AsyncMock(
+            return_value=[{"title": "Alien", "score": 5, "source": "yts.lt"}]
+        ),
+    )
+
+    results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
+    assert results and results[0]["source"] == "yts.lt"
+    assert m_yts.await_count == 1
+    # ensure query unmodified for YTS
+    call = m_yts.await_args
+    assert call.args[0] == "Alien"

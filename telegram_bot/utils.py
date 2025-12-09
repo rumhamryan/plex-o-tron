@@ -22,7 +22,7 @@ def get_site_name_from_url(url: str) -> str:
     Extracts a short, readable site name from a URL.
 
     Examples:
-        - "https://yts.mx/..." -> "YTS"
+        - "https://yts.lt/..." -> "YTS"
         - "https://1337x.to/..." -> "1337x"
         - "https://eztvx.to/..." -> "EZTVx"
 
@@ -35,7 +35,7 @@ def get_site_name_from_url(url: str) -> str:
     if not url:
         return "Unknown"
     try:
-        # Use urlparse to reliably get the network location (e.g., 'yts.mx')
+        # Use urlparse to reliably get the network location (e.g., 'yts.lt')
         netloc = urlparse(url).netloc
         if not netloc:
             return "Unknown"
@@ -45,7 +45,7 @@ def get_site_name_from_url(url: str) -> str:
             netloc = netloc[4:]
 
         # Split the domain by dots and take the primary name
-        # (e.g., 'yts' from 'yts.mx', '1337x' from '1337x.to')
+        # (e.g., 'yts' from 'yts.lt', '1337x' from '1337x.to')
         primary_name = netloc.partition(".")[0]
 
         # Return the cleaned name, capitalized for consistency

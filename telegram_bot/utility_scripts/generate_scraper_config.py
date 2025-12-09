@@ -445,8 +445,8 @@ KNOWN_SITES: dict[str, str] = {
     "eztvx": "https://eztvx.to",
     "eztvx.to": "https://eztvx.to",
     "eztv.re": "https://eztvx.to",
-    "yts": "https://yts.mx",
-    "yts.mx": "https://yts.mx",
+    "yts": "https://yts.lt",
+    "yts.lt": "https://yts.lt",
     "torrentgalaxy": "https://torrentgalaxy.to",
     "torrentgalaxy.to": "https://torrentgalaxy.to",
 }

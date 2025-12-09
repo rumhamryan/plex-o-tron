@@ -75,7 +75,7 @@ async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     message_text = (
         "I can scrape webpages for magnet and torrent links. Send me a URL!\n\n"
         "**For Movies:**\n"
-        "https://yts.mx/\n"
+        "https://yts.lt/\n"
         "https://1337x.to/\n"
         "https://thepiratebay.org/\n\n"
         "**For TV Shows:**\n"

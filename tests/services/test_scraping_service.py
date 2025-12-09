@@ -458,7 +458,7 @@ async def test_scrape_1337x_passes_limit(mocker):
 async def test_scrape_yts_parses_results(mocker):
     search_html = """
     <div class="browse-movie-wrap">
-      <a class="browse-movie-title" href="https://yts.mx/movies/test-movie">Test Movie</a>
+      <a class="browse-movie-title" href="https://yts.lt/movies/test-movie">Test Movie</a>
       <div class="browse-movie-year">2023</div>
     </div>
     """
@@ -504,14 +504,14 @@ async def test_scrape_yts_parses_results(mocker):
     results = await scraping_service.scrape_yts(
         "Test Movie",
         "movie",
-        "https://yts.mx/browse-movies/{query}",
+        "https://yts.lt/browse-movies/{query}",
         context,  # Pass the mock object here
         year="2023",
         resolution="1080p",
     )
 
     assert len(results) == 1
-    assert results[0]["source"] == "YTS.mx"
+    assert results[0]["source"] == "yts.lt"
     assert results[0]["seeders"] == 10
 
 
@@ -520,7 +520,7 @@ async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
     """YTS scraper retries when API validation fails."""
     search_html = """
     <div class="browse-movie-wrap">
-      <a class="browse-movie-title" href="https://yts.mx/movies/test-movie">Test Movie</a>
+      <a class="browse-movie-title" href="https://yts.lt/movies/test-movie">Test Movie</a>
       <div class="browse-movie-year">2023</div>
     </div>
     """
@@ -579,7 +579,7 @@ async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
         results = await scraping_service.scrape_yts(
             "Test Movie",
             "movie",
-            "https://yts.mx/browse-movies/{query}",
+            "https://yts.lt/browse-movies/{query}",
             context,
             year="2023",
             resolution="1080p",
@@ -596,14 +596,14 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
     # Page 1: no matching movies for the given year
     search_html_p1 = """
     <div class="browse-movie-wrap">
-      <a class="browse-movie-title" href="https://yts.mx/movies/alien-xyz">Alien Something</a>
+      <a class="browse-movie-title" href="https://yts.lt/movies/alien-xyz">Alien Something</a>
       <div class="browse-movie-year">2003</div>
     </div>
     """
     # Page 2: contains the correct 1979 entry
     search_html_p2 = """
     <div class="browse-movie-wrap">
-      <a class="browse-movie-title" href="https://yts.mx/movies/alien-1979">Alien</a>
+      <a class="browse-movie-title" href="https://yts.lt/movies/alien-1979">Alien</a>
       <div class="browse-movie-year">1979</div>
     </div>
     """
@@ -651,14 +651,14 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
     results = await scraping_service.scrape_yts(
         "Alien",
         "movie",
-        "https://yts.mx/browse-movies/{query}",
+        "https://yts.lt/browse-movies/{query}",
         context,
         year="1979",
         resolution="1080p",
     )
 
     assert len(results) == 1
-    assert results[0]["source"] == "YTS.mx"
+    assert results[0]["source"] == "yts.lt"
     assert results[0]["seeders"] == 10
 
 
@@ -720,7 +720,7 @@ async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
     results = await scraping_service.scrape_yts(
         "Test Movie",
         "movie",
-        "https://yts.mx/browse-movies/{query}",
+        "https://yts.lt/browse-movies/{query}",
         context,
         year="1979",
         resolution="1080p",
@@ -728,7 +728,7 @@ async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
 
     assert len(results) == 1
     assert results[0]["seeders"] == 7
-    assert results[0]["source"] == "YTS.mx"
+    assert results[0]["source"] == "yts.lt"
 
 
 @pytest.mark.asyncio
@@ -800,7 +800,7 @@ async def test_scrape_yts_api_fallback_relaxes_year(mocker):
     results = await scraping_service.scrape_yts(
         "Alien",
         "movie",
-        "https://yts.mx/browse-movies/{query}",
+        "https://yts.lt/browse-movies/{query}",
         context,
         year="1979",
         resolution="1080p",
@@ -812,7 +812,7 @@ async def test_scrape_yts_api_fallback_relaxes_year(mocker):
         results[0]["title"].startswith("Alien (1979)")
         or "(1979)" in results[0]["title"]
     )
-    assert results[0]["source"] == "YTS.mx"
+    assert results[0]["source"] == "yts.lt"
 
 
 @pytest.mark.asyncio
@@ -821,7 +821,7 @@ async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
     # Page 1 contains 'The Dunes' (fails token gate), then pages 2-5 empty -> fallback
     browse_dunes = """
     <div class="browse-movie-wrap">
-      <a class="browse-movie-title" href="https://yts.mx/movies/the-dunes-1979">The Dunes</a>
+      <a class="browse-movie-title" href="https://yts.lt/movies/the-dunes-1979">The Dunes</a>
       <div class="browse-movie-year">1979</div>
     </div>
     """
@@ -874,14 +874,14 @@ async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
     results = await scraping_service.scrape_yts(
         "Dune",
         "movie",
-        "https://yts.mx/browse-movies/{query}",
+        "https://yts.lt/browse-movies/{query}",
         context,
         year="1979",
         resolution="1080p",
     )
 
     assert len(results) == 1
-    assert results[0]["source"] == "YTS.mx"
+    assert results[0]["source"] == "yts.lt"
 
 
 def test_strategy_find_direct_links_magnet():

@@ -20,9 +20,12 @@ async def scrape_yts(
     context: ContextTypes.DEFAULT_TYPE,
     **kwargs,
 ) -> list[dict[str, Any]]:
-    """Uses the YTS.mx API and website to find movie torrents."""
+    """Uses the YTS.lt API and website to find movie torrents."""
     year = kwargs.get("year")
     resolution = kwargs.get("resolution")
+    year_str = str(year).strip() if year is not None else None
+    if year_str == "":
+        year_str = None
     logger.info(
         f"[SCRAPER] YTS: Initiating API-based scrape for '{query}' (Year: {year}, Res: {resolution})."
     )
@@ -41,8 +44,9 @@ async def scrape_yts(
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
 
-            # --- helpers for robust title matching ---
+            # --- helpers for robust title/year matching ---
             STOPWORDS = {"the", "a", "an", "of", "and"}
+            YEAR_PATTERN = re.compile(r"\d{4}")
 
             def _tokens(s: str) -> set[str]:
                 return {t for t in re.findall(r"[a-z0-9]+", s.lower()) if t}
@@ -56,8 +60,40 @@ async def scrape_yts(
                     any(t in cand_tokens for t in base_tokens) if base_tokens else True
                 )
 
+            def _normalize_year_text(value: str | None) -> str | None:
+                if not value:
+                    return None
+                match = YEAR_PATTERN.search(value)
+                if match:
+                    return match.group(0)
+                stripped = value.strip()
+                return stripped or None
+
             # Stage 1: Scrape search results to find the movie's page URL
             formatted_query = urllib.parse.quote_plus(query)
+            quality_slug = (
+                str(resolution).strip().lower()
+                if isinstance(resolution, str) and resolution.strip()
+                else "all"
+            )
+            year_slug = year_str or "all"
+
+            def _substitute_template(url_template: str) -> str:
+                replacements = {
+                    "{query}": formatted_query,
+                    "{QUERY}": formatted_query,
+                    "{quality}": urllib.parse.quote_plus(quality_slug),
+                    "{QUALITY}": urllib.parse.quote_plus(quality_slug),
+                    "{resolution}": urllib.parse.quote_plus(quality_slug),
+                    "{RESOLUTION}": urllib.parse.quote_plus(quality_slug),
+                    "{year}": urllib.parse.quote_plus(year_slug),
+                    "{YEAR}": urllib.parse.quote_plus(year_slug),
+                    "{media_type}": urllib.parse.quote_plus(media_type),
+                    "{MEDIA_TYPE}": urllib.parse.quote_plus(media_type),
+                }
+                for placeholder, value in replacements.items():
+                    url_template = url_template.replace(placeholder, value)
+                return url_template
 
             async def _fetch_browse_page(url: str) -> BeautifulSoup | None:
                 try:
@@ -79,12 +115,13 @@ async def scrape_yts(
                     if not isinstance(movie_wrapper, Tag):
                         continue
                     year_tag = movie_wrapper.find("div", class_="browse-movie-year")
-                    scraped_year = (
+                    scraped_year_raw = (
                         year_tag.get_text(strip=True)
                         if isinstance(year_tag, Tag)
                         else None
                     )
-                    if year and scraped_year and year != scraped_year:
+                    normalized_year = _normalize_year_text(scraped_year_raw)
+                    if year_str and normalized_year and year_str != normalized_year:
                         continue
                     title_tag = movie_wrapper.find("a", class_="browse-movie-title")
                     if isinstance(title_tag, Tag):
@@ -92,19 +129,19 @@ async def scrape_yts(
                         title_text = title_tag.get_text(strip=True)
                         if isinstance(href, str) and title_text:
                             # Gate by tokens when a year is specified to avoid near-homonyms
-                            if not year or _passes_gate(title_text):
+                            if not year_str or _passes_gate(title_text):
                                 out[href] = title_text
                 return out
 
             # Try the first page. If nothing matches (common for older films due to sorting),
             # paginate up to a small max to discover the intended year.
-            base_search_url = search_url_template.replace("{query}", formatted_query)
+            base_search_url = _substitute_template(search_url_template)
             choices: dict[str, str] = {}
             first_soup = await _fetch_browse_page(base_search_url)
             if first_soup:
                 choices.update(_collect_choices_from_soup(first_soup))
 
-            if not choices and year:
+            if not choices and year_str:
                 for page_num in range(2, 6):  # check a few pages for older titles
                     paged_url = _add_page_param(base_search_url, page_num)
                     soup = await _fetch_browse_page(paged_url)
@@ -165,7 +202,7 @@ async def scrape_yts(
                                         "title": title_full,
                                         "page_url": magnet_link,
                                         "score": score,
-                                        "source": "YTS.mx",
+                                        "source": "yts.lt",
                                         "uploader": "YTS",
                                         "size_gb": size_gb,
                                         "codec": parsed_codec,
@@ -263,7 +300,7 @@ async def scrape_yts(
                 return []
 
             if not choices:
-                if year:
+                if year_str:
                     logger.warning(
                         f"[SCRAPER] YTS Stage 1: No movies found matching year '{year}'. Trying API fallback."
                     )
@@ -279,10 +316,10 @@ async def scrape_yts(
             is_confident = bool(
                 best_match
                 and len(best_match) == 3
-                and best_match[1] >= (80 if year else 86)
+                and best_match[1] >= (80 if year_str else 86)
             )
             gated_ok = True
-            if year and best_match and len(best_match) == 3:
+            if year_str and best_match and len(best_match) == 3:
                 candidate_title = choices.get(best_match[2], "")
                 gated_ok = _passes_gate(candidate_title)
 
@@ -444,7 +481,7 @@ async def scrape_yts(
                                 "title": full_title,
                                 "page_url": magnet_link,
                                 "score": score,
-                                "source": "YTS.mx",
+                                "source": "yts.lt",
                                 "uploader": "YTS",
                                 "size_gb": size_gb,
                                 "codec": parsed_codec,
