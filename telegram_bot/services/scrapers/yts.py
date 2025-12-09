@@ -180,10 +180,12 @@ async def scrape_yts(
                 async def _call_list_movies(
                     params: dict[str, Any],
                 ) -> list[dict[str, Any]]:
+                    url = "https://yts.lt/api/v2/list_movies.json"
                     try:
-                        resp = await client.get(
-                            "https://yts.mx/api/v2/list_movies.json", params=params
+                        logger.debug(
+                            f"[SCRAPER] YTS API call: {url} with params {params}"
                         )
+                        resp = await client.get(url, params=params)
                         resp.raise_for_status()
                         payload = resp.json()
                     except Exception as exc:  # noqa: BLE001
@@ -191,13 +193,29 @@ async def scrape_yts(
                             "[SCRAPER] YTS API fallback request failed: %s", exc
                         )
                         return []
+
                     data = payload.get("data") if isinstance(payload, dict) else None
-                    movies = data.get("movies") if isinstance(data, dict) else None
-                    if not isinstance(movies, list):
+                    movies_raw = data.get("movies") if isinstance(data, dict) else None
+
+                    if not isinstance(movies_raw, list):
+                        logger.debug(
+                            "[SCRAPER] YTS API response missing 'movies' list."
+                        )
                         return []
-                    return _build_results_from_movies(movies)
+
+                    logger.debug(
+                        f"[SCRAPER] YTS API returned {len(movies_raw)} movies before filtering."
+                    )
+                    if len(movies_raw) > 0 and len(movies_raw) <= 5:
+                        sample_titles = [
+                            (m.get("title"), m.get("year")) for m in movies_raw
+                        ]
+                        logger.debug(f"[SCRAPER] YTS API sample: {sample_titles}")
+
+                    return _build_results_from_movies(movies_raw)
 
                 # Attempt 1: honor both year and quality if provided
+                logger.debug("[SCRAPER] YTS API Fallback: Attempt 1 (year and quality)")
                 base_params: dict[str, Any] = {"query_term": query, "limit": 50}
                 if isinstance(resolution, str) and resolution.lower() in {
                     "720p",
@@ -216,27 +234,30 @@ async def scrape_yts(
                     return results
 
                 # Attempt 2: drop quality, keep year
+                logger.debug("[SCRAPER] YTS API Fallback: Attempt 2 (year, no quality)")
                 params_no_quality = {
                     k: v for k, v in base_params.items() if k != "quality"
                 }
-                results = await _call_list_movies(params_no_quality)
-                if results:
-                    logger.info(
-                        "[SCRAPER] YTS API fallback (no quality) finished. Found %d torrents.",
-                        len(results),
-                    )
-                    return results
+                if params_no_quality != base_params:
+                    results = await _call_list_movies(params_no_quality)
+                    if results:
+                        logger.info(
+                            "[SCRAPER] YTS API fallback (no quality) finished. Found %d torrents.",
+                            len(results),
+                        )
+                        return results
 
                 # Attempt 3: drop year filter from request but filter in-code by year
+                logger.debug("[SCRAPER] YTS API Fallback: Attempt 3 (no year param)")
                 params_no_year = {k: v for k, v in base_params.items() if k != "year"}
-                results_all_years = await _call_list_movies(params_no_year)
-                if results_all_years:
-                    # _build_results_from_movies() already filters by 'year' via closure
-                    logger.info(
-                        "[SCRAPER] YTS API fallback (no year param) finished. Found %d torrents after filtering.",
-                        len(results_all_years),
-                    )
-                    return results_all_years
+                if params_no_year != base_params:
+                    results_all_years = await _call_list_movies(params_no_year)
+                    if results_all_years:
+                        logger.info(
+                            "[SCRAPER] YTS API fallback (no year param) finished. Found %d torrents after filtering.",
+                            len(results_all_years),
+                        )
+                        return results_all_years
 
                 logger.info("[SCRAPER] YTS API fallback finished. Found 0 torrents.")
                 return []
@@ -300,7 +321,7 @@ async def scrape_yts(
                 return await _api_fallback()
 
             # Stage 3: Call the YTS API with the movie ID and validate
-            api_url = f"https://yts.mx/api/v2/movie_details.json?movie_id={movie_id}"
+            api_url = f"https://yts.lt/api/v2/movie_details.json?movie_id={movie_id}"
             api_data: dict[str, Any] | None = None
             movie_data: dict[str, Any] | None = None
             torrents: list[dict[str, Any]] = []
