@@ -200,13 +200,104 @@ class GenericTorrentScraper:
 
         # --- Two-stage filtering to improve precision ---
         filter_query = (base_query_for_filter or query).lower()
+        target_details = parse_torrent_name(base_query_for_filter or query)
+        target_season = (
+            target_details.get("season")
+            if isinstance(target_details.get("season"), int)
+            else None
+        )
+        target_episode = (
+            target_details.get("episode")
+            if isinstance(target_details.get("episode"), int)
+            else None
+        )
+        if target_episode is not None and target_season is None:
+            target_episode = None
+
+        season_tokens: set[str] = set()
+        episode_tokens: set[str] = set()
+        if target_season is not None:
+            season_tokens.update(
+                {
+                    f"S{target_season:02d}",
+                    f"S{target_season}",
+                    f"SEASON {target_season}",
+                }
+            )
+        if target_season is not None and target_episode is not None:
+            episode_tokens.update(
+                {
+                    f"S{target_season:02d}E{target_episode:02d}",
+                    f"S{target_season}E{target_episode}",
+                    f"{target_season}X{target_episode:02d}",
+                    f"{target_season}X{target_episode}",
+                }
+            )
+
+        def _title_contains_tokens(raw_title: str, tokens: set[str]) -> bool:
+            if not tokens:
+                return False
+            upper = raw_title.upper()
+            compact = re.sub(r"[^A-Z0-9]", "", upper)
+            return any(token in upper or token in compact for token in tokens)
+
+        def _matches_target_episode(
+            parsed_info: dict[str, Any], raw_title: str
+        ) -> bool:
+            parsed_season = parsed_info.get("season")
+            parsed_episode = parsed_info.get("episode")
+            parsed_is_pack = bool(parsed_info.get("is_season_pack"))
+
+            if target_season is not None and target_episode is not None:
+                if (
+                    isinstance(parsed_season, int)
+                    and isinstance(parsed_episode, int)
+                    and parsed_season == target_season
+                    and parsed_episode == target_episode
+                ):
+                    return True
+                if (
+                    parsed_is_pack
+                    and isinstance(parsed_season, int)
+                    and parsed_season == target_season
+                ):
+                    return True
+                return _title_contains_tokens(raw_title, episode_tokens)
+
+            if target_season is not None:
+                if isinstance(parsed_season, int) and parsed_season == target_season:
+                    return True
+                if (
+                    parsed_is_pack
+                    and isinstance(parsed_season, int)
+                    and parsed_season == target_season
+                ):
+                    return True
+                return _title_contains_tokens(raw_title, season_tokens)
+
+            return True
 
         # Stage 1: lenient fuzzy match to gather viable candidates
         candidates: list[tuple[TorrentData, str]] = []
         for res in results:
             parsed_info = parse_torrent_name(res.name)
-            base_name = parsed_info.get("title", "").lower()
+            if not _matches_target_episode(parsed_info, res.name):
+                continue
+            base_name = parsed_info.get("title", "").lower().strip()
+            if not base_name:
+                base_name = re.sub(r"[\._]", " ", res.name).strip().lower()
             candidates.append((res, base_name))
+
+        if not candidates:
+            if target_episode is not None or target_season is not None:
+                logger.info(
+                    f"[SCRAPER] {self.site_name}: No torrents matched season/episode filters for '{query}'"
+                )
+            else:
+                logger.info(
+                    f"[SCRAPER] {self.site_name}: No viable candidates after initial parsing for '{query}'"
+                )
+            return []
 
         # Token helpers to allow simple, fast guardrails against known mis-matches
         def _normalize_local(text: str) -> str:

@@ -39,28 +39,48 @@ async def main():
 
     while True:
         try:
-            query = input("\nEnter query (e.g., 'The Mandalorian'): ")
-            if query.lower() == "exit":
+            media_type = input("\nEnter media type ('movie' or 'tv'): ").strip().lower()
+            if media_type == "exit":
                 break
-
-            media_type = input("Enter media type ('movie' or 'tv'): ").lower()
-            if media_type.lower() == "exit":
-                break
-            if media_type not in ["movie", "tv"]:
+            if media_type not in {"movie", "tv"}:
                 print("Invalid media type. Please enter 'movie' or 'tv'.")
                 continue
+
+            raw_title = input("Enter title/query (e.g., 'The Mandalorian'): ").strip()
+            if raw_title.lower() == "exit":
+                break
+            if not raw_title:
+                print("Title cannot be empty.")
+                continue
+
+            final_query = raw_title
+            if media_type == "tv":
+                season_str = input("Enter season number (e.g., 2): ").strip()
+                if season_str.lower() == "exit":
+                    break
+                episode_str = input("Enter episode number (e.g., 3): ").strip()
+                if episode_str.lower() == "exit":
+                    break
+                if not (season_str.isdigit() and episode_str.isdigit()):
+                    print("Season and episode must be numeric.")
+                    continue
+                season = int(season_str)
+                episode = int(episode_str)
+                final_query = f"{raw_title} S{season:02d}E{episode:02d}"
 
             limit_str = input(
                 "Enter limit for results (default 15, press Enter for default): "
             )
+            if limit_str.lower().strip() == "exit":
+                break
             limit = int(limit_str) if limit_str.strip() else 15
 
             print(
-                f"\nFetching 1337x results for: '{query}' (Media Type: {media_type}, Limit: {limit})..."
+                f"\nFetching 1337x results for: '{final_query}' (Media Type: {media_type}, Limit: {limit})..."
             )
 
             results = await scrape_1337x(
-                query=query,
+                query=final_query,
                 media_type=media_type,
                 search_url_template="",  # Not directly used by scrape_1337x, config is loaded internally
                 context=mock_context,
