@@ -455,6 +455,68 @@ async def test_scrape_1337x_passes_limit(mocker):
 
 
 @pytest.mark.asyncio
+async def test_scrape_eztv_parses_results(mocker):
+    """EZTV YAML scraper parses results and resolves magnet links."""
+
+    search_html = """
+    <table>
+      <tr class="forum_header_border" name="hover">
+        <td>Example Show</td>
+        <td>
+          <a class="epinfo" href="/episodes/12345">
+            Example.Show.S01E01.1080p.WEB.x264
+          </a>
+        </td>
+        <td class="forum_thread_post_end">150</td>
+        <td>1.4 GB</td>
+        <td>0</td>
+        <td>SceneGroup</td>
+      </tr>
+    </table>
+    """
+    detail_html = """
+    <div>
+      <a href="magnet:?xt=urn:btih:EZTVHASH&dn=Example+Show">Magnet</a>
+    </div>
+    """
+
+    fetch_mock = mocker.patch(
+        "telegram_bot.services.generic_torrent_scraper.GenericTorrentScraper._fetch_page",
+        new_callable=AsyncMock,
+        side_effect=[search_html, detail_html],
+    )
+
+    context = Mock()
+    context.bot_data = {
+        "SEARCH_CONFIG": {
+            "preferences": {
+                "tv": {
+                    "codecs": {"x264": 2},
+                    "resolutions": {"1080p": 3},
+                    "uploaders": {},
+                }
+            }
+        }
+    }
+
+    results = await scraping_service.scrape_yaml_site(
+        "Example Show S01E01",
+        "tv",
+        "https://eztvx.to/search/{query}",
+        context,
+        site_name="eztv",
+        base_query_for_filter="Example Show S01E01",
+    )
+
+    assert fetch_mock.await_count == 2
+    assert len(results) == 1
+    entry = results[0]
+    assert entry["source"] == "eztv"
+    assert entry["seeders"] == 150
+    assert entry["page_url"].startswith("magnet:?xt=urn:btih:EZTVHASH")
+
+
+@pytest.mark.asyncio
 async def test_scrape_yts_parses_results(mocker):
     search_html = """
     <div class="browse-movie-wrap">

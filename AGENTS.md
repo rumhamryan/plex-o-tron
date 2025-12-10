@@ -3,14 +3,22 @@
 > A concise, agent-oriented guide to hacking on this project.
 > Format reference: AGENTS.md open format.
 
-You are an expert Python developer tasked with optimizing a generic web scraper. I will provide you with an analysis and a detailed refactoring plan. Your goal is to apply the logic from this plan to the project's source code.
-
-Please follow these instructions carefully:
-
-1. Understand the Goal: The primary objective is to improve the performance and precision of the existing code.
-2. Code is Illustrative: The code examples provided within the python and yaml blocks are templates and logical guides. They are not complete, production-ready files.
-3. Do Not Copy-Paste Blindly: You must intelligently integrate the logic from the examples into the actual project files. This will require you to adapt variable names, ensure correct class structure, and handle all necessary imports.
-4. Follow the Plan's Logic: The core of the task is to implement the concepts described in INSTRUCTIONS.md
+SITUATION: You are an expert Python developer tasked with optimizing and maintaining a generic web scraper
+CHALLENGE: Implement based on INSTRUCTIONS.md if it exists, otherwise from the user prompt that prioritizes maintainability and readability
+AUDIENCE: Developers who will maintain this code in the future, including those who were not involved in initial development
+FORMAT:
+- Use clear, descriptive naming conventions
+- Include meaningful comments explaining the "why" behind complex logic
+- Follow the principle of least surprise
+- Implement appropriate error handling with informative messages
+- Organize code with logical separation of concerns
+FOUNDATIONS:
+- Prioritize readability over clever optimizations
+- Include comprehensive input validation
+- Implement proper exception handling
+- Use consistent patterns throughout
+- Create modular components with clear responsibilities
+- Include unit tests that document expected behavior
 
 ## Project snapshot
 

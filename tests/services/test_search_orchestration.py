@@ -151,7 +151,7 @@ async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
     call = m_yaml.await_args
     # Positional args: query, media_type, _search_url_template, context
     assert call.args[0].startswith("Alien")
-    assert call.kwargs.get("site_name") == "EZTV"
+    assert call.kwargs.get("site_name") == "eztv"
     assert call.kwargs.get("base_query_for_filter") == "Alien"
 
 
@@ -180,3 +180,27 @@ async def test_orchestrate_searches_handles_yts_name_variants(mocker):
     # ensure query unmodified for YTS
     call = m_yts.await_args
     assert call.args[0] == "Alien"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_normalizes_eztv_domains(mocker):
+    ctx = _ctx_with_config(
+        websites_tv=[
+            {
+                "name": "eztvx.to",
+                "enabled": True,
+                "search_url": "https://eztvx.to/search/{query}",
+            }
+        ]
+    )
+
+    m_yaml = mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_yaml_site",
+        new=AsyncMock(return_value=[{"title": "Show", "score": 5, "source": "eztv"}]),
+    )
+
+    results = await orchestrate_searches("Example Show S01E01", "tv", ctx)
+    assert results and results[0]["source"] == "eztv"
+    assert m_yaml.await_count == 1
+    call = m_yaml.await_args
+    assert call.kwargs.get("site_name") == "eztv"

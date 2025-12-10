@@ -42,7 +42,6 @@ async def orchestrate_searches(
         )
         return []
 
-    # A dedicated scraper for EZTV would need to be created in the future.
     scraper_map: dict[str, ScraperFunction] = {
         "1337x": scraping_service.scrape_1337x,
         "1337x.to": scraping_service.scrape_1337x,
@@ -50,9 +49,21 @@ async def orchestrate_searches(
         "yts": scraping_service.scrape_yts,
         "yts.lt": scraping_service.scrape_yts,
         "yts.mx": scraping_service.scrape_yts,
+        "eztv": (
+            lambda search_query, media_type, site_url, context, **extra_kwargs: (
+                scraping_service.scrape_yaml_site(
+                    search_query,
+                    media_type,
+                    site_url,
+                    context,
+                    site_name=extra_kwargs.pop("site_name", "eztv"),
+                    **extra_kwargs,
+                )
+            )
+        ),
     }
 
-    tasks = []
+    task_entries: list[tuple[str, asyncio.Task[list[dict[str, Any]]]]] = []
     for site_info in sites_to_scrape:
         if not isinstance(site_info, dict):
             logger.warning(
@@ -79,6 +90,10 @@ async def orchestrate_searches(
                 )
                 continue
 
+            canonical_site_name: str = site_name
+            if normalized_name and "eztv" in normalized_name:
+                canonical_site_name = "eztv"
+
             search_query = query
             year = kwargs.get("year")
 
@@ -87,12 +102,15 @@ async def orchestrate_searches(
                 search_query += f" {year}"
 
             scraper_func = scraper_map.get(normalized_name) if normalized_name else None
+            if scraper_func is None and normalized_name and "eztv" in normalized_name:
+                scraper_func = scraper_map.get("eztv")
 
             # Allow callers to override the string used for fuzzy filtering.
             base_filter = kwargs.get("base_query_for_filter", query)
             extra_kwargs = {
                 k: v for k, v in kwargs.items() if k != "base_query_for_filter"
             }
+            extra_kwargs["site_name"] = canonical_site_name
 
             if (
                 normalized_name
@@ -112,17 +130,22 @@ async def orchestrate_searches(
                         **extra_kwargs,
                     )
                 )
-                tasks.append(task)
+                task_entries.append((site_name, task))
             elif scraper_func is not None:
                 logger.info(
                     f"[SEARCH] Creating search task for '{site_name}' with query: '{query}'"
                 )
                 task = asyncio.create_task(
                     scraper_func(
-                        search_query, media_type, site_url, context, **extra_kwargs
+                        search_query,
+                        media_type,
+                        site_url,
+                        context,
+                        base_query_for_filter=base_filter,
+                        **extra_kwargs,
                     )
                 )
-                tasks.append(task)
+                task_entries.append((site_name, task))
             else:
                 # Fallback: try YAML-backed generic scraper by site name
                 logger.info(
@@ -134,17 +157,22 @@ async def orchestrate_searches(
                         media_type,
                         site_url,
                         context,
-                        site_name=site_name,
+                        site_name=canonical_site_name,
                         base_query_for_filter=base_filter,
                     )
                 )
-                tasks.append(task)
+                task_entries.append((site_name, task))
 
-    if not tasks:
+    if not task_entries:
         logger.warning("[SEARCH] No enabled search sites found to orchestrate.")
         return []
 
-    results_from_all_sites = await asyncio.gather(*tasks)
+    results_from_all_sites = await asyncio.gather(
+        *(entry_task for _, entry_task in task_entries)
+    )
+
+    for (site_label, _), site_results in zip(task_entries, results_from_all_sites):
+        _log_scraper_results(site_label, site_results)
     all_results = [result for sublist in results_from_all_sites for result in sublist]
     all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
 
@@ -156,6 +184,40 @@ async def orchestrate_searches(
 
 # --- Result Scoring and Parsing ---
 # (Moved to telegram_bot/utils.py to avoid circular imports)
+
+
+def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None:
+    """
+    Emits a structured log entry enumerating each scraper result so operators
+    can observe exactly what was returned before UI filtering occurs.
+    """
+    header = f"--- {site_label} Scraper Results ---"
+    lines = [header]
+    if not results:
+        lines.append("No results returned.")
+        lines.append("--------------------")
+        logger.info("\n".join(lines))
+        return
+
+    ordered_fields = [
+        "title",
+        "page_url",
+        "score",
+        "source",
+        "uploader",
+        "size_gb",
+        "codec",
+        "seeders",
+        "leechers",
+        "year",
+    ]
+
+    for idx, result in enumerate(results, start=1):
+        lines.append(f"Result {idx}:")
+        for field in ordered_fields:
+            lines.append(f"  {field}: {result.get(field)}")
+        lines.append("--------------------")
+    logger.info("\n".join(lines))
 
 
 def _parse_size_to_gb(size_str: str) -> float:
