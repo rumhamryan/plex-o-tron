@@ -201,7 +201,7 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
 
     ordered_fields = [
         "title",
-        "page_url",
+        # "page_url",
         "score",
         "source",
         "uploader",

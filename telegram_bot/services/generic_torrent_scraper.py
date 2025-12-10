@@ -333,13 +333,19 @@ class GenericTorrentScraper:
             base_tokens = _tokens_no_stop_local(base)
             return disallowed_tokens_tv.isdisjoint(base_tokens)
 
-        strong_candidates = [
-            (r, base)
-            for r, base in candidates
-            if _allowed_base(base)
-            and self._fuzz_scorer(filter_query, base) >= self._fuzz_threshold
-        ]
+        candidate_metrics: list[tuple[str, str, int, bool]] = []
+        strong_candidates: list[tuple[TorrentData, str]] = []
+        for res, base in candidates:
+            fuzz_score = self._fuzz_scorer(filter_query, base)
+            allowed = _allowed_base(base)
+            if allowed and fuzz_score >= self._fuzz_threshold:
+                strong_candidates.append((res, base))
+            candidate_metrics.append((res.name, base, fuzz_score, allowed))
         if not strong_candidates:
+            if candidate_metrics:
+                self._log_candidate_filter_metrics(
+                    filter_query, candidate_metrics, self._fuzz_threshold
+                )
             logger.info(
                 f"[SCRAPER] {self.site_name}: No strong candidates for '{query}'"
             )
@@ -532,6 +538,43 @@ class GenericTorrentScraper:
             if magnet_link:
                 item.magnet_url = magnet_link
 
+    def _log_candidate_filter_metrics(
+        self,
+        filter_query: str,
+        metrics: list[tuple[str, str, int, bool]],
+        threshold: int,
+        *,
+        max_entries: int = 10,
+    ) -> None:
+        """
+        Emits diagnostics showing how each parsed torrent compared to the fuzzy filter.
+
+        This is especially helpful when the scraper returns rows but the precision
+        filters drop them all (e.g., EZTV returning new-season episodes when an
+        older season was requested).
+        """
+        if not metrics:
+            return
+        lines = [
+            f"--- {self.site_name} Candidate Filter Diagnostics ---",
+            f"Filter query: {filter_query}",
+            f"Fuzz threshold: {threshold}",
+        ]
+        for idx, (raw_title, base_name, fuzz_score, allowed) in enumerate(
+            metrics[:max_entries], start=1
+        ):
+            lines.append(f"Candidate {idx}:")
+            lines.append(f"  raw_title: {raw_title}")
+            lines.append(f"  normalized_base: {base_name or '<empty>'}")
+            lines.append(f"  allowed_after_tokens: {allowed}")
+            lines.append(f"  fuzz_score: {fuzz_score}")
+        if len(metrics) > max_entries:
+            lines.append(
+                f"... {len(metrics) - max_entries} additional candidates omitted ..."
+            )
+        lines.append("--------------------")
+        logger.info("\n".join(lines))
+
     async def _fetch_page(
         self, url: str, *, referer_base_url: str | None = None
     ) -> str | None:
@@ -569,7 +612,7 @@ class GenericTorrentScraper:
                 )
                 return response.text
         except httpx.HTTPStatusError as exc:  # noqa: BLE001
-            logger.error(f"[SCRAPER] HTTP error fetching {url}: {exc}")
+            # logger.error(f"[SCRAPER] HTTP error fetching {url}: {exc}")
             if exc.response is not None:
                 logger.debug(
                     f"[SCRAPER] {self.site_name}: Error response body: {exc.response.text[:200]!r}"
