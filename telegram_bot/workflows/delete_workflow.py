@@ -889,11 +889,11 @@ async def _handle_confirm_delete_button(query, context):
         escaped_size = escape_markdown(size_label, version=2)
 
         def _format_item_line(prefix: str) -> str:
-            return f"{prefix}\n`{escaped_name}` \\| {escaped_size}"
+            return f"{prefix}\n{escaped_name} \nSize: {escaped_size}"
 
         await safe_edit_message(
             query.message,
-            text="Connecting to Plex and attempting to delete the item\\.\\.\\.",
+            text="Connecting to Plex and attempting to delete the item...",
             reply_markup=None,
         )
 
@@ -948,7 +948,7 @@ async def _handle_confirm_delete_button(query, context):
             )
 
     else:
-        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file\\."
+        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete\\. Please configure Plex in your `config\\.ini` file\\."
 
     # Clear the user's conversational context
     keys_to_clear = [
