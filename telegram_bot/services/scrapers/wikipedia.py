@@ -234,7 +234,7 @@ async def fetch_movie_years_from_wikipedia(
         best: str | None = None
         disamb: str | None = None
         direct_exact_match: str | None = None
-        title_cmp = title.casefold()
+        title_cmp_normalized = normalized_title_key
         for candidate in search_results:
             if disamb is None and disamb_pat.search(candidate):
                 disamb = candidate
@@ -247,7 +247,8 @@ async def fetch_movie_years_from_wikipedia(
             if (
                 direct_exact_match is None
                 and normalized_candidate == stripped_candidate
-                and stripped_candidate == title_cmp
+                and _normalize_for_comparison(normalized_candidate)
+                == title_cmp_normalized
             ):
                 direct_exact_match = candidate
 

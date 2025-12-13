@@ -42,3 +42,23 @@ async def test_fetch_movie_years_supports_exact_title_without_film_suffix(mocker
 
     assert years == [1999]
     assert corrected in (None, "The Matrix")
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_years_handles_titles_with_punctuation(mocker):
+    mocker.patch(
+        "wikipedia.search",
+        return_value=["Jumanji: The Next Level"],
+    )
+    mocker.patch(
+        "wikipedia.summary",
+        return_value="Jumanji: The Next Level is a 2019 fantasy adventure film.",
+    )
+    mocker.patch(
+        "wikipedia.page", return_value=_DummyWikiPage("Jumanji: The Next Level")
+    )
+
+    years, corrected = await fetch_movie_years_from_wikipedia("Jumanji The Next Level")
+
+    assert years == [2019]
+    assert corrected == "Jumanji: The Next Level"
