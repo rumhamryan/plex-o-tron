@@ -270,7 +270,7 @@ async def test_success_message_includes_extension_and_size(
 
     final_text = safe_edit_mock.await_args.kwargs["text"]
     escaped_name = escape_markdown("movie.mkv", version=2)
-    assert f"{escaped_name} \nSize: 4\\.0 GB" in final_text
+    assert f"{escaped_name}\nSize: 4\\.0 GB" in final_text
     assert "Successfully Deleted from Plex" in final_text
 
 

@@ -869,6 +869,7 @@ async def _handle_selection_button(query, context):
 async def _handle_confirm_delete_button(query, context):
     """Handles the final 'Yes, Delete' confirmation using the Plex API first."""
     path_to_delete = context.user_data.pop("path_to_delete", None)
+    delete_target_kind = context.user_data.get("delete_target_kind")
     plex_config = context.bot_data.get("PLEX_CONFIG")
     message_text = ""
     plex: PlexServer | None = None
@@ -889,11 +890,11 @@ async def _handle_confirm_delete_button(query, context):
         escaped_size = escape_markdown(size_label, version=2)
 
         def _format_item_line(prefix: str) -> str:
-            return f"{prefix}\n{escaped_name} \nSize: {escaped_size}"
+            return f"{prefix}\n{escaped_name}\nSize: {escaped_size}"
 
         await safe_edit_message(
             query.message,
-            text="Connecting to Plex and attempting to delete the item...",
+            text="Connecting to Plex and attempting to delete the item\\.\\.\\.",
             reply_markup=None,
         )
 
@@ -947,8 +948,25 @@ async def _handle_confirm_delete_button(query, context):
                 escape_markdown(detail or "Unknown error", version=2)
             )
 
+        filesystem_deleted = not os.path.exists(path_to_delete)
+        if (
+            filesystem_deleted
+            and delete_target_kind == "movie_collection"
+            and plex is not None
+        ):
+            base_collection_name = _get_display_name(path_to_delete)
+            try:
+                await _delete_plex_collection(plex, base_collection_name)
+            except Exception as exc:
+                message_text += "\n" + "⚠️ Failed to delete Plex collection\\."
+                logger.error(
+                    "Failed to delete Plex collection '%s': %s",
+                    base_collection_name,
+                    exc,
+                    exc_info=True,
+                )
     else:
-        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete\\. Please configure Plex in your `config\\.ini` file\\."
+        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file\\."
 
     # Clear the user's conversational context
     keys_to_clear = [
