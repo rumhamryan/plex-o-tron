@@ -894,7 +894,7 @@ async def _handle_confirm_delete_button(query, context):
 
         await safe_edit_message(
             query.message,
-            text="Connecting to Plex and attempting to delete the item\\.\\.\\.",
+            text="Connecting to Plex and attempting to delete the item...",
             reply_markup=None,
         )
 
