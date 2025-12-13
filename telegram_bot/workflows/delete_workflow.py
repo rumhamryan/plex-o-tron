@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 from plexapi.server import PlexServer
-from plexapi.exceptions import Unauthorized
+from plexapi.exceptions import NotFound, Unauthorized
 
 from telegram import (
     Update,
@@ -27,10 +28,163 @@ from ..services.search_logic import (
     find_season_directory,
     find_episode_file,
 )
-from ..utils import safe_edit_message, safe_send_message
+from ..utils import format_bytes, safe_edit_message, safe_send_message
 
 if TYPE_CHECKING:
     from plexapi.video import Movie, Episode, Show, Season
+
+
+BUTTON_LABEL_MAX_LEN = 48
+UNKNOWN_SIZE_LABEL = "Unknown size"
+
+
+class PlexDeleteResult(TypedDict, total=False):
+    status: Literal["success", "skip", "not_found", "error"]
+    detail: str
+    plex_deleted: bool
+    plex_items_deleted: int
+
+
+def _get_display_name(path: str) -> str:
+    """Return a stable display name for a file/folder path."""
+    normalized = path.rstrip(os.sep)
+    base_name = os.path.basename(normalized)
+    return base_name or normalized
+
+
+def _format_size_label(path: str) -> str:
+    """Return a short size label (in GB) for display purposes."""
+    try:
+        size_bytes = os.path.getsize(path)
+    except OSError as exc:
+        logger.info("Unable to determine file size for '%s': %s", path, exc)
+        return UNKNOWN_SIZE_LABEL
+
+    if size_bytes <= 0:
+        return "0 GB"
+
+    size_in_gb = round(size_bytes / (1024**3), 2)
+    if size_in_gb == 0:
+        return format_bytes(size_bytes)
+    return f"{size_in_gb} GB"
+
+
+def _compose_button_label(path: str) -> str:
+    base_name = _get_display_name(path)
+    size_label = _format_size_label(path)
+    candidate = f"{base_name} | {size_label}"
+    if len(candidate) <= BUTTON_LABEL_MAX_LEN:
+        return candidate
+
+    fallback = f"{base_name} | {UNKNOWN_SIZE_LABEL}"
+    if len(fallback) <= BUTTON_LABEL_MAX_LEN:
+        return fallback
+
+    suffix = f" | {UNKNOWN_SIZE_LABEL}"
+    available = BUTTON_LABEL_MAX_LEN - len(suffix)
+    if available <= 1:
+        truncated_name = base_name[: max(0, available)]
+        return f"{truncated_name}{suffix}"
+
+    truncated_name = base_name[: available - 1] + "…"
+    return f"{truncated_name}{suffix}"
+
+
+def _has_name_twin(path: str) -> bool:
+    """Detect whether another file in the same directory shares the same stem."""
+    target = Path(path)
+    if not target.exists() or not target.is_file():
+        return False
+
+    normalized = target.stem.casefold()
+    try:
+        for sibling in target.parent.iterdir():
+            if sibling == target or not sibling.is_file():
+                continue
+            if sibling.stem.casefold() == normalized:
+                logger.info(
+                    "Detected name twin for '%s' inside '%s'.",
+                    target.name,
+                    target.parent,
+                )
+                return True
+    except FileNotFoundError:
+        # Directory disappeared mid-check; treat as no twin.
+        return False
+    except OSError as exc:
+        logger.error(
+            "Unable to inspect sibling files for '%s': %s",
+            target.name,
+            exc,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"Unable to inspect sibling files for '{target.name}'. Please try again."
+        ) from exc
+
+    return False
+
+
+async def _delete_from_filesystem(path: str) -> tuple[bool, str]:
+    """Remove a file or directory from disk."""
+
+    def _remove() -> str:
+        if os.path.isfile(path):
+            os.remove(path)
+            return "file"
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+            return "directory"
+        raise FileNotFoundError(path)
+
+    try:
+        removed_kind = await asyncio.to_thread(_remove)
+        logger.info("Removed %s from filesystem: %s", removed_kind, path)
+        return True, removed_kind
+    except FileNotFoundError:
+        logger.warning(
+            "Filesystem deletion skipped because the path no longer exists: %s", path
+        )
+        return False, "missing"
+    except Exception as exc:
+        logger.error(
+            "Filesystem deletion failed for '%s': %s", path, exc, exc_info=True
+        )
+        return False, str(exc)
+
+
+async def _delete_plex_collection(plex: PlexServer, collection_name: str) -> bool:
+    """Delete a Plex collection by name, if it exists."""
+    if not collection_name:
+        return False
+
+    normalized = collection_name.strip()
+    if not normalized:
+        return False
+
+    try:
+        for section in plex.library.sections():
+            if getattr(section, "type", None) != "movie":
+                continue
+            try:
+                collection = section.collection(normalized)
+            except NotFound:
+                continue
+
+            await asyncio.to_thread(collection.delete)
+            logger.info("Deleted Plex collection '%s'.", normalized)
+            return True
+    except Exception as exc:
+        logger.error(
+            "Failed to delete Plex collection '%s': %s", normalized, exc, exc_info=True
+        )
+        raise
+
+    logger.info(
+        "No Plex collection named '%s' was found across the configured sections.",
+        normalized,
+    )
+    return False
 
 
 def _find_media_in_plex_by_path(
@@ -74,31 +228,69 @@ def _find_media_in_plex_by_path(
 
 
 async def _delete_item_from_plex(
-    path_to_delete: str, plex_config: dict, context: ContextTypes.DEFAULT_TYPE
-) -> tuple[bool, str]:
+    path_to_delete: str, plex_config: dict
+) -> tuple[PlexDeleteResult, PlexServer | None]:
     """
     Connects to Plex, finds a media item by its path, and deletes it via the API.
-    Returns (success_boolean, status_message).
+    Returns a structured result plus the Plex connection for downstream use.
     """
+    plex: PlexServer | None = None
     try:
-        # Connect to Plex in a non-blocking way
         plex = await asyncio.to_thread(
             PlexServer, plex_config["url"], plex_config["token"]
         )
+    except Unauthorized:
+        return (
+            {"status": "error", "detail": "Plex authentication failed."},
+            None,
+        )
+    except Exception as exc:
+        logger.error(
+            "Plex connection failed during deletion request: %s", exc, exc_info=True
+        )
+        return (
+            {
+                "status": "error",
+                "detail": f"An error occurred while communicating with Plex: {exc}",
+            },
+            None,
+        )
 
-        abs_path = os.path.abspath(path_to_delete)
+    if plex is None:
+        logger.error("Plex connection returned None during deletion.")
+        return (
+            {
+                "status": "error",
+                "detail": "Plex connection failed unexpectedly.",
+            },
+            None,
+        )
 
-        # If deleting a directory (e.g., a movie collection folder), find all movie items whose
-        # media files reside under this directory and delete them all from Plex.
+    plex_server: PlexServer = plex
+
+    abs_path = os.path.abspath(path_to_delete)
+    if os.path.isfile(abs_path):
+        try:
+            if _has_name_twin(abs_path):
+                detail = "Skipped Plex deletion because another encode with the same name exists in this directory."
+                logger.info("%s", detail)
+                return (
+                    {"status": "skip", "detail": detail, "plex_deleted": False},
+                    plex_server,
+                )
+        except RuntimeError as exc:
+            return ({"status": "error", "detail": str(exc)}, plex_server)
+
+    try:
         if os.path.isdir(abs_path):
             logger.info(
-                f"Directory delete requested. Searching Plex movies under: {abs_path}"
+                "Directory delete requested. Searching Plex movies under: %s",
+                abs_path,
             )
             items_to_delete = []
             seen_keys: set[int] = set()
 
-            for section in plex.library.sections():
-                # Only target movie libraries for collection folders
+            for section in plex_server.library.sections():
                 if getattr(section, "type", None) != "movie":
                     continue
                 for item in section.all():
@@ -106,62 +298,72 @@ async def _delete_item_from_plex(
                         for media in getattr(item, "media", []) or []:
                             for part in getattr(media, "parts", []) or []:
                                 part_path = os.path.abspath(getattr(part, "file", ""))
-                                # Match any file that lives within the collection directory
                                 if part_path.startswith(abs_path + os.sep):
-                                    # Use ratingKey to deduplicate multi-part/multi-file movies
                                     rk = getattr(item, "ratingKey", None)
                                     if rk is not None and rk not in seen_keys:
                                         seen_keys.add(rk)
                                         items_to_delete.append(item)
                                     break
                     except Exception:
-                        # Be defensive; continue scanning other items
                         continue
 
             if items_to_delete:
                 base_name = os.path.basename(abs_path)
                 logger.info(
-                    f"Found {len(items_to_delete)} Plex movie(s) under collection folder '{base_name}'. Deleting..."
+                    "Found %d Plex movie(s) under collection folder '%s'. Deleting...",
+                    len(items_to_delete),
+                    base_name,
                 )
-                # Delete sequentially to keep it simple and reliable
                 for it in items_to_delete:
                     await asyncio.to_thread(it.delete)
 
-                message = f"🗑️ *Successfully Deleted from Plex*\n`{escape_markdown(base_name, version=2)}`"
-                logger.info(
-                    f"Successfully deleted {len(items_to_delete)} movie(s) for collection '{base_name}'."
+                return (
+                    {
+                        "status": "success",
+                        "detail": f"Deleted {len(items_to_delete)} Plex movie(s) linked to '{base_name}'.",
+                        "plex_deleted": True,
+                        "plex_items_deleted": len(items_to_delete),
+                    },
+                    plex_server,
                 )
-                return True, message
 
-        # Fallback: find a single matching item by exact path (file, season dir, show dir, or single movie dir)
-        plex_item = await asyncio.to_thread(_find_media_in_plex_by_path, plex, abs_path)
+        plex_item = await asyncio.to_thread(
+            _find_media_in_plex_by_path, plex_server, abs_path
+        )
 
         if not plex_item:
             return (
-                False,
-                "Could not find the item in your Plex library. It may have been already deleted or never scanned.",
+                {
+                    "status": "not_found",
+                    "detail": "Could not find the item in Plex. It may have already been removed.",
+                },
+                plex_server,
             )
 
         display_name = plex_item.title
-        logger.info(f"Found Plex item '{display_name}'. Attempting API deletion...")
-
-        # Perform the deletion
+        logger.info("Found Plex item '%s'. Attempting API deletion...", display_name)
         await asyncio.to_thread(plex_item.delete)
+        logger.info("Successfully deleted '%s' via Plex API.", display_name)
+        return (
+            {
+                "status": "success",
+                "detail": f"Deleted Plex item '{display_name}'.",
+                "plex_deleted": True,
+                "plex_items_deleted": 1,
+            },
+            plex_server,
+        )
 
-        # Success!
-        message = f"🗑️ *Successfully Deleted from Plex*\n`{escape_markdown(display_name, version=2)}`"
-        logger.info(f"Successfully deleted '{display_name}' via Plex API.")
-        return True, message
-
-    except Unauthorized:
-        return False, "Plex authentication failed. Please check your token."
-    except Exception as e:
+    except Exception as exc:
         logger.error(
-            f"An unexpected error occurred during Plex deletion: {e}", exc_info=True
+            "An unexpected error occurred during Plex deletion: %s", exc, exc_info=True
         )
         return (
-            False,
-            f"An error occurred while communicating with Plex:\n`{escape_markdown(str(e), version=2)}`",
+            {
+                "status": "error",
+                "detail": f"An error occurred while communicating with Plex: {exc}",
+            },
+            plex_server,
         )
 
 
@@ -206,7 +408,12 @@ async def handle_delete_workflow(
         )
         found = await find_media_by_name("movie", text, save_paths, "directory")
         await _present_delete_results(
-            found, status_message, "movie collection", text, context
+            found,
+            status_message,
+            "movie collection",
+            text,
+            context,
+            "movie_collection",
         )
         context.user_data.pop("next_action", None)
 
@@ -220,7 +427,12 @@ async def handle_delete_workflow(
         )
         found = await find_media_by_name("movie", text, save_paths, "file")
         await _present_delete_results(
-            found, status_message, "single movie", text, context
+            found,
+            status_message,
+            "single movie",
+            text,
+            context,
+            "movie_file",
         )
         context.user_data.pop("next_action", None)
 
@@ -268,7 +480,12 @@ async def handle_delete_workflow(
         if show_path and text.isdigit():
             found_path = await find_season_directory(show_path, int(text))
             await _present_delete_results(
-                found_path, status_message, f"Season {text}", text, context
+                found_path,
+                status_message,
+                f"Season {text}",
+                text,
+                context,
+                "tv_season",
             )
         else:
             await safe_edit_message(
@@ -318,7 +535,12 @@ async def handle_delete_workflow(
             if season_path:
                 found_path = await find_episode_file(season_path, season_num, int(text))
                 await _present_delete_results(
-                    found_path, status_message, f"S{season_num}E{text}", text, context
+                    found_path,
+                    status_message,
+                    f"S{season_num}E{text}",
+                    text,
+                    context,
+                    "tv_episode",
                 )
             else:
                 await safe_edit_message(
@@ -370,6 +592,7 @@ async def _present_delete_results(
     media_name: str,
     query_text: str,
     context: ContextTypes.DEFAULT_TYPE,
+    delete_target_kind: str,
 ):
     """Presents single, multiple, or no search results to the user for deletion."""
     if context.user_data is None:
@@ -377,6 +600,7 @@ async def _present_delete_results(
 
     if isinstance(results, str):
         context.user_data["path_to_delete"] = results
+        context.user_data["delete_target_kind"] = delete_target_kind
         base_name = os.path.basename(results)
 
         # FIX: Normalize path separators for display
@@ -404,12 +628,15 @@ async def _present_delete_results(
 
     elif isinstance(results, list):
         context.user_data["selection_choices"] = results
+        context.user_data["selection_target_kind"] = delete_target_kind
         keyboard = []
         for i, path in enumerate(results):
+            button_text = _compose_button_label(path)
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        os.path.basename(path), callback_data=f"delete_select_{i}"
+                        button_text,
+                        callback_data=f"delete_select_{i}",
                     )
                 ]
             )
@@ -501,6 +728,7 @@ async def _handle_tv_scope_buttons(query, context):
 
     if query.data == "delete_tv_all":
         context.user_data["path_to_delete"] = show_path
+        context.user_data["delete_target_kind"] = "tv_show"
         base_name = os.path.basename(show_path)
 
         display_path = show_path.replace(os.sep, "/")
@@ -564,6 +792,9 @@ async def _handle_selection_button(query, context):
         index = int(query.data.split("_")[2])
         path_to_delete = choices[index]
         context.user_data["path_to_delete"] = path_to_delete
+        target_kind = context.user_data.pop("selection_target_kind", None)
+        if target_kind:
+            context.user_data["delete_target_kind"] = target_kind
         base_name = os.path.basename(path_to_delete)
         message_text = (
             f"You selected:\n`{escape_markdown(base_name)}`\n\n"
@@ -598,8 +829,10 @@ async def _handle_selection_button(query, context):
 async def _handle_confirm_delete_button(query, context):
     """Handles the final 'Yes, Delete' confirmation using the Plex API first."""
     path_to_delete = context.user_data.pop("path_to_delete", None)
+    delete_target_kind = context.user_data.get("delete_target_kind")
     plex_config = context.bot_data.get("PLEX_CONFIG")
     message_text = ""
+    plex: PlexServer | None = None
 
     if not path_to_delete:
         message_text = (
@@ -611,35 +844,94 @@ async def _handle_confirm_delete_button(query, context):
         )
         message_text = "ℹ️ *Deletion Confirmed*\n\n(Note: Actual file deletion is disabled by the administrator)"
     elif plex_config:
+        display_name = _get_display_name(path_to_delete)
+        escaped_name = escape_markdown(display_name, version=2)
+        size_label = _format_size_label(path_to_delete)
+
+        def _format_item_line(prefix: str) -> str:
+            return f"{prefix}\n`{escaped_name}` | {size_label}"
+
         await safe_edit_message(
             query.message,
             text="Connecting to Plex and attempting to delete the item...",
             reply_markup=None,
         )
 
-        success, message_text = await _delete_item_from_plex(
-            path_to_delete, plex_config, context
-        )
+        result, plex = await _delete_item_from_plex(path_to_delete, plex_config)
+        status = result.get("status", "error")
+        detail = result.get("detail", "")
 
-        if not success and "Could not find" in message_text:
-            # Fallback to manual deletion if not found in Plex
-            logger.warning(
-                "Item not found in Plex, falling back to manual filesystem deletion."
+        if status == "success":
+            message_text = _format_item_line("🗑️ *Successfully Deleted from Plex*")
+        elif status == "skip":
+            logger.info(
+                "Plex deletion skipped for '%s'; falling back to filesystem removal.",
+                path_to_delete,
             )
-            try:
-                if os.path.exists(path_to_delete):
-                    display_name = os.path.basename(path_to_delete)
-                    if os.path.isfile(path_to_delete):
-                        await asyncio.to_thread(os.remove, path_to_delete)
-                    elif os.path.isdir(path_to_delete):
-                        await asyncio.to_thread(shutil.rmtree, path_to_delete)
-                    message_text = f"🗑️ *Item Not in Plex, Deleted Manually*\n`{escape_markdown(display_name, version=2)}`"
-                else:
+            manual_success, manual_detail = await _delete_from_filesystem(
+                path_to_delete
+            )
+            if manual_success:
+                message_text = (
+                    _format_item_line("⚠️ *Plex Skipped, Removed From Disk*")
+                    + "\n"
+                    + "Plex library left untouched because other encodes still exist."
+                )
+            else:
+                if manual_detail == "missing":
                     message_text = (
                         "❌ *Deletion Failed*\nThe path no longer exists on the server."
                     )
-            except Exception as e:
-                message_text = f"❌ *Manual Deletion Failed*\n`{escape_markdown(str(e), version=2)}`"
+                else:
+                    message_text = "❌ *Manual Deletion Failed*\n`{}`".format(
+                        escape_markdown(manual_detail, version=2)
+                    )
+        elif status == "not_found":
+            logger.warning(
+                "Item not found in Plex, falling back to manual filesystem deletion."
+            )
+            manual_success, manual_detail = await _delete_from_filesystem(
+                path_to_delete
+            )
+            if manual_success:
+                message_text = _format_item_line(
+                    "🗑️ *Item Not in Plex, Deleted Manually*"
+                )
+            else:
+                if manual_detail == "missing":
+                    message_text = (
+                        "❌ *Deletion Failed*\nThe path no longer exists on the server."
+                    )
+                else:
+                    message_text = "❌ *Manual Deletion Failed*\n`{}`".format(
+                        escape_markdown(manual_detail, version=2)
+                    )
+        else:
+            message_text = "❌ *Deletion Failed*\n`{}`".format(
+                escape_markdown(detail or "Unknown error", version=2)
+            )
+
+        filesystem_deleted = not os.path.exists(path_to_delete)
+        if (
+            filesystem_deleted
+            and delete_target_kind == "movie_collection"
+            and plex is not None
+        ):
+            base_collection_name = _get_display_name(path_to_delete)
+            escaped_collection = escape_markdown(base_collection_name, version=2)
+            try:
+                if await _delete_plex_collection(plex, base_collection_name):
+                    message_text += (
+                        "\n" + f"📚 Plex collection `{escaped_collection}` removed."
+                    )
+            except Exception as exc:
+                message_text += "\n" + "⚠️ Failed to delete Plex collection."
+                logger.error(
+                    "Failed to delete Plex collection '%s': %s",
+                    base_collection_name,
+                    exc,
+                    exc_info=True,
+                )
     else:
         message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file."
 
@@ -650,8 +942,10 @@ async def _handle_confirm_delete_button(query, context):
         "prompt_message_id",
         "season_to_delete_num",
         "selection_choices",
+        "selection_target_kind",
         "active_workflow",
         "path_to_delete",
+        "delete_target_kind",
     ]
     for key in keys_to_clear:
         context.user_data.pop(key, None)

@@ -2,10 +2,14 @@ import pytest
 from unittest.mock import AsyncMock
 
 from telegram import Update
+from telegram.helpers import escape_markdown
 
 from telegram_bot.workflows.delete_workflow import (
     handle_delete_buttons,
     handle_delete_workflow,
+    _handle_confirm_delete_button,
+    _present_delete_results,
+    _has_name_twin,
 )
 
 
@@ -23,7 +27,12 @@ async def test_delete_show_happy_path(
     )
     delete_mock = mocker.patch(
         "telegram_bot.workflows.delete_workflow._delete_item_from_plex",
-        new=AsyncMock(return_value=(False, "Could not find")),
+        new=AsyncMock(
+            return_value=(
+                {"status": "not_found", "detail": "Could not find"},
+                mocker.Mock(),
+            )
+        ),
     )
     rmtree_mock = mocker.patch("telegram_bot.workflows.delete_workflow.shutil.rmtree")
     mocker.patch(
@@ -74,9 +83,7 @@ async def test_delete_show_happy_path(
         ),
         context,
     )
-    delete_mock.assert_awaited_once_with(
-        "/path/show", {"url": "u", "token": "t"}, context
-    )
+    delete_mock.assert_awaited_once_with("/path/show", {"url": "u", "token": "t"})
     rmtree_mock.assert_called_once_with("/path/show")
 
 
@@ -99,3 +106,186 @@ async def test_delete_workflow_not_found(mocker, context, make_message):
     assert (
         "No single TV show directory found" in safe_edit_mock.await_args.kwargs["text"]
     )
+
+
+@pytest.mark.asyncio
+async def test_confirm_delete_skip_due_to_name_twin(
+    mocker, context, make_callback_query, make_message
+):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    delete_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_item_from_plex",
+        new=AsyncMock(
+            return_value=(
+                {
+                    "status": "skip",
+                    "detail": "Skipped due to twin",
+                    "plex_deleted": False,
+                },
+                mocker.Mock(),
+            )
+        ),
+    )
+    fs_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_from_filesystem",
+        new=AsyncMock(return_value=(True, "file")),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow._format_size_label",
+        return_value="4.5 GB",
+    )
+
+    context.user_data["path_to_delete"] = "/downloads/movie.mkv"
+    context.user_data["delete_target_kind"] = "movie_file"
+    context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "t"}
+
+    await _handle_confirm_delete_button(
+        make_callback_query("confirm_delete", make_message()), context
+    )
+
+    delete_mock.assert_awaited_once()
+    fs_mock.assert_awaited_once_with("/downloads/movie.mkv")
+    final_text = safe_edit_mock.await_args.kwargs["text"]
+    assert "Plex Skipped" in final_text
+    assert "| 4.5 GB" in final_text
+
+
+@pytest.mark.asyncio
+async def test_collection_delete_triggers_plex_cleanup(
+    mocker, context, make_callback_query, make_message
+):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    delete_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_item_from_plex",
+        new=AsyncMock(
+            return_value=(
+                {
+                    "status": "success",
+                    "detail": "Deleted Plex item",
+                    "plex_deleted": True,
+                },
+                mocker.Mock(),
+            )
+        ),
+    )
+    collection_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_plex_collection",
+        new=AsyncMock(return_value=True),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow._format_size_label",
+        return_value="1.0 GB",
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow.os.path.exists", return_value=False
+    )
+
+    context.user_data["path_to_delete"] = "/downloads/MovieCollection"
+    context.user_data["delete_target_kind"] = "movie_collection"
+    context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "t"}
+
+    await _handle_confirm_delete_button(
+        make_callback_query("confirm_delete", make_message()), context
+    )
+
+    delete_mock.assert_awaited_once()
+    collection_mock.assert_awaited_once()
+    plex_args = collection_mock.await_args.args
+    assert plex_args[1] == "MovieCollection"
+    final_text = safe_edit_mock.await_args.kwargs["text"]
+    assert "Plex collection" in final_text
+    assert "| 1.0 GB" in final_text
+
+
+@pytest.mark.asyncio
+async def test_present_delete_results_lists_show_sizes(mocker, context, make_message):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow._format_size_label",
+        side_effect=lambda path: "1.0 GB" if path.endswith("a.mkv") else "2.0 GB",
+    )
+    context.user_data.clear()
+
+    await _present_delete_results(
+        [
+            "/downloads/movie_a.mkv",
+            "/downloads/movie_b.mkv",
+        ],
+        make_message(),
+        "single movie",
+        "Movie",
+        context,
+        "movie_file",
+    )
+
+    reply_markup = safe_edit_mock.await_args.kwargs["reply_markup"]
+    buttons = reply_markup.inline_keyboard
+    assert "movie_a.mkv | 1.0 GB" in buttons[0][0].text
+    assert "movie_b.mkv | 2.0 GB" in buttons[1][0].text
+
+
+@pytest.mark.asyncio
+async def test_success_message_includes_extension_and_size(
+    mocker, context, make_callback_query, make_message
+):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_item_from_plex",
+        new=AsyncMock(
+            return_value=(
+                {
+                    "status": "success",
+                    "detail": "Deleted Plex item",
+                    "plex_deleted": True,
+                },
+                mocker.Mock(),
+            )
+        ),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow._format_size_label",
+        return_value="4.0 GB",
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow.os.path.exists", return_value=False
+    )
+
+    context.user_data["path_to_delete"] = "/downloads/movie.mkv"
+    context.user_data["delete_target_kind"] = "movie_file"
+    context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "t"}
+
+    await _handle_confirm_delete_button(
+        make_callback_query("confirm_delete", make_message()), context
+    )
+
+    final_text = safe_edit_mock.await_args.kwargs["text"]
+    escaped_name = escape_markdown("movie.mkv", version=2)
+    assert f"`{escaped_name}` | 4.0 GB" in final_text
+    assert "Successfully Deleted from Plex" in final_text
+
+
+def test_has_name_twin_detects_case_insensitive(tmp_path):
+    first = tmp_path / "Movie.File.mkv"
+    first.write_text("data")
+    twin = tmp_path / "movie.file.mp4"
+    twin.write_text("more data")
+
+    assert _has_name_twin(str(first)) is True
+    assert _has_name_twin(str(twin)) is True
+
+
+def test_has_name_twin_false_for_missing(tmp_path):
+    missing = tmp_path / "missing.file.mkv"
+    assert _has_name_twin(str(missing)) is False

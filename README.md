@@ -114,6 +114,19 @@ pre-commit install
 
 Run the commands above prior to executing `pre-commit run --all-files` to ensure your changes meet the project's linting standards.
 
+## Changelog-Driven Commits
+
+The repository keeps a running `Changelog.md`. The top-most entry (right after the example block) should describe the pending work and uses the format shown in the file with a `Commit: <pending>` header.
+
+To streamline this workflow:
+
+1. Install the existing pre-commit hooks (`pre-commit install && pre-commit install --hook-type commit-msg --hook-type post-commit`) so Git executes the custom `commit-msg` and `post-commit` stages.
+2. Edit `Changelog.md` before committing. Leave the header as `Commit: <pending>` and describe every touched path underneath.
+3. Run `git commit` **without** `-m`. The `commit-msg` hook copies that changelog entry into the commit message automatically.
+4. After the commit finishes, the `post-commit` hook swaps `<pending>` with the real commit hash. That change is left unstaged so you can review and include it as part of your next commit.
+
+If you prefer a custom commit message (e.g., `git commit -m "Hotfix"`), the hook detects the pre-populated text and leaves it untouched.
+
 
 
 
