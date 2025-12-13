@@ -6,7 +6,7 @@
 - Cache Wikipedia lookups (years, season counts, episode titles) to eliminate duplicate network calls during a single run and provide clearer fallbacks when configuration data is missing.
 - Let users refine the aggregated search results (pagination, resolution toggles, seed/size sorts) without rerunning every scraper, using richer callback actions on the existing inline keyboards.
 
-## Initiative 1 — Typed Search Session State
+## Initiative 1 – Typed Search Session State (✅ Complete – 2025‑12‑13)
 ### Goals
 - Replace the fragile stringly-typed `next_action` + scattered `context.user_data[...]` mutations with a `SearchSession` dataclass (or `TypedDict`) that tracks the current step, media type, resolution, and TV-specific attributes in one place.
 - Reduce the amount of "context lost" error handling by gating every handler with `session.require(...)` helpers and storing the session under a single key (e.g., `context.user_data["search_session"]`).
