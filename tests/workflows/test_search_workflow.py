@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 from telegram import Update
 
+from telegram_bot.workflows.search_session import SearchSession, SearchStep
 from telegram_bot.workflows.search_workflow import (
     handle_search_buttons,
     handle_search_workflow,
@@ -38,7 +39,9 @@ async def test_search_movie_happy_path(
         callback_query=make_callback_query("search_start_movie", make_message()),
     )
     await handle_search_buttons(start_update, context)
-    assert context.user_data["next_action"] == "search_movie_get_title"
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.media_type == "movie"
+    assert session.step == SearchStep.TITLE
 
     # Step 2: user provides title
     await handle_search_workflow(
@@ -49,8 +52,11 @@ async def test_search_movie_happy_path(
     orchestrate_mock.reset_mock()
 
     # Prepare context for resolution step
-    context.user_data["search_final_title"] = "Inception (2010)"
-    context.user_data["search_media_type"] = "movie"
+    session = SearchSession.from_user_data(context.user_data)
+    session.set_final_title("Inception (2010)")
+    session.media_type = "movie"
+    session.advance(SearchStep.RESOLUTION)
+    session.save(context.user_data)
 
     # Step 5: resolution button triggers final search
     await handle_search_buttons(
@@ -103,21 +109,25 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
         ),
         context,
     )
-    assert context.user_data["next_action"] == "search_tv_get_title"
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.media_type == "tv"
+    assert session.step == SearchStep.TITLE
 
     # Title step
     await handle_search_workflow(
         Update(update_id=2, message=make_message("My Show")), context
     )
-    assert context.user_data["next_action"] == "search_tv_get_season"
-    assert context.user_data["search_query_title"] == "My Show"
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.TV_SEASON
+    assert session.title == "My Show"
 
     # Season step
     await handle_search_workflow(
         Update(update_id=3, message=make_message("1")), context
     )
-    assert context.user_data["next_action"] == "search_tv_scope"
-    assert context.user_data["search_season_number"] == 1
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.TV_SCOPE
+    assert session.season == 1
 
     # Scope selection to single episode
     await handle_search_buttons(
@@ -129,7 +139,8 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
         ),
         context,
     )
-    assert context.user_data["next_action"] == "search_tv_get_episode"
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.TV_EPISODE
 
     # Episode step collects input and prompts for resolution
     await handle_search_workflow(
@@ -167,8 +178,7 @@ async def test_search_cancel_clears_context(
     assert context.user_data
 
     _clear_search_context(context)
-    assert "active_workflow" not in context.user_data
-    assert "next_action" not in context.user_data
+    assert "search_session" not in context.user_data
 
 
 @pytest.mark.asyncio
@@ -200,8 +210,10 @@ async def test_resolution_filters_results(
         new=AsyncMock(),
     )
 
-    context.user_data["search_final_title"] = "Movie (2021)"
-    context.user_data["search_media_type"] = "movie"
+    session = SearchSession(media_type="movie")
+    session.set_final_title("Movie (2021)")
+    session.advance(SearchStep.RESOLUTION)
+    session.save(context.user_data)
 
     message = make_message()
     await handle_search_buttons(
@@ -226,8 +238,9 @@ async def test_tv_season_reply_offers_scope_buttons(mocker, context, make_messag
     send_mock = mocker.patch.object(
         context.bot, "send_message", AsyncMock(return_value=make_message())
     )
-    context.user_data["next_action"] = "search_tv_get_season"
-    context.user_data["search_query_title"] = "My Show"
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SEASON)
+    session.set_title("My Show")
+    session.save(context.user_data)
     await handle_search_workflow(
         Update(update_id=1, message=make_message("1")), context
     )
@@ -252,14 +265,16 @@ async def test_handle_tv_scope_selection_single(
     send_prompt = mocker.patch(
         "telegram_bot.workflows.search_workflow._send_prompt", new=AsyncMock()
     )
-    context.user_data["search_query_title"] = "Show"
-    context.user_data["search_season_number"] = 1
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
+    session.set_title("Show")
+    session.save(context.user_data)
     update = Update(
         update_id=1,
         callback_query=make_callback_query("search_tv_scope_single", make_message()),
     )
     await handle_search_buttons(update, context)
-    assert context.user_data["next_action"] == "search_tv_get_episode"
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.TV_EPISODE
     send_prompt.assert_awaited_once()
 
 
@@ -295,8 +310,9 @@ async def test_handle_tv_scope_selection_season(
         "telegram_bot.workflows.search_workflow._present_search_results",
         new=AsyncMock(),
     )
-    context.user_data["search_query_title"] = "Show"
-    context.user_data["search_season_number"] = 1
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
+    session.set_title("Show")
+    session.save(context.user_data)
     # Select season scope
     update = Update(
         update_id=1,
@@ -346,8 +362,9 @@ async def test_handle_tv_scope_selection_season_fallback(
         "telegram_bot.workflows.search_workflow._present_season_download_confirmation",
         new=AsyncMock(),
     )
-    context.user_data["search_query_title"] = "Show"
-    context.user_data["search_season_number"] = 1
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
+    session.set_title("Show")
+    session.save(context.user_data)
     # Select season scope
     update = Update(
         update_id=1,
@@ -377,10 +394,13 @@ async def test_present_season_download_confirmation(mocker, context, make_messag
     safe_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
-    context.user_data["search_season_number"] = 1
-    context.user_data["season_episode_count"] = 2
+    session = SearchSession(media_type="tv", season=1)
+    session.season_episode_count = 2
+    session.save(context.user_data)
     torrents = [{"link": "a", "parsed_info": {}}, {"link": "b", "parsed_info": {}}]
-    await _present_season_download_confirmation(make_message(), context, torrents)
+    await _present_season_download_confirmation(
+        make_message(), context, torrents, session=session
+    )
     assert context.user_data["pending_season_download"] == torrents
     assert "torrents for" in safe_mock.await_args.kwargs["text"]
     safe_mock.assert_awaited_once()
@@ -391,10 +411,13 @@ async def test_present_season_download_confirmation_pack(mocker, context, make_m
     safe_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
-    context.user_data["search_season_number"] = 1
-    context.user_data["season_episode_count"] = 2
+    session = SearchSession(media_type="tv", season=1)
+    session.season_episode_count = 2
+    session.save(context.user_data)
     torrents = [{"link": "a", "parsed_info": {"is_season_pack": True}}]
-    await _present_season_download_confirmation(make_message(), context, torrents)
+    await _present_season_download_confirmation(
+        make_message(), context, torrents, session=session
+    )
     assert context.user_data["pending_season_download"] == torrents
     assert "season pack" in safe_mock.await_args.kwargs["text"].lower()
     safe_mock.assert_awaited_once()
@@ -407,11 +430,14 @@ async def test_present_season_download_confirmation_pack_has_reject_button(
     safe_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
-    context.user_data["search_season_number"] = 1
-    context.user_data["season_episode_count"] = 10
+    session = SearchSession(media_type="tv", season=1)
+    session.season_episode_count = 10
+    session.save(context.user_data)
     torrents = [{"link": "pack", "parsed_info": {"is_season_pack": True}}]
     message = make_message()
-    await _present_season_download_confirmation(message, context, torrents)
+    await _present_season_download_confirmation(
+        message, context, torrents, session=session
+    )
     kwargs = safe_mock.await_args.kwargs
     # Find the Reject button in the inline keyboard
     keyboard = kwargs["reply_markup"].inline_keyboard
@@ -428,9 +454,9 @@ async def test_handle_reject_season_pack_triggers_individual(
         new=AsyncMock(return_value=({}, None)),
     )
     # Arrange minimal state and mocks
-    context.user_data["tv_base_title"] = "Show"
-    context.user_data["search_season_number"] = 1
-    context.user_data["search_resolution"] = "1080p"
+    session = SearchSession(media_type="tv", season=1, resolution="1080p")
+    session.set_title("Show")
+    session.save(context.user_data)
     safe_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
@@ -496,8 +522,9 @@ async def test_entire_season_skips_pack_and_targets_missing(
     )
 
     # Seed state prior to selecting season scope
-    context.user_data["search_query_title"] = "Show"
-    context.user_data["search_season_number"] = 1
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
+    session.set_title("Show")
+    session.save(context.user_data)
 
     # 1) User chooses Entire Season (populates missing/owned and prompts resolution)
     await handle_search_buttons(
@@ -510,10 +537,10 @@ async def test_entire_season_skips_pack_and_targets_missing(
         context,
     )
 
-    # Validate precomputed lists
-    assert context.user_data["season_episode_count"] == 5
-    assert context.user_data["season_existing_episodes"] == [2, 4]
-    assert context.user_data["season_missing_episode_numbers"] == [1, 3, 5]
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.season_episode_count == 5
+    assert session.existing_episodes == [2, 4]
+    assert session.missing_episode_numbers == [1, 3, 5]
 
     # 2) User chooses resolution which triggers season search
     await handle_search_buttons(
@@ -561,8 +588,9 @@ async def test_entire_season_all_owned_exits_early(
     )
 
     # Seed title/season
-    context.user_data["search_query_title"] = "Show"
-    context.user_data["search_season_number"] = 1
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
+    session.set_title("Show")
+    session.save(context.user_data)
 
     await handle_search_buttons(
         Update(
@@ -575,7 +603,8 @@ async def test_entire_season_all_owned_exits_early(
     )
 
     # Should have detected all episodes present and not prompted for resolution
-    assert context.user_data["season_missing_episode_numbers"] == []
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.missing_episode_numbers == []
     prompt_res_mock.assert_not_awaited()
     # Confirm we informed the user
     assert "already exist" in (edit_mock.await_args.kwargs.get("text") or "")

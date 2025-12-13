@@ -6,6 +6,7 @@ import pytest
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from telegram_bot.workflows import search_workflow
+from telegram_bot.workflows.search_session import SearchSession
 
 
 @pytest.mark.asyncio
@@ -46,7 +47,7 @@ async def test_tv_season_fallback_uses_wiki_titles_and_corrected_title(mocker):
 
     captured = {}
 
-    async def _capture_confirmation(_message, _context, torrents):
+    async def _capture_confirmation(_message, _context, torrents, *, session=None):
         captured["torrents"] = torrents
 
     mocker.patch(
@@ -56,7 +57,10 @@ async def test_tv_season_fallback_uses_wiki_titles_and_corrected_title(mocker):
 
     # Minimal context and message mocks
     ctx = Mock()
-    ctx.user_data = {"season_episode_count": 1}
+    ctx.user_data = {}
+    session = SearchSession(media_type="tv")
+    session.season_episode_count = 1
+    session.save(ctx.user_data)
     message = Mock()
 
     await search_workflow._perform_tv_season_search_with_resolution(

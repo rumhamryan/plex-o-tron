@@ -1,7 +1,7 @@
 # telegram_bot/workflows/search_workflow.py
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from telegram import (
     Update,
@@ -20,6 +20,25 @@ from ..services import search_logic, torrent_service, scraping_service, plex_ser
 from ..services.media_manager import validate_and_enrich_torrent
 from ..utils import safe_edit_message, parse_torrent_name, safe_send_message
 from ..ui.views import send_confirmation_prompt
+from .search_session import (
+    CONTEXT_LOST_MESSAGE,
+    SearchSession,
+    SearchSessionError,
+    SearchStep,
+    clear_search_session,
+)
+
+
+def _get_session(context: ContextTypes.DEFAULT_TYPE) -> SearchSession:
+    if context.user_data is None:
+        context.user_data = {}
+    return SearchSession.from_user_data(context.user_data)
+
+
+def _save_session(context: ContextTypes.DEFAULT_TYPE, session: SearchSession) -> None:
+    if context.user_data is None:
+        context.user_data = {}
+    session.save(context.user_data)
 
 
 async def handle_search_workflow(
@@ -28,18 +47,15 @@ async def handle_search_workflow(
     """Manages text-based replies for the search workflow."""
     if not isinstance(update.message, Message) or not update.message.text:
         return
-    if context.user_data is None:
-        context.user_data = {}
+    session = _get_session(context)
 
     chat = update.effective_chat
     if not chat:
         return
 
     query = update.message.text.strip()
-    next_action = context.user_data.get("next_action")
+    prompt_message_id = session.consume_prompt_message_id()
 
-    # Clean up previous messages
-    prompt_message_id = context.user_data.pop("prompt_message_id", None)
     try:
         if prompt_message_id:
             await context.bot.delete_message(
@@ -48,20 +64,33 @@ async def handle_search_workflow(
         await update.message.delete()
     except BadRequest:
         pass
+    else:
+        _save_session(context, session)
 
-    # --- MOVIE WORKFLOW ---
-    if next_action == "search_movie_get_title":
-        await _handle_movie_title_reply(chat.id, query, context)
-    elif next_action == "search_movie_get_year":
-        await _handle_movie_year_reply(chat.id, query, context)
+    if not session.is_active:
+        return
 
-    # --- TV SHOW WORKFLOW ---
-    elif next_action == "search_tv_get_title":
-        await _handle_tv_title_reply(chat.id, query, context)
-    elif next_action == "search_tv_get_season":
-        await _handle_tv_season_reply(chat.id, query, context)
-    elif next_action == "search_tv_get_episode":
-        await _handle_tv_episode_reply(chat.id, query, context)
+    try:
+        if session.media_type == "movie":
+            if session.step == SearchStep.TITLE:
+                await _handle_movie_title_reply(chat.id, query, context, session)
+            elif session.step == SearchStep.YEAR:
+                await _handle_movie_year_reply(chat.id, query, context, session)
+        elif session.media_type == "tv":
+            if session.step == SearchStep.TITLE:
+                await _handle_tv_title_reply(chat.id, query, context, session)
+            elif session.step == SearchStep.TV_SEASON:
+                await _handle_tv_season_reply(chat.id, query, context, session)
+            elif session.step == SearchStep.TV_EPISODE:
+                await _handle_tv_episode_reply(chat.id, query, context, session)
+    except SearchSessionError as exc:
+        await safe_send_message(
+            context.bot,
+            chat.id,
+            exc.user_message,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        clear_search_session(context.user_data)
 
 
 async def handle_search_buttons(
@@ -69,153 +98,191 @@ async def handle_search_buttons(
 ) -> None:
     """Handles all button presses related to the search workflow."""
     query = update.callback_query
-    if (
-        not query
-        or not query.data
-        or not isinstance(query.message, Message)
-        or context.user_data is None
-    ):
+    if not query or not query.data or not isinstance(query.message, Message):
         return
 
     action = query.data
 
     if action.startswith("search_start_"):
         await _handle_start_button(query, context)
-    elif action.startswith("search_resolution_"):
-        await _handle_resolution_button(query, context)
-    elif action.startswith("search_tv_scope_"):
-        await _handle_tv_scope_selection(query, context)
-    elif action.startswith("search_select_season_"):
-        await _handle_season_selection_button(query, context)
-    elif action.startswith("search_select_episode_"):
-        await _handle_episode_selection_button(query, context)
-    elif action.startswith("search_select_year_"):  # <-- NEWLY ADDED BLOCK
-        await _handle_year_selection_button(query, context)
-    elif action.startswith("search_select_"):
-        await _handle_result_selection_button(query, context)
-    elif action == "reject_season_pack":
-        await handle_reject_season_pack(update, context)
-    else:
-        logger.warning(f"Received unhandled search callback: {action}")
+        return
+
+    session = _get_session(context)
+    requires_session = action.startswith(
+        (
+            "search_resolution_",
+            "search_tv_scope_",
+            "search_select_season_",
+            "search_select_episode_",
+            "search_select_year_",
+        )
+    )
+
+    if requires_session and not session.is_active:
+        await safe_edit_message(
+            query.message,
+            text=CONTEXT_LOST_MESSAGE,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    try:
+        if action.startswith("search_resolution_"):
+            await _handle_resolution_button(query, context, session)
+        elif action.startswith("search_tv_scope_"):
+            await _handle_tv_scope_selection(query, context, session)
+        elif action.startswith("search_select_season_"):
+            await _handle_season_selection_button(query, context, session)
+        elif action.startswith("search_select_episode_"):
+            await _handle_episode_selection_button(query, context, session)
+        elif action.startswith("search_select_year_"):
+            await _handle_year_selection_button(query, context, session)
+        elif action.startswith("search_select_"):
+            await _handle_result_selection_button(query, context)
+        else:
+            logger.warning(f"Received unhandled search callback: {action}")
+    except SearchSessionError as exc:
+        await safe_edit_message(
+            query.message,
+            text=exc.user_message,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        clear_search_session(context.user_data)
 
 
 # --- Text Reply Handlers ---
 
 
-async def _handle_movie_title_reply(chat_id, query, context):
+async def _handle_movie_title_reply(
+    chat_id: int, query: str, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+):
     """Handles the user's reply when asked for a movie title."""
-    if context.user_data.get("next_action") != "search_movie_get_title":
+    if session.media_type != "movie" or session.step != SearchStep.TITLE:
         return
 
     year_match = re.search(r"\b(19\d{2}|20\d{2})\b", query)
     if year_match:
         year = year_match.group(0)
-        # Preserve hyphens in titles (e.g., "Spider-Man") while removing other punctuation
         title_part = re.sub(r"[^\w\s-]", "", query[: year_match.start()]).strip()
-        # Title-case the movie title portion for display consistency
         title_part = title_part.title()
         full_title = f"{title_part} ({year})"
-        context.user_data["search_media_type"] = "movie"
-        await _prompt_for_resolution(chat_id, context, full_title, media_type="movie")
-    else:
-        # Preserve hyphens in free-form movie titles for search precision
-        title = re.sub(r"[^\w\s-]", "", query).strip()
-        # Normalize to Title Case for user-facing messages
-        title = title.title()
-        context.user_data["search_query_title"] = title
-
-        status_message = await safe_send_message(
-            context.bot,
-            chat_id,
-            f"🔎 Looking up release years for *{escape_markdown(title, version=2)}* on Wikipedia\\.\\.\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-
-        # Use Wikipedia to resolve movie years first; fall back to site-derived years if needed
-        try:
-            years, corrected = await scraping_service.fetch_movie_years_from_wikipedia(
-                title
-            )
-        except Exception:
-            years, corrected = [], None
-
-        if corrected and isinstance(corrected, str) and corrected.strip():
-            # Keep the corrected base for subsequent prompts and searches
-            context.user_data["search_query_title"] = corrected
-            display_title = corrected
-        else:
-            context.user_data["search_query_title"] = title
-            display_title = title
-
-        bot_data = (
-            context.bot_data
-            if isinstance(getattr(context, "bot_data", None), dict)
-            else {}
-        )
-        has_search_config = bool(bot_data.get("SEARCH_CONFIG"))
-        effective_years = years if has_search_config else []
-
-        if isinstance(effective_years, list) and len(effective_years) > 1:
-            unique_years = [str(y) for y in sorted({int(y) for y in effective_years})]
-            await _prompt_for_year_selection(
-                status_message, context, display_title, unique_years
-            )
-            return
-        if isinstance(effective_years, list) and len(effective_years) == 1:
-            full_title = f"{display_title} ({effective_years[0]})"
-            context.user_data["search_media_type"] = "movie"
-            await _prompt_for_resolution(
-                status_message, context, full_title, media_type="movie"
-            )
-            return
-
-        # Fallback if Wikipedia failed to resolve (or no search config loaded): infer from preliminary search results
-        results = await search_logic.orchestrate_searches(
-            display_title, "movie", context
-        )
-        await _process_preliminary_results(status_message, context, results)
-
-
-async def _handle_movie_year_reply(chat_id, query, context):
-    """Handles the user's reply when asked for a movie year."""
-    if context.user_data.get("next_action") != "search_movie_get_year":
-        return
-
-    title = context.user_data.get("search_query_title")
-    if not title:
-        await safe_send_message(
-            context.bot, chat_id, "❌ Search context was lost. Please start over."
+        session.media_type = "movie"
+        session.set_title(title_part)
+        session.set_final_title(full_title)
+        session.advance(SearchStep.RESOLUTION)
+        _save_session(context, session)
+        await _prompt_for_resolution(
+            chat_id, context, full_title, media_type="movie", session=session
         )
         return
 
-    if not (query.isdigit() and len(query) == 4):
-        context.user_data["next_action"] = "search_movie_get_year"
-        error_text = f"That doesn't look like a valid 4\\-digit year\\. Please try again for *{escape_markdown(title, version=2)}* or cancel\\."
-        await _send_prompt(chat_id, context, error_text)
-        return
+    title = re.sub(r"[^\w\s-]", "", query).strip()
+    title = title.title()
+    session.media_type = "movie"
+    session.set_title(title)
+    _save_session(context, session)
 
-    full_title = f"{title} ({query})"
-    context.user_data["search_media_type"] = "movie"
-    await _prompt_for_resolution(chat_id, context, full_title, media_type="movie")
-
-
-async def _handle_tv_title_reply(chat_id, query, context):
-    """Handles user reply for a TV show title."""
-    if context.user_data.get("next_action") != "search_tv_get_title":
-        return
-
-    # Preserve hyphens in TV titles (e.g., "Spider-Man") while removing other punctuation
-    sanitized_title = re.sub(r"[^\w\s-]", "", query).strip()
-    # Normalize to Title Case for user-facing messages
-    sanitized_title = sanitized_title.title()
-    context.user_data["search_query_title"] = sanitized_title
-
-    # Check Wikipedia for number of seasons. If <= MAX_SEASON_BUTTONS, present as buttons.
-    # If > MAX_SEASON_BUTTONS (or unknown), inform the count and ask for manual input.
     status_message = await safe_send_message(
         context.bot,
         chat_id,
-        f"🔎 Checking seasons for *{escape_markdown(sanitized_title, version=2)}* on Wikipedia\\.\\.\\.",
+        f"Looking up release years for *{escape_markdown(title, version=2)}* on Wikipedia\\.\\.\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+    try:
+        years, corrected = await scraping_service.fetch_movie_years_from_wikipedia(
+            title
+        )
+    except Exception:
+        years, corrected = [], None
+
+    if corrected and isinstance(corrected, str) and corrected.strip():
+        session.set_title(corrected, resolved_title=corrected)
+        display_title = corrected
+    else:
+        display_title = title
+
+    bot_data = (
+        context.bot_data if isinstance(getattr(context, "bot_data", None), dict) else {}
+    )
+    has_search_config = bool(bot_data.get("SEARCH_CONFIG"))
+    effective_years = years if has_search_config else []
+
+    if isinstance(effective_years, list) and len(effective_years) > 1:
+        unique_years = [str(y) for y in sorted({int(y) for y in effective_years})]
+        session.advance(SearchStep.YEAR)
+        session.prompt_message_id = status_message.message_id
+        _save_session(context, session)
+        await _prompt_for_year_selection(
+            status_message, context, display_title, unique_years, session=session
+        )
+        return
+    if isinstance(effective_years, list) and len(effective_years) == 1:
+        full_title = f"{display_title} ({effective_years[0]})"
+        session.set_final_title(full_title)
+        session.advance(SearchStep.RESOLUTION)
+        _save_session(context, session)
+        await _prompt_for_resolution(
+            status_message, context, full_title, media_type="movie", session=session
+        )
+        return
+
+    results = await search_logic.orchestrate_searches(display_title, "movie", context)
+    await _process_preliminary_results(
+        status_message, context, results, session=session
+    )
+
+
+async def _handle_movie_year_reply(
+    chat_id: int, query: str, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+):
+    """Handles the user's reply when asked for a movie year."""
+    if session.media_type != "movie" or session.step != SearchStep.YEAR:
+        return
+
+    title = session.effective_title
+    if not title:
+        await safe_send_message(
+            context.bot,
+            chat_id,
+            CONTEXT_LOST_MESSAGE,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        clear_search_session(context.user_data)
+        return
+
+    if not (query.isdigit() and len(query) == 4):
+        error_text = f"That doesn't look like a valid 4\\-digit year\\. Please try again for *{escape_markdown(title, version=2)}* or cancel\\."
+        await _send_prompt(chat_id, context, error_text, session=session)
+        return
+
+    full_title = f"{title} ({query})"
+    session.set_final_title(full_title)
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
+    await _prompt_for_resolution(
+        chat_id, context, full_title, media_type="movie", session=session
+    )
+
+
+async def _handle_tv_title_reply(
+    chat_id: int, query: str, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+):
+    """Handles user reply for a TV show title."""
+    if session.media_type != "tv" or session.step != SearchStep.TITLE:
+        return
+
+    sanitized_title = re.sub(r"[^\w\s-]", "", query).strip()
+    sanitized_title = sanitized_title.title()
+    session.media_type = "tv"
+    session.set_title(sanitized_title)
+    session.advance(SearchStep.TV_SEASON)
+    _save_session(context, session)
+
+    status_message = await safe_send_message(
+        context.bot,
+        chat_id,
+        f"🎞️ Checking seasons for *{escape_markdown(sanitized_title, version=2)}* on Wikipedia\\.\\.\\.",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
@@ -226,7 +293,6 @@ async def _handle_tv_title_reply(chat_id, query, context):
     except Exception:
         seasons_count = None
 
-    # Layout constants
     SEASON_COLUMNS = 4
     MAX_SEASON_BUTTONS = 40
 
@@ -235,7 +301,6 @@ async def _handle_tv_title_reply(chat_id, query, context):
         and seasons_count > 0
         and seasons_count <= MAX_SEASON_BUTTONS
     ):
-        # Present buttons for season selection as a grid
         buttons = [
             InlineKeyboardButton(str(i), callback_data=f"search_select_season_{i}")
             for i in range(1, seasons_count + 1)
@@ -244,11 +309,11 @@ async def _handle_tv_title_reply(chat_id, query, context):
             buttons[i : i + SEASON_COLUMNS]
             for i in range(0, len(buttons), SEASON_COLUMNS)
         ]
-        # Also allow users to type a season number directly
-        context.user_data["next_action"] = "search_tv_get_season"
         keyboard.append(
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]
         )
+        session.prompt_message_id = status_message.message_id
+        _save_session(context, session)
         await safe_edit_message(
             status_message,
             text=(
@@ -258,48 +323,51 @@ async def _handle_tv_title_reply(chat_id, query, context):
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        context.user_data["prompt_message_id"] = status_message.message_id
-        # Do not set next_action yet; it will be set after season selection
-    else:
-        # Unknown or above the display cap: ask user to type the season number and show count when available
-        context.user_data["next_action"] = "search_tv_get_season"
-        if isinstance(seasons_count, int) and seasons_count > MAX_SEASON_BUTTONS:
-            prompt_text = (
-                f"Found *{escape_markdown(str(seasons_count), version=2)}* seasons for "
-                f"*{escape_markdown(sanitized_title, version=2)}*\\. Now, please send the season number\\."
-            )
-        else:
-            prompt_text = (
-                f"Could not determine the total seasons for *{escape_markdown(sanitized_title, version=2)}*\\.\n"
-                "Please send the season number\\."
-            )
-        await safe_edit_message(
-            status_message,
-            text=prompt_text,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-            ),
-            parse_mode=ParseMode.MARKDOWN_V2,
+        return
+
+    if isinstance(seasons_count, int) and seasons_count > MAX_SEASON_BUTTONS:
+        prompt_text = (
+            f"Found *{escape_markdown(str(seasons_count), version=2)}* seasons for "
+            f"*{escape_markdown(sanitized_title, version=2)}*\\. Now, please send the season number\\."
         )
-        context.user_data["prompt_message_id"] = status_message.message_id
+    else:
+        prompt_text = (
+            f"Could not determine the total seasons for *{escape_markdown(sanitized_title, version=2)}*\\.\n"
+            "Please send the season number\\."
+        )
+
+    session.prompt_message_id = status_message.message_id
+    _save_session(context, session)
+    await safe_edit_message(
+        status_message,
+        text=prompt_text,
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+        ),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
 
 
-async def _handle_tv_season_reply(chat_id, query, context):
+async def _handle_tv_season_reply(
+    chat_id: int, query: str, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+):
     """Handles user reply for a season number."""
-    if context.user_data.get("next_action") != "search_tv_get_season":
+    if session.media_type != "tv" or session.step != SearchStep.TV_SEASON:
         return
 
-    title = context.user_data.get("search_query_title")
-    if not title or not query.isdigit():
-        error_text = f"That doesn't look like a valid number\\. Please send the season number for *{escape_markdown(title or '', version=2)}*\\."
-        await _send_prompt(chat_id, context, error_text)
-        context.user_data["next_action"] = "search_tv_get_season"
+    title = session.effective_title or ""
+    if not query.isdigit():
+        error_text = f"That doesn't look like a valid number\\. Please send the season number for *{escape_markdown(title, version=2)}*\\."
+        await _send_prompt(chat_id, context, error_text, session=session)
         return
 
-    context.user_data["search_season_number"] = int(query)
+    session.season = int(query)
+    session.advance(SearchStep.TV_SCOPE)
+    _save_session(context, session)
+
     prompt_text = (
         f"Season *{escape_markdown(query, version=2)}* selected\\. "
-        "Do you want a single episode or the entire season\\?"
+        "Do you want a single episode or the entire season?"
     )
     keyboard = [
         [
@@ -319,48 +387,36 @@ async def _handle_tv_season_reply(chat_id, query, context):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
-    context.user_data["prompt_message_id"] = sent_message.message_id
-    context.user_data["next_action"] = "search_tv_scope"
+    session.prompt_message_id = sent_message.message_id
+    _save_session(context, session)
 
 
 async def _handle_season_selection_button(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
     """Handles the user selecting a season from inline buttons (<=5 seasons case)."""
     if not isinstance(query.message, Message):
         return
-    if context.user_data is None:
-        context.user_data = {}
-
-    title = context.user_data.get("search_query_title")
-    if not title:
-        await safe_edit_message(
-            query.message,
-            text="❌ Search context has expired\\. Please start over\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-        return
 
     try:
-        # Guard against Optional[str] for type checkers and runtime safety
         data = query.data or ""
         season_str = data.split("_")[3]
         season_num = int(season_str)
     except Exception:
         await safe_edit_message(
             query.message,
-            text="❌ An error occurred with your selection\\. Please try again\\.",
+            text="❓ An error occurred with your selection\\. Please try again\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
-    context.user_data["search_season_number"] = season_num
-    context.user_data["next_action"] = "search_tv_scope"
+    session.season = season_num
+    session.advance(SearchStep.TV_SCOPE)
+    _save_session(context, session)
 
-    # Ask whether single episode or entire season
     prompt_text = (
         f"Season *{escape_markdown(str(season_num), version=2)}* selected\\. "
-        "Do you want a single episode or the entire season\\?"
+        "Do you want a single episode or the entire season?"
     )
     keyboard = [
         [
@@ -382,99 +438,103 @@ async def _handle_season_selection_button(
 
 
 async def _handle_episode_selection_button(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
     """Handles user selecting an episode via inline buttons in the single-episode flow."""
     if not isinstance(query.message, Message):
         return
-    if context.user_data is None:
-        context.user_data = {}
-
-    title = context.user_data.get("search_query_title")
-    season = context.user_data.get("search_season_number")
-    if not title or season is None:
-        await safe_edit_message(
-            query.message,
-            text="❌ Search context has expired\\. Please start over\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-        return
 
     try:
-        # Guard against Optional[str] for type checkers and runtime safety
         data = query.data or ""
         episode_str = data.split("_")[3]
         episode_num = int(episode_str)
     except Exception:
         await safe_edit_message(
             query.message,
-            text="❌ An error occurred with your selection\\. Please try again\\.",
+            text="❓ An error occurred with your selection\\. Please try again\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
+    title = session.effective_title or session.title
+    season = session.season
+    if not title or season is None:
+        await safe_edit_message(
+            query.message,
+            text=CONTEXT_LOST_MESSAGE,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        clear_search_session(context.user_data)
+        return
+
     full_search_term = f"{title} S{int(season):02d}E{episode_num:02d}"
-    # Store TV search context, then prompt for resolution (1080p/720p)
-    context.user_data["search_media_type"] = "tv"
-    context.user_data["tv_scope"] = "single"
-    context.user_data["tv_base_title"] = title
+    session.media_type = "tv"
+    session.tv_scope = "single"
+    session.episode = episode_num
+    session.set_final_title(full_search_term)
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
+
     await _prompt_for_resolution(
-        query.message, context, full_search_term, media_type="tv"
+        query.message, context, full_search_term, media_type="tv", session=session
     )
 
 
-async def _handle_tv_episode_reply(chat_id, query, context):
+async def _handle_tv_episode_reply(
+    chat_id: int, query: str, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+):
     """Handles user reply for an episode number. Then prompts for quality."""
-    if context.user_data.get("next_action") != "search_tv_get_episode":
+    if session.media_type != "tv" or session.step != SearchStep.TV_EPISODE:
         return
 
-    title = context.user_data.get("search_query_title")
-    season = context.user_data.get("search_season_number")
+    title = session.effective_title or session.title
+    season = session.season
     if not title or season is None or not query.isdigit():
-        error_text = f"That doesn't look like a valid number\\. Please send the episode number for *{escape_markdown(title or '', version=2)} S{season or 0:02d}*\\."
-        await _send_prompt(chat_id, context, error_text)
-        context.user_data["next_action"] = "search_tv_get_episode"
+        error_text = f"That doesn't look like a valid number\\. Please send the episode number for *{escape_markdown(title or '', version=2)} S{int(season or 0):02d}*\\."
+        await _send_prompt(chat_id, context, error_text, session=session)
         return
 
     episode = int(query)
-    full_search_term = f"{title} S{season:02d}E{episode:02d}"
+    full_search_term = f"{title} S{int(season):02d}E{episode:02d}"
 
-    # Store TV search context, then prompt for resolution (1080p/720p)
-    context.user_data["search_media_type"] = "tv"
-    context.user_data["tv_scope"] = "single"
-    context.user_data["tv_base_title"] = title
-    await _prompt_for_resolution(chat_id, context, full_search_term, media_type="tv")
+    session.media_type = "tv"
+    session.tv_scope = "single"
+    session.episode = episode
+    session.set_final_title(full_search_term)
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
 
-
-# --- Scope Selection Logic ---
+    await _prompt_for_resolution(
+        chat_id, context, full_search_term, media_type="tv", session=session
+    )
 
 
 async def _handle_tv_scope_selection(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
     """Handles user's choice between single episode or entire season."""
     if not isinstance(query.message, Message):
         return
-    if context.user_data is None:
-        context.user_data = {}
 
-    title = context.user_data.get("search_query_title")
-    season = context.user_data.get("search_season_number")
+    title = session.effective_title or session.title
+    season = session.season
     if not title or season is None:
         await safe_edit_message(
             query.message,
-            "❌ Search context has expired\\. Please start over\\.",
+            CONTEXT_LOST_MESSAGE,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
+        clear_search_session(context.user_data)
         return
 
     if query.data == "search_tv_scope_single":
-        context.user_data["next_action"] = "search_tv_get_episode"
+        session.tv_scope = "single"
+        session.advance(SearchStep.TV_EPISODE)
+        _save_session(context, session)
         EPISODE_COLUMNS = 4
         MAX_EPISODE_BUTTONS = 40
 
         episode_count: int | None = None
-        # Gate Wikipedia network call on SEARCH_CONFIG to keep tests lightweight
         if context.bot_data.get("SEARCH_CONFIG"):
             try:
                 episode_count = (
@@ -486,7 +546,6 @@ async def _handle_tv_scope_selection(
                 episode_count = None
 
         if isinstance(episode_count, int) and 0 < episode_count <= MAX_EPISODE_BUTTONS:
-            # Present inline episode grid (single message, includes Cancel)
             buttons = [
                 InlineKeyboardButton(str(i), callback_data=f"search_select_episode_{i}")
                 for i in range(1, episode_count + 1)
@@ -502,14 +561,13 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"Season *{escape_markdown(str(season), version=2)}* selected\\. "
-                    "Choose an episode below or type the number\\."
+                    "Choose an episode below or type the number."
                 ),
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
 
-        # Fallback: typed input prompt (no episode grid available)
         await safe_edit_message(
             query.message,
             text=f"Season *{escape_markdown(str(season), version=2)}* selected\\.",
@@ -519,18 +577,18 @@ async def _handle_tv_scope_selection(
         await _send_prompt(
             query.message.chat_id,
             context,
-            f"Please send the episode number for Season {escape_markdown(str(season), version=2)}\\.",
+            f"Please send the episode number for Season {escape_markdown(str(season), version=2)}.",
+            session=session,
         )
         return
 
     if query.data == "search_tv_scope_season":
-        # Log at INFO that we are about to consult Wikipedia for season details
         logger.info(
             f"[WIKI] Verifying season details on Wikipedia for '{title}' S{int(season):02d}."
         )
         await safe_edit_message(
             query.message,
-            "Verifying season details on Wikipedia\\.\\.\\.",
+            "Verifying season details on Wikipedia...",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         episode_count = (
@@ -544,12 +602,11 @@ async def _handle_tv_scope_selection(
         if not episode_count:
             await safe_edit_message(
                 query.message,
-                "❌ Could not verify episode count\\. Operation cancelled\\.",
+                "❓ Could not verify episode count. Operation cancelled.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
 
-        # Determine which episodes already exist (Plex preferred; filesystem fallback)
         existing_eps = await plex_service.get_existing_episodes_for_season(
             context, str(title), int(season)
         )
@@ -557,24 +614,25 @@ async def _handle_tv_scope_selection(
             i for i in range(1, int(episode_count) + 1) if i not in existing_eps
         ]
 
-        # Store details and prompt for TV quality (1080p/720p), then search
-        context.user_data["season_episode_count"] = int(episode_count)
-        context.user_data["season_existing_episodes"] = sorted(existing_eps)
-        context.user_data["season_missing_episode_numbers"] = missing_list
+        session.season_episode_count = int(episode_count)
+        session.existing_episodes = sorted(existing_eps)
+        session.missing_episode_numbers = missing_list
+        session.tv_scope = "season"
+        session.media_type = "tv"
+        session.advance(SearchStep.RESOLUTION)
+        _save_session(context, session)
 
-        # If user already has the full season, stop here
         if len(missing_list) == 0:
             await safe_edit_message(
                 query.message,
                 text=(
                     f"All episodes for *{escape_markdown(str(title), version=2)}* "
-                    f"S{int(season):02d} already exist in your library\\. Nothing to download\\."
+                    f"S{int(season):02d} already exist in your library. Nothing to download."
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
 
-        # Immediate feedback to the user about ownership
         have = len(existing_eps)
         total = int(episode_count)
         if have > 0:
@@ -582,7 +640,7 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"Detected {have}/{total} episodes already in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
-                    "I will only fetch the missing episodes\\. Choose a resolution:"
+                    "I will only fetch the missing episodes. Choose a resolution:"
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
@@ -591,31 +649,44 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"No existing episodes found in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
-                    "You may download a season pack if available\\. Choose a resolution:"
+                    "You may download a season pack if available. Choose a resolution:"
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
 
-        context.user_data["search_media_type"] = "tv"
-        context.user_data["tv_scope"] = "season"
-        context.user_data["tv_base_title"] = title
         await _prompt_for_resolution(
-            query.message, context, f"{title} S{season:02d}", media_type="tv"
+            query.message,
+            context,
+            f"{title} S{int(season):02d}",
+            media_type="tv",
+            session=session,
         )
 
+
+# --- Button Press Handlers ---
 
 # --- Button Press Handlers ---
 
 
 async def _handle_start_button(query, context):
     """Handles the initial 'Movie' or 'TV Show' button press."""
+    if context.user_data is None:
+        context.user_data = {}
     context.user_data["active_workflow"] = "search"
+    clear_search_session(context.user_data)
+    session = SearchSession()
+
     if query.data == "search_start_movie":
-        context.user_data["next_action"] = "search_movie_get_title"
+        session.media_type = "movie"
+        session.advance(SearchStep.TITLE)
         prompt_text = "🎬 Please send me the title of the movie to search for \\(you can include the year\\)\\."
-    else:  # search_start_tv
-        context.user_data["next_action"] = "search_tv_get_title"
+    else:
+        session.media_type = "tv"
+        session.advance(SearchStep.TITLE)
         prompt_text = "📺 Please send me the title of the TV show to search for\\."
+
+    session.prompt_message_id = query.message.message_id
+    _save_session(context, session)
 
     await safe_edit_message(
         query.message,
@@ -625,12 +696,12 @@ async def _handle_start_button(query, context):
         ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
-    context.user_data["prompt_message_id"] = query.message.message_id
 
 
-async def _handle_resolution_button(query, context):
+async def _handle_resolution_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+):
     """Handles the resolution selection and triggers the appropriate search."""
-    # Determine resolution based on callback data
     if any(x in query.data for x in ("2160p", "4k")):
         resolution = "2160p"
     elif "720p" in query.data:
@@ -638,39 +709,34 @@ async def _handle_resolution_button(query, context):
     else:
         resolution = "1080p"
 
-    # Persist the user's chosen resolution for potential later actions
-    if context.user_data is None:
-        context.user_data = {}
-    context.user_data["search_resolution"] = resolution
+    session.resolution = resolution
+    _save_session(context, session)
 
-    final_title = context.user_data.get("search_final_title")
-    media_type = context.user_data.get("search_media_type")
-
-    if not final_title or not media_type:
+    try:
+        final_title = session.require_final_title()
+        media_type = session.require_media_type()
+    except SearchSessionError as exc:
         await safe_edit_message(
             query.message,
-            "❌ Search context has expired\\. Please start over\\.",
+            text=exc.user_message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
+        clear_search_session(context.user_data)
         return
 
-    # Movies: keep existing behavior
     if media_type == "movie":
         await safe_edit_message(
             query.message,
-            text=f"🔎 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
+            text=f"🎯 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-
         year_match = re.search(r"\((\d{4})\)", final_title)
         year = year_match.group(1) if year_match else None
         search_title = final_title.split("(")[0].strip()
-
         results = await search_logic.orchestrate_searches(
             search_title, "movie", context, year=year, resolution=resolution
         )
         filtered_results = _filter_results_by_resolution(results, resolution)
-
         await _present_search_results(
             query.message,
             context,
@@ -680,19 +746,16 @@ async def _handle_resolution_button(query, context):
         )
         return
 
-    # TV: branch based on scope
     if media_type == "tv":
-        tv_scope = context.user_data.get("tv_scope")
-        title = context.user_data.get("tv_base_title")
-        season = context.user_data.get("search_season_number")
-
-        if tv_scope == "single":
+        tv_scope = session.tv_scope
+        title = session.effective_title or session.title
+        season = session.season
+        if tv_scope == "single" and title:
             await safe_edit_message(
                 query.message,
-                text=f"🔎 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
+                text=f"🎯 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*...",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-            # Use base title for fuzzy filter to avoid dropping episode results
             results = await search_logic.orchestrate_searches(
                 final_title, "tv", context, base_query_for_filter=title
             )
@@ -705,12 +768,12 @@ async def _handle_resolution_button(query, context):
             )
             return
 
-        if tv_scope == "season" and title and season:
+        if tv_scope == "season" and title and season is not None:
             await safe_edit_message(
                 query.message,
                 text=(
-                    f"🔎 Searching for Season {escape_markdown(str(season), version=2)} "
-                    f"of *{escape_markdown(title, version=2)}* in *{resolution}*\\.\\.\\."
+                    f"🎯 Searching for Season {escape_markdown(str(season), version=2)} "
+                    f"of *{escape_markdown(title, version=2)}* in *{resolution}*..."
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
@@ -719,16 +782,18 @@ async def _handle_resolution_button(query, context):
             )
             return
 
-    # Fallback
     await safe_edit_message(
         query.message,
-        "❌ Search context has expired\\. Please start over\\.",
+        CONTEXT_LOST_MESSAGE,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
+    clear_search_session(context.user_data)
 
 
 async def _handle_result_selection_button(query, context):
     """Handles the user selecting a specific torrent from the results list."""
+    if context.user_data is None:
+        context.user_data = {}
     search_results = context.user_data.pop("search_results", [])
     if not search_results:
         await safe_edit_message(
@@ -771,75 +836,70 @@ async def _handle_result_selection_button(query, context):
 
 
 async def _handle_year_selection_button(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
     """Handles the user selecting a specific year from the presented options."""
-    # 1. Ensure the callback query itself and its data exist.
     if not query or not query.data:
         logger.warning("Callback query received without data. Ignoring.")
-        # Silently answer the query to remove the "loading" state on the user's client.
         await query.answer()
         return
 
-    # 2. Ensure the associated message is accessible to edit.
     if not isinstance(query.message, Message):
         logger.warning(
             "Could not process year selection: The associated message is inaccessible."
         )
         await query.answer(
-            text="❌ Error: The original message could not be modified.",
+            text="❓ Error: The original message could not be modified.",
             show_alert=True,
         )
         return
 
-    # 3. Ensure the user_data context has not been lost.
-    if context.user_data is None:
-        logger.error(
-            "Callback received but user_data was None. Aborting year selection."
-        )
+    try:
+        title = session.require_title()
+    except SearchSessionError as exc:
         await safe_edit_message(
             query.message,
-            text="❌ An error occurred and your session was lost\\. Please start over\\.",
+            text=exc.user_message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
-
-    title = context.user_data.get("search_query_title")
-    if not title:
-        await safe_edit_message(
-            query.message,
-            "❌ Search context has expired\\. Please start over\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
+        clear_search_session(context.user_data)
         return
 
     try:
-        # Guard against Optional[str] for type checkers and runtime safety
         data = query.data or ""
         selected_year = data.split("_")[3]
         full_title = f"{title} ({selected_year})"
         logger.info(f"User selected year {selected_year} for title '{title}'.")
-
-        context.user_data["search_final_title"] = full_title
-        context.user_data["search_media_type"] = "movie"
-
-        await _prompt_for_resolution(
-            query.message, context, full_title, media_type="movie"
-        )
-
     except IndexError:
         logger.error(f"Could not parse year from callback data: {query.data}")
         await safe_edit_message(
             query.message,
-            "❌ An error occurred with your selection\\. Please try again\\.",
+            text="❓ An error occurred with your selection. Please try again.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
+        return
+
+    session.set_final_title(full_title)
+    session.media_type = "movie"
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
+
+    await _prompt_for_resolution(
+        query.message, context, full_title, media_type="movie", session=session
+    )
 
 
 # --- Helper/UI Functions ---
 
+# --- Helper/UI Functions ---
 
-async def _send_prompt(chat_id, context, text):
+
+async def _send_prompt(
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    session: SearchSession | None = None,
+):
     """Sends a conversational prompt and stores its ID for later cleanup."""
     prompt_message = await safe_send_message(
         context.bot,
@@ -850,11 +910,18 @@ async def _send_prompt(chat_id, context, text):
         ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
-    context.user_data["prompt_message_id"] = prompt_message.message_id
+    if session is None:
+        session = _get_session(context)
+    session.prompt_message_id = prompt_message.message_id
+    _save_session(context, session)
 
 
 async def _prompt_for_year_selection(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, title: str, years: list[str]
+    message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    title: str,
+    years: list[str],
+    session: SearchSession | None = None,
 ) -> None:
     """
     Edits a message to ask the user to select a year from a list of options.
@@ -884,23 +951,28 @@ async def _prompt_for_year_selection(
         reply_markup=reply_markup,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
+    if session is None:
+        session = _get_session(context)
+    session.prompt_message_id = message.message_id
+    _save_session(context, session)
 
 
 async def _present_season_download_confirmation(
     message: Message,
     context: ContextTypes.DEFAULT_TYPE,
     found_torrents: list[dict[str, Any]],
+    session: SearchSession | None = None,
 ) -> None:
     """Summarizes season search results and asks for confirmation."""
-    if context.user_data is None:
-        context.user_data = {}
-    season = context.user_data.get("search_season_number")
-    total_eps = context.user_data.get("season_episode_count")
+    if session is None:
+        session = _get_session(context)
+    season = session.season
+    total_eps = session.season_episode_count
 
     if not found_torrents:
         await safe_edit_message(
             message,
-            text="❌ No torrents found for this season\\.",
+            text="❓ No torrents found for this season.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -909,22 +981,20 @@ async def _present_season_download_confirmation(
         "is_season_pack"
     )
 
-    # If any episodes already exist, packs are disallowed
-    existing = set((context.user_data or {}).get("season_existing_episodes") or [])
-    missing_targets = (context.user_data or {}).get("season_missing_episode_numbers")
+    existing = set(session.existing_episodes or [])
+    missing_targets = session.missing_episode_numbers
     if isinstance(missing_targets, list) and missing_targets:
         target_total = len(missing_targets)
     else:
         target_total = int(total_eps or 0)
 
     if is_pack and existing:
-        is_pack = False  # enforce episode-only flow
+        is_pack = False
 
     if is_pack:
-        summary = f"Found a season pack for Season {season}\\."
+        summary = f"Found a season pack for Season {season}."
     else:
-        # Escape parentheses for MarkdownV2
-        summary = f"Found torrents for {len(found_torrents)} of {target_total} episode\\(s\\) in Season {season}\\."
+        summary = f"Found torrents for {len(found_torrents)} of {target_total} episode(s) in Season {season}."
 
     if is_pack:
         keyboard = [
@@ -952,6 +1022,7 @@ async def _present_season_download_confirmation(
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
+    context.user_data.setdefault("pending_season_download", list())
     context.user_data["pending_season_download"] = found_torrents
 
 
@@ -960,33 +1031,17 @@ async def _prompt_for_resolution(
     context: ContextTypes.DEFAULT_TYPE,
     full_title: str,
     *,
-    media_type: str = "movie",
+    media_type: Literal["movie", "tv"] = "movie",
+    session: SearchSession | None = None,
 ) -> None:
-    """
-    Asks the user to select a resolution, either by sending a new message
-    or editing an existing one.
-    """
-    # --- Guard Clause: Ensure user_data exists before use ---
-    if context.user_data is None:
-        logger.error("Cannot prompt for resolution because user_data is None.")
-        # Determine how to send an error message based on the target type
-        if isinstance(target, Message):
-            await safe_edit_message(
-                target,
-                text="❌ An error occurred and your session was lost\\. Please start over\\.",
-                parse_mode=ParseMode.MARKDOWN_V2,
-            )
-        elif isinstance(target, int):
-            await safe_send_message(
-                context.bot,
-                target,
-                text="❌ An error occurred and your session was lost\\. Please start over\\.",
-                parse_mode=ParseMode.MARKDOWN_V2,
-            )
-        return
+    """Asks the user to select a resolution."""
+    if session is None:
+        session = _get_session(context)
 
-    context.user_data["search_final_title"] = full_title
-    context.user_data["search_media_type"] = media_type
+    session.set_final_title(full_title)
+    session.media_type = media_type
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
 
     if media_type == "tv":
         keyboard = [
@@ -1008,12 +1063,12 @@ async def _prompt_for_resolution(
         ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    text = f"Got it: `{escape_markdown(full_title, version=2)}`\\. Now, please select your desired resolution:"
+    text_prompt = f"Got it: `{escape_markdown(full_title, version=2)}`\\. Now, please select your desired resolution:"
 
     if isinstance(target, Message):
         await safe_edit_message(
             target,
-            text=text,
+            text=text_prompt,
             reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -1021,11 +1076,12 @@ async def _prompt_for_resolution(
         prompt_message = await safe_send_message(
             context.bot,
             chat_id=target,
-            text=text,
+            text=text_prompt,
             reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        context.user_data["prompt_message_id"] = prompt_message.message_id
+        session.prompt_message_id = prompt_message.message_id
+        _save_session(context, session)
 
 
 async def _perform_tv_season_search_with_resolution(
@@ -1036,6 +1092,7 @@ async def _perform_tv_season_search_with_resolution(
     resolution: str,
     *,
     force_individual_episodes: bool = False,
+    session: SearchSession | None = None,
 ) -> None:
     """
     Searches for a TV season pack or individual episodes, applying a resolution filter.
@@ -1061,9 +1118,10 @@ async def _perform_tv_season_search_with_resolution(
     season_pack_torrent = None
     pack_candidates = []
     # Enforce individual episodes if any are already owned
-    existing_owned = set(
-        (context.user_data or {}).get("season_existing_episodes") or []
-    )
+    if session is None:
+        session = _get_session(context)
+
+    existing_owned = set(session.existing_episodes or [])
     must_individual = bool(force_individual_episodes or existing_owned)
 
     if not must_individual:
@@ -1090,24 +1148,24 @@ async def _perform_tv_season_search_with_resolution(
     else:
         # Fallback: search for each episode individually
         # Guard for Optional user_data to satisfy type checkers/IDEs
-        episode_count = int((context.user_data or {}).get("season_episode_count") or 0)
+        episode_count = int(session.season_episode_count or 0)
         # Determine target episodes:
         # - If season_missing_episode_numbers is explicitly present, use it;
         #   if it's an empty list, then everything is already owned.
         # - If not present at all, default to the full season [1..episode_count].
-        raw_targets = (context.user_data or {}).get("season_missing_episode_numbers")
-        if isinstance(raw_targets, list):
+        raw_targets = session.missing_episode_numbers
+        if isinstance(raw_targets, list) and raw_targets:
             targets = list(raw_targets)
-            if len(targets) == 0:
-                await safe_edit_message(
-                    message,
-                    text=(
-                        f"All episodes for *{escape_markdown(title, version=2)}* "
-                        f"S{int(season):02d} already exist in your library\\."
-                    ),
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                )
-                return
+        elif isinstance(raw_targets, list):
+            await safe_edit_message(
+                message,
+                text=(
+                    f"All episodes for *{escape_markdown(title, version=2)}* "
+                    f"S{int(season):02d} already exist in your library\\."
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
         else:
             targets = list(range(1, episode_count + 1))
         # Fetch all episode titles once to avoid per-episode Wikipedia lookups
@@ -1196,7 +1254,9 @@ async def _perform_tv_season_search_with_resolution(
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
 
-    await _present_season_download_confirmation(message, context, torrents_to_queue)
+    await _present_season_download_confirmation(
+        message, context, torrents_to_queue, session=session
+    )
 
 
 async def handle_reject_season_pack(
@@ -1207,27 +1267,25 @@ async def handle_reject_season_pack(
     if not query or not isinstance(query.message, Message):
         return
 
-    if context.user_data is None:
-        context.user_data = {}
-
-    title = context.user_data.get("tv_base_title")
-    season = context.user_data.get("search_season_number")
-    resolution = context.user_data.get("search_resolution", "1080p")
+    session = _get_session(context)
+    title = session.effective_title or session.title
+    season = session.season
+    resolution = session.resolution or "1080p"
 
     if not title or season is None:
         await safe_edit_message(
             query.message,
-            text="❌ Search context has expired\\. Please start over\\.",
+            text=CONTEXT_LOST_MESSAGE,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
+        clear_search_session(context.user_data)
         return
 
     prefix = escape_markdown(
-        "🔄 Rejected season pack. Collecting single episodes for ", version=2
+        "🎯 Rejected season pack\\. Collecting single episodes for ", version=2
     )
     title_md = escape_markdown(str(title), version=2)
-    # Use ellipsis character to avoid MarkdownV2 '.' escaping issues
-    message_text = f"{prefix}*{title_md}* S{int(season):02d}…"
+    message_text = f"{prefix}*{title_md}* S{int(season):02d}."
     await safe_edit_message(
         query.message,
         text=message_text,
@@ -1241,6 +1299,7 @@ async def handle_reject_season_pack(
         int(season),
         str(resolution),
         force_individual_episodes=True,
+        session=session,
     )
 
 
@@ -1323,47 +1382,30 @@ async def _present_search_results(
     )
 
 
-def _clear_search_context(context):
-    """Clears all search-related keys from user_data."""
-    keys_to_clear = [
-        "active_workflow",
-        "next_action",
-        "search_query_title",
-        "search_final_title",
-        "search_media_type",
-        "search_season_number",
-        "season_episode_count",
-        "tv_scope",
-        "tv_base_title",
-    ]
-    for key in keys_to_clear:
-        context.user_data.pop(key, None)
+def _clear_search_context(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clears the persisted search session."""
+    clear_search_session(getattr(context, "user_data", None))
 
 
 async def _process_preliminary_results(
-    status_message: Message, context: ContextTypes.DEFAULT_TYPE, results: list[dict]
+    status_message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    results: list[dict],
+    *,
+    session: SearchSession | None = None,
 ) -> None:
-    """
-    Analyzes preliminary search results to decide the next step in the movie workflow.
-    """
-    # --- Guard Clause: Ensure user_data exists before use ---
-    if context.user_data is None:
-        logger.error("Cannot process preliminary results because user_data is None.")
-        await safe_edit_message(
-            status_message,
-            text="❌ An error occurred and your session was lost\\. Please start over\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-        return
+    """Analyzes preliminary search results to decide the next step in the movie workflow."""
+    if session is None:
+        session = _get_session(context)
 
-    title = context.user_data.get("search_query_title", "this movie")
+    title = session.effective_title or session.title or "this movie"
     escaped_title = escape_markdown(title, version=2)
 
     if not results:
         logger.warning(f"Preliminary search for '{title}' yielded no results.")
         await safe_edit_message(
             status_message,
-            text=f"❌ No results found for `'{escaped_title}'`\\. Please check the title and try again\\.",
+            text=f"❓ No results found for `'{escaped_title}'`\\. Please check the title and try again\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1376,7 +1418,12 @@ async def _process_preliminary_results(
         logger.info(
             f"Found multiple years for '{title}': {unique_years}. Prompting for selection."
         )
-        await _prompt_for_year_selection(status_message, context, title, unique_years)
+        session.advance(SearchStep.YEAR)
+        session.prompt_message_id = status_message.message_id
+        _save_session(context, session)
+        await _prompt_for_year_selection(
+            status_message, context, title, unique_years, session=session
+        )
 
     elif len(unique_years) == 1:
         year = unique_years[0]
@@ -1384,8 +1431,11 @@ async def _process_preliminary_results(
             f"Found one unique year for '{title}': {year}. Proceeding to resolution selection."
         )
         full_title = f"{title} ({year})"
+        session.set_final_title(full_title)
+        session.advance(SearchStep.RESOLUTION)
+        _save_session(context, session)
         await _prompt_for_resolution(
-            status_message, context, full_title, media_type="movie"
+            status_message, context, full_title, media_type="movie", session=session
         )
 
     else:
@@ -1393,8 +1443,8 @@ async def _process_preliminary_results(
             f"Found results for '{title}', but could not determine any release years."
         )
         message_text = (
-            f"ℹ️ Found results for `'{escaped_title}'`, but could not determine a release year\\.\n\n"
-            f"Please try the search again and include the year manually \\(e\\.g\\., `{escaped_title} 2023`\\)\\."
+            f"❓ Found results for `'{escaped_title}'`, but could not determine a release year.\n\n"
+            f"Please try the search again and include the year manually (e.g., `{escaped_title} 2023`)."
         )
         await safe_edit_message(
             status_message, text=message_text, parse_mode=ParseMode.MARKDOWN_V2
