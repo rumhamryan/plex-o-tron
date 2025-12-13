@@ -150,7 +150,7 @@ async def test_confirm_delete_skip_due_to_name_twin(
     fs_mock.assert_awaited_once_with("/downloads/movie.mkv")
     final_text = safe_edit_mock.await_args.kwargs["text"]
     assert "Plex Skipped" in final_text
-    assert "\\| 4.5 GB" in final_text
+    assert "\\| 4\\.5 GB" in final_text
 
 
 @pytest.mark.asyncio
@@ -200,7 +200,7 @@ async def test_collection_delete_triggers_plex_cleanup(
     assert plex_args[1] == "MovieCollection"
     final_text = safe_edit_mock.await_args.kwargs["text"]
     assert "Plex collection" in final_text
-    assert "\\| 1.0 GB" in final_text
+    assert "\\| 1\\.0 GB" in final_text
 
 
 @pytest.mark.asyncio
@@ -272,7 +272,7 @@ async def test_success_message_includes_extension_and_size(
 
     final_text = safe_edit_mock.await_args.kwargs["text"]
     escaped_name = escape_markdown("movie.mkv", version=2)
-    assert f"`{escaped_name}` \\| 4.0 GB" in final_text
+    assert f"`{escaped_name}` \\| 4\\.0 GB" in final_text
     assert "Successfully Deleted from Plex" in final_text
 
 

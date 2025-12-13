@@ -847,9 +847,10 @@ async def _handle_confirm_delete_button(query, context):
         display_name = _get_display_name(path_to_delete)
         escaped_name = escape_markdown(display_name, version=2)
         size_label = _format_size_label(path_to_delete)
+        escaped_size = escape_markdown(size_label, version=2)
 
         def _format_item_line(prefix: str) -> str:
-            return f"{prefix}\n`{escaped_name}` \\| {size_label}"
+            return f"{prefix}\n`{escaped_name}` \\| {escaped_size}"
 
         await safe_edit_message(
             query.message,
