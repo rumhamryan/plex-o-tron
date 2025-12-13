@@ -39,7 +39,7 @@ uv venv && .\.venv\Scripts\activate
 sudo apt-get update && sudo apt-get install -y libtorrent-rasterbar-dev
 
 # 3) Sync dependencies from lockfile
-uv pip sync pyproject.toml
+uv pip sync pyproject.toml --extra dev
 
 # 4) Install pre-commit
 pre-commit install

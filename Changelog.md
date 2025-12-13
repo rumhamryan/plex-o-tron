@@ -24,4 +24,6 @@ Commit: <pending>
 - /scripts/changelog_hooks.py
   - Implemented the helper CLI that extracts the top changelog entry, writes commit messages, and replaces `<pending>` with the resolved commit hash.
 - /README.md
-  - Documented the changelog-driven workflow plus the extra `pre-commit install` commands required to enable the commit/post-commit hooks locally.
+  - Documented the changelog-driven workflow plus the extra `pre-commit install` commands required to enable the commit/post-commit hooks locally, and clarified that developers should sync with `--extra dev` so `uv run pytest` has access to fixtures like `mocker`.
+- /AGENTS.md
+  - Updated the setup instructions to sync dependencies with the `dev` extra so future contributors automatically install `pytest-mock` and the rest of the tooling required for the test suite.

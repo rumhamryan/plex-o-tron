@@ -108,11 +108,22 @@ To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment 
 Prepare your local environment before contributing by installing development dependencies and setting up pre-commit hooks:
 
 ```bash
-uv pip sync pyproject.toml
+uv pip sync pyproject.toml --extra dev
 pre-commit install
+pre-commit install --hook-type commit-msg --hook-type post-commit
 ```
 
 Run the commands above prior to executing `pre-commit run --all-files` to ensure your changes meet the project's linting standards.
+
+### Running Tests
+
+After installing the `dev` extra, execute the suite locally via:
+
+```bash
+uv run pytest
+```
+
+The `dev` group bundles tooling such as `pytest-mock`, which provides the ubiquitous `mocker` fixture. If you previously synced without `--extra dev`, rerun the sync command above so local pytest matches the configuration used by pre-commit.
 
 ## Changelog-Driven Commits
 

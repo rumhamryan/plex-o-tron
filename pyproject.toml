@@ -43,6 +43,9 @@ dev = [
     "mypy",
     "types-requests",
     "types-beautifulsoup4",
+    "pluggy",
+    "pygments",
+    "iniconfig"
 ]
 
 # --- Tool Configurations ---
