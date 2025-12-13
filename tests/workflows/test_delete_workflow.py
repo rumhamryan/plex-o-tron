@@ -10,6 +10,7 @@ from telegram_bot.workflows.delete_workflow import (
     _handle_confirm_delete_button,
     _present_delete_results,
     _has_name_twin,
+    _calculate_path_size,
 )
 
 
@@ -187,7 +188,6 @@ async def test_collection_delete_triggers_plex_cleanup(
     )
 
     context.user_data["path_to_delete"] = "/downloads/MovieCollection"
-    context.user_data["delete_target_kind"] = "movie_collection"
     context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "t"}
 
     await _handle_confirm_delete_button(
@@ -195,11 +195,9 @@ async def test_collection_delete_triggers_plex_cleanup(
     )
 
     delete_mock.assert_awaited_once()
-    collection_mock.assert_awaited_once()
-    plex_args = collection_mock.await_args.args
-    assert plex_args[1] == "MovieCollection"
+    collection_mock.assert_not_awaited()
     final_text = safe_edit_mock.await_args.kwargs["text"]
-    assert "Plex collection" in final_text
+    assert "Successfully Deleted from Plex" in final_text
     assert "\\| 1\\.0 GB" in final_text
 
 
@@ -289,3 +287,20 @@ def test_has_name_twin_detects_case_insensitive(tmp_path):
 def test_has_name_twin_false_for_missing(tmp_path):
     missing = tmp_path / "missing.file.mkv"
     assert _has_name_twin(str(missing)) is False
+
+
+def test_calculate_path_size_file(tmp_path):
+    target = tmp_path / "movie.mkv"
+    data = b"x" * 512
+    target.write_bytes(data)
+    assert _calculate_path_size(str(target)) == len(data)
+
+
+def test_calculate_path_size_directory(tmp_path):
+    root = tmp_path / "collection"
+    root.mkdir()
+    (root / "part1.bin").write_bytes(b"a" * 256)
+    nested = root / "nested"
+    nested.mkdir()
+    (nested / "part2.bin").write_bytes(b"b" * 128)
+    assert _calculate_path_size(str(root)) == 384

@@ -55,7 +55,7 @@ def _get_display_name(path: str) -> str:
 def _format_size_label(path: str) -> str:
     """Return a short size label (in GB) for display purposes."""
     try:
-        size_bytes = os.path.getsize(path)
+        size_bytes = _calculate_path_size(path)
     except OSError as exc:
         logger.info("Unable to determine file size for '%s': %s", path, exc)
         return UNKNOWN_SIZE_LABEL
@@ -67,6 +67,46 @@ def _format_size_label(path: str) -> str:
     if size_in_gb == 0:
         return format_bytes(size_bytes)
     return f"{size_in_gb} GB"
+
+
+def _calculate_path_size(path: str) -> int:
+    """Return the total size for files or directories."""
+    target = Path(path)
+    if not target.exists():
+        raise OSError(f"Path does not exist: {path}")
+
+    if target.is_file():
+        return target.stat().st_size
+
+    if target.is_dir():
+        total = 0
+        stack = [target]
+        while stack:
+            current = stack.pop()
+            try:
+                with os.scandir(current) as iterator:
+                    for entry in iterator:
+                        try:
+                            if entry.is_file(follow_symlinks=False):
+                                total += entry.stat(follow_symlinks=False).st_size
+                            elif entry.is_dir(follow_symlinks=False):
+                                stack.append(Path(entry.path))
+                        except OSError as entry_exc:
+                            logger.info(
+                                "Skipping unreadable entry '%s': %s",
+                                entry.path,
+                                entry_exc,
+                            )
+            except OSError as dir_exc:
+                logger.info(
+                    "Unable to scan directory '%s': %s",
+                    current,
+                    dir_exc,
+                    exc_info=False,
+                )
+        return total
+
+    return 0
 
 
 def _compose_button_label(path: str) -> str:
@@ -829,7 +869,6 @@ async def _handle_selection_button(query, context):
 async def _handle_confirm_delete_button(query, context):
     """Handles the final 'Yes, Delete' confirmation using the Plex API first."""
     path_to_delete = context.user_data.pop("path_to_delete", None)
-    delete_target_kind = context.user_data.get("delete_target_kind")
     plex_config = context.bot_data.get("PLEX_CONFIG")
     message_text = ""
     plex: PlexServer | None = None
@@ -908,27 +947,6 @@ async def _handle_confirm_delete_button(query, context):
                 escape_markdown(detail or "Unknown error", version=2)
             )
 
-        filesystem_deleted = not os.path.exists(path_to_delete)
-        if (
-            filesystem_deleted
-            and delete_target_kind == "movie_collection"
-            and plex is not None
-        ):
-            base_collection_name = _get_display_name(path_to_delete)
-            escaped_collection = escape_markdown(base_collection_name, version=2)
-            try:
-                if await _delete_plex_collection(plex, base_collection_name):
-                    message_text += (
-                        "\n" + f"📚 Plex collection `{escaped_collection}` removed\\."
-                    )
-            except Exception as exc:
-                message_text += "\n" + "⚠️ Failed to delete Plex collection\\."
-                logger.error(
-                    "Failed to delete Plex collection '%s': %s",
-                    base_collection_name,
-                    exc,
-                    exc_info=True,
-                )
     else:
         message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file\\."
 
