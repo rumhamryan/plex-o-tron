@@ -836,7 +836,7 @@ async def _handle_confirm_delete_button(query, context):
 
     if not path_to_delete:
         message_text = (
-            "❌ Error: Path to delete not found. The action may have expired."
+            "❌ Error: Path to delete not found\\. The action may have expired\\."
         )
     elif not DELETION_ENABLED:
         logger.warning(
@@ -854,7 +854,7 @@ async def _handle_confirm_delete_button(query, context):
 
         await safe_edit_message(
             query.message,
-            text="Connecting to Plex and attempting to delete the item...",
+            text="Connecting to Plex and attempting to delete the item\\.\\.\\.",
             reply_markup=None,
         )
 
@@ -876,13 +876,11 @@ async def _handle_confirm_delete_button(query, context):
                 message_text = (
                     _format_item_line("⚠️ *Plex Skipped, Removed From Disk*")
                     + "\n"
-                    + "Plex library left untouched because other encodes still exist."
+                    + "Plex library left untouched because other encodes still exist\\."
                 )
             else:
                 if manual_detail == "missing":
-                    message_text = (
-                        "❌ *Deletion Failed*\nThe path no longer exists on the server."
-                    )
+                    message_text = "❌ *Deletion Failed*\nThe path no longer exists on the server\\."
                 else:
                     message_text = "❌ *Manual Deletion Failed*\n`{}`".format(
                         escape_markdown(manual_detail, version=2)
@@ -900,9 +898,7 @@ async def _handle_confirm_delete_button(query, context):
                 )
             else:
                 if manual_detail == "missing":
-                    message_text = (
-                        "❌ *Deletion Failed*\nThe path no longer exists on the server."
-                    )
+                    message_text = "❌ *Deletion Failed*\nThe path no longer exists on the server\\."
                 else:
                     message_text = "❌ *Manual Deletion Failed*\n`{}`".format(
                         escape_markdown(manual_detail, version=2)
@@ -923,10 +919,10 @@ async def _handle_confirm_delete_button(query, context):
             try:
                 if await _delete_plex_collection(plex, base_collection_name):
                     message_text += (
-                        "\n" + f"📚 Plex collection `{escaped_collection}` removed."
+                        "\n" + f"📚 Plex collection `{escaped_collection}` removed\\."
                     )
             except Exception as exc:
-                message_text += "\n" + "⚠️ Failed to delete Plex collection."
+                message_text += "\n" + "⚠️ Failed to delete Plex collection\\."
                 logger.error(
                     "Failed to delete Plex collection '%s': %s",
                     base_collection_name,
@@ -934,7 +930,7 @@ async def _handle_confirm_delete_button(query, context):
                     exc_info=True,
                 )
     else:
-        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file."
+        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file\\."
 
     # Clear the user's conversational context
     keys_to_clear = [
