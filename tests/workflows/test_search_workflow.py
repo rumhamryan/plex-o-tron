@@ -1,3 +1,4 @@
+import time
 import pytest
 from unittest.mock import AsyncMock
 
@@ -9,28 +10,48 @@ from telegram_bot.workflows.search_workflow import (
     handle_search_workflow,
     _clear_search_context,
     _present_season_download_confirmation,
+    _compute_filtered_results,
+    _build_results_keyboard,
+    RESULTS_SESSION_TTL_SECONDS,
 )
+
+
+def _extract_filter_row_texts(keyboard):
+    for row in keyboard:
+        if row and getattr(row[0], "callback_data", "").startswith(
+            "search_results_filter_resolution_"
+        ):
+            return [btn.text for btn in row]
+    return []
 
 
 @pytest.mark.asyncio
 async def test_search_movie_happy_path(
     mocker, context, make_callback_query, make_message
 ):
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
     mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_movie_years_from_wikipedia",
         new=AsyncMock(return_value=([2010], "Inception")),
     )
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow.safe_edit_message",
-        new=AsyncMock(),
+
+    async def fake_present(message, ctx, results, query_str, *, session=None, **kwargs):
+        if session:
+            session.advance(SearchStep.CONFIRMATION)
+            session.save(context.user_data)
+
+    present_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._present_search_results",
+        new=AsyncMock(side_effect=fake_present),
     )
     orchestrate_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
-        new=AsyncMock(return_value=[]),
-    )
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow._process_preliminary_results",
-        new=AsyncMock(),
+        new=AsyncMock(
+            side_effect=[
+                [{"title": "Inception 1080p", "page_url": "a"}],
+                [{"title": "Inception 4K", "page_url": "b"}],
+            ]
+        ),
     )
 
     # Step 1: press start movie button
@@ -43,38 +64,25 @@ async def test_search_movie_happy_path(
     assert session.media_type == "movie"
     assert session.step == SearchStep.TITLE
 
-    # Step 2: user provides title
+    # Step 2: user provides title and triggers combined search
     await handle_search_workflow(
         Update(update_id=2, message=make_message("Inception")), context
     )
-    orchestrate_mock.assert_awaited_once_with("Inception", "movie", context)
-
-    orchestrate_mock.reset_mock()
-
-    # Prepare context for resolution step
-    session = SearchSession.from_user_data(context.user_data)
-    session.set_final_title("Inception (2010)")
-    session.media_type = "movie"
-    session.advance(SearchStep.RESOLUTION)
-    session.save(context.user_data)
-
-    # Step 5: resolution button triggers final search
-    await handle_search_buttons(
-        Update(
-            update_id=3,
-            callback_query=make_callback_query(
-                "search_resolution_1080p", make_message()
-            ),
-        ),
-        context,
-    )
-    orchestrate_mock.assert_awaited_once_with(
-        "Inception",
-        "movie",
-        context,
-        year="2010",
-        resolution="1080p",
-    )
+    assert orchestrate_mock.await_count == 2
+    first_call = orchestrate_mock.await_args_list[0]
+    second_call = orchestrate_mock.await_args_list[1]
+    assert first_call.args[:3] == ("Inception", "movie", context)
+    assert first_call.kwargs["year"] == "2010"
+    assert first_call.kwargs["resolution"] == "1080p"
+    assert second_call.kwargs["resolution"] == "2160p"
+    present_mock.assert_awaited_once()
+    presented_results = present_mock.await_args.args[2]
+    assert [r["title"] for r in presented_results] == [
+        "Inception 1080p",
+        "Inception 4K",
+    ]
+    query_label = present_mock.await_args.args[3]
+    assert query_label.endswith("[All]")
 
 
 @pytest.mark.asyncio
@@ -90,8 +98,8 @@ async def test_movie_search_uses_cached_year_without_config(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_movie_years_from_wikipedia",
         new=AsyncMock(),
     )
-    prompt_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow._prompt_for_resolution",
+    search_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._search_movie_results",
         new=AsyncMock(),
     )
     mocker.patch(
@@ -110,9 +118,9 @@ async def test_movie_search_uses_cached_year_without_config(
         Update(update_id=2, message=make_message("Oblivion")), context
     )
     fetch_mock.assert_not_awaited()
-    prompt_mock.assert_awaited_once()
-    args = prompt_mock.await_args.args
-    assert args[2] == "Oblivion (2013)"
+    search_mock.assert_awaited_once()
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.final_title == "Oblivion (2013)"
 
 
 @pytest.mark.asyncio
@@ -171,7 +179,7 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
         "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
         new=AsyncMock(return_value=[]),
     )
-    mocker.patch(
+    present_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow._present_search_results",
         new=AsyncMock(),
     )
@@ -217,24 +225,14 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
     session = SearchSession.from_user_data(context.user_data)
     assert session.step == SearchStep.TV_EPISODE
 
-    # Episode step collects input and prompts for resolution
+    # Episode step collects input and triggers search automatically
     await handle_search_workflow(
         Update(update_id=5, message=make_message("2")), context
-    )
-
-    # Select resolution to trigger the search
-    await handle_search_buttons(
-        Update(
-            update_id=6,
-            callback_query=make_callback_query(
-                "search_resolution_1080p", make_message()
-            ),
-        ),
-        context,
     )
     orchestrate_mock.assert_awaited_once_with(
         "My Show S01E02", "tv", context, base_query_for_filter="My Show"
     )
+    present_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -244,6 +242,16 @@ async def test_tv_title_fast_path_skips_prompts(
     send_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_send_message",
         new=AsyncMock(return_value=make_message()),
+    )
+
+    async def fake_present(message, ctx, results, query_str, *, session=None, **kwargs):
+        if session:
+            session.advance(SearchStep.CONFIRMATION)
+            session.save(context.user_data)
+
+    present_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._present_search_results",
+        new=AsyncMock(side_effect=fake_present),
     )
     seasons_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_total_seasons_from_wikipedia",
@@ -263,12 +271,14 @@ async def test_tv_title_fast_path_skips_prompts(
     )
 
     seasons_mock.assert_not_awaited()
+    present_mock.assert_awaited()
     session = SearchSession.from_user_data(context.user_data)
-    assert session.step == SearchStep.RESOLUTION
+    assert session.step == SearchStep.CONFIRMATION
     assert session.season == 2
     assert session.episode == 5
     assert session.tv_scope == "single"
     assert session.final_title == "The Bear S02E05"
+    assert session.allow_detail_change is True
 
     assert send_mock.await_count >= 1
 
@@ -292,52 +302,173 @@ async def test_search_cancel_clears_context(
     assert "search_session" not in context.user_data
 
 
+def test_movie_filter_row_excludes_720p():
+    session = SearchSession(media_type="movie")
+    session.results = [{"title": "Movie 1080p", "page_url": "x"}]
+    session.results_query = "Movie"
+    session.results_generated_at = time.time()
+    keyboard = _build_results_keyboard(session, session.results, 1)
+    labels = [text.replace("🟢", "") for text in _extract_filter_row_texts(keyboard)]
+    assert labels == ["All", "1080p", "2160p"]
+
+
+def test_tv_filter_row_excludes_2160p():
+    session = SearchSession(media_type="tv")
+    session.results = [{"title": "Show 720p", "page_url": "y"}]
+    session.results_query = "Show"
+    session.results_generated_at = time.time()
+    session.results_resolution_filter = "720p"
+    keyboard = _build_results_keyboard(session, session.results, 1)
+    labels = [text.replace("🟢", "") for text in _extract_filter_row_texts(keyboard)]
+    assert labels == ["All", "720p", "1080p"]
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "callback_data,expected_titles",
-    [
-        ("search_resolution_4k", ["Movie 2160p", "Movie 4K"]),
-        ("search_resolution_1080p", ["Movie 1080p"]),
-    ],
-)
-async def test_resolution_filters_results(
-    mocker, context, make_callback_query, make_message, callback_data, expected_titles
+async def test_results_pagination_callback_updates_page(
+    mocker, context, make_callback_query, make_message
 ):
-    mocker.patch(
+    safe_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message",
         new=AsyncMock(),
     )
-    sample_results = [
-        {"title": "Movie 1080p"},
-        {"title": "Movie 2160p"},
-        {"title": "Movie 4K"},
-    ]
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
-        new=AsyncMock(return_value=sample_results),
-    )
-    present_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow._present_search_results",
-        new=AsyncMock(),
-    )
-
     session = SearchSession(media_type="movie")
-    session.set_final_title("Movie (2021)")
-    session.advance(SearchStep.RESOLUTION)
+    session.results = [
+        {
+            "title": f"Result {i}",
+            "page_url": f"https://example.com/{i}",
+            "codec": "H264",
+            "seeders": i + 1,
+            "size_gb": 5.0,
+            "source": "site",
+        }
+        for i in range(7)
+    ]
+    session.results_query = "Example"
+    session.results_generated_at = time.time()
     session.save(context.user_data)
 
-    message = make_message()
-    await handle_search_buttons(
-        Update(
-            update_id=1,
-            callback_query=make_callback_query(callback_data, message),
+    update = Update(
+        update_id=1,
+        callback_query=make_callback_query(
+            "search_results_page_1", make_message(message_id=10)
         ),
-        context,
     )
+    await handle_search_buttons(update, context)
 
-    assert present_mock.await_count == 1
-    filtered = present_mock.await_args.args[2]
-    assert [r["title"] for r in filtered] == expected_titles
+    persisted = SearchSession.from_user_data(context.user_data)
+    assert persisted.results_page == 1
+    assert safe_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_results_filter_callback_updates_state(
+    mocker, context, make_callback_query, make_message
+):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="movie")
+    session.results = [
+        {
+            "title": "Show 720p",
+            "page_url": "a",
+            "codec": "X",
+            "seeders": 5,
+            "size_gb": 2,
+        },
+        {
+            "title": "Show 1080p",
+            "page_url": "b",
+            "codec": "X",
+            "seeders": 10,
+            "size_gb": 4,
+        },
+    ]
+    session.results_query = "Show"
+    session.results_generated_at = time.time()
+    session.save(context.user_data)
+
+    update = Update(
+        update_id=2,
+        callback_query=make_callback_query(
+            "search_results_filter_resolution_720p", make_message(message_id=11)
+        ),
+    )
+    await handle_search_buttons(update, context)
+
+    persisted = SearchSession.from_user_data(context.user_data)
+    assert persisted.results_resolution_filter == "all"
+    assert persisted.results_page == 0
+    assert safe_mock.await_count == 0
+
+
+def test_size_filter_allows_large_when_filtering_for_4k():
+    session = SearchSession(media_type="movie")
+    session.results = [
+        {
+            "title": "Compact",
+            "page_url": "a",
+            "codec": "X",
+            "seeders": 50,
+            "size_gb": 8,
+            "source": "site",
+        },
+        {
+            "title": "Huge 4K",
+            "page_url": "b",
+            "codec": "X",
+            "seeders": 20,
+            "size_gb": 18,
+            "source": "site",
+        },
+    ]
+    session.results_query = "Movie"
+    session.results_max_size_gb = 10
+
+    session.results_resolution_filter = "all"
+    filtered_default = _compute_filtered_results(session)
+    assert [r["title"] for r in filtered_default] == ["Compact"]
+
+    session.results_resolution_filter = "2160p"
+    filtered_four_k = _compute_filtered_results(session)
+    assert [r["title"] for r in filtered_four_k] == ["Huge 4K"]
+
+
+@pytest.mark.asyncio
+async def test_results_callbacks_respect_expiration(
+    mocker, context, make_callback_query, make_message
+):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="movie")
+    session.results = [
+        {
+            "title": "Expired",
+            "page_url": "a",
+            "codec": "X",
+            "seeders": 1,
+            "size_gb": 5,
+            "source": "site",
+        }
+    ]
+    session.results_query = "Expired"
+    session.results_generated_at = time.time() - (RESULTS_SESSION_TTL_SECONDS + 5)
+    session.save(context.user_data)
+
+    update = Update(
+        update_id=3,
+        callback_query=make_callback_query(
+            "search_results_page_0", make_message(message_id=12)
+        ),
+    )
+    await handle_search_buttons(update, context)
+
+    assert safe_mock.await_count == 1
+    text = safe_mock.await_args.kwargs["text"]
+    assert "expired" in text.lower()
 
 
 @pytest.mark.asyncio
@@ -431,13 +562,6 @@ async def test_handle_tv_scope_selection_season(
     )
     await handle_search_buttons(update, context)
 
-    # Resolution gating: select a resolution to trigger the search
-    res_update = Update(
-        update_id=2,
-        callback_query=make_callback_query("search_resolution_1080p", make_message()),
-    )
-    await handle_search_buttons(res_update, context)
-
     assert orch_mock.call_count == 2
     present_results_mock.assert_awaited_once()
     # Ensure we presented pack candidates as normal results
@@ -482,13 +606,6 @@ async def test_handle_tv_scope_selection_season_fallback(
         callback_query=make_callback_query("search_tv_scope_season", make_message()),
     )
     await handle_search_buttons(update, context)
-
-    # Resolution gating: select a resolution to trigger the search
-    res_update = Update(
-        update_id=2,
-        callback_query=make_callback_query("search_resolution_1080p", make_message()),
-    )
-    await handle_search_buttons(res_update, context)
 
     assert orch_mock.call_count == 4
 
@@ -572,7 +689,7 @@ async def test_handle_reject_season_pack_triggers_individual(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
     )
     perf_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow._perform_tv_season_search_with_resolution",
+        "telegram_bot.workflows.search_workflow._perform_tv_season_search",
         new=AsyncMock(),
     )
 
@@ -653,17 +770,6 @@ async def test_entire_season_skips_pack_and_targets_missing(
     assert session.existing_episodes == [2, 4]
     assert session.missing_episode_numbers == [1, 3, 5]
 
-    # 2) User chooses resolution which triggers season search
-    await handle_search_buttons(
-        Update(
-            update_id=2,
-            callback_query=make_callback_query(
-                "search_resolution_1080p", make_message()
-            ),
-        ),
-        context,
-    )
-
     # Should have invoked episode searches only for missing [1,3,5]
     searched_eps = []
     for call in orch_mock.await_args_list:
@@ -693,8 +799,8 @@ async def test_entire_season_all_owned_exits_early(
         "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
         new=AsyncMock(return_value={1, 2, 3}),
     )
-    prompt_res_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow._prompt_for_resolution",
+    perform_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._perform_tv_season_search",
         new=AsyncMock(),
     )
 
@@ -716,6 +822,6 @@ async def test_entire_season_all_owned_exits_early(
     # Should have detected all episodes present and not prompted for resolution
     session = SearchSession.from_user_data(context.user_data)
     assert session.missing_episode_numbers == []
-    prompt_res_mock.assert_not_awaited()
+    perform_mock.assert_not_awaited()
     # Confirm we informed the user
     assert "already exist" in (edit_mock.await_args.kwargs.get("text") or "")

@@ -45,6 +45,14 @@ class SearchSession:
     season_episode_count: int | None = None
     existing_episodes: list[int] = field(default_factory=list)
     missing_episode_numbers: list[int] | None = None
+    results: list[dict[str, Any]] = field(default_factory=list)
+    results_query: str | None = None
+    results_page: int = 0
+    results_resolution_filter: str = "all"
+    results_sort: str = "score"
+    results_max_size_gb: float | None = None
+    results_generated_at: float | None = None
+    allow_detail_change: bool = False
 
     _SESSION_KEY = "search_session"
 
@@ -84,6 +92,14 @@ class SearchSession:
             season_episode_count=payload.get("season_episode_count"),
             existing_episodes=list(payload.get("existing_episodes") or []),
             missing_episode_numbers=missing_episode_numbers,
+            results=list(payload.get("results") or []),
+            results_query=payload.get("results_query"),
+            results_page=int(payload.get("results_page") or 0),
+            results_resolution_filter=payload.get("results_resolution_filter") or "all",
+            results_sort=payload.get("results_sort") or "score",
+            results_max_size_gb=payload.get("results_max_size_gb"),
+            results_generated_at=payload.get("results_generated_at"),
+            allow_detail_change=bool(payload.get("allow_detail_change")),
         )
         return session
 
@@ -160,6 +176,14 @@ class SearchSession:
                 if isinstance(self.missing_episode_numbers, list)
                 else None
             ),
+            "results": list(self.results),
+            "results_query": self.results_query,
+            "results_page": int(self.results_page or 0),
+            "results_resolution_filter": self.results_resolution_filter,
+            "results_sort": self.results_sort,
+            "results_max_size_gb": self.results_max_size_gb,
+            "results_generated_at": self.results_generated_at,
+            "allow_detail_change": self.allow_detail_change,
         }
 
     def save(self, user_data: MutableMapping[str, Any]) -> None:

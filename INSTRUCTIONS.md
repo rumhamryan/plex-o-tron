@@ -69,7 +69,7 @@
 - Respect existing exception handling—cache should store failures briefly (negative caching) to avoid spamming Wikipedia when a title does not exist.
 - Keep cache size reasonable (e.g., 100 entries) and provide a helper to clear it for test isolation.
 
-## Initiative 4 — Search Result Refinement & Pagination
+## Initiative 4 — Search Result Refinement & Pagination (✅ Complete – 2025‑12‑14)
 ### Goals
 - Let users view more than five results and toggle filters (resolution, size, seeders) without re-scraping.
 - Reduce re-run latency by keeping the aggregated results in memory and manipulating them via callback queries.

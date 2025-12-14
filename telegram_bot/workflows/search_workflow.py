@@ -1,6 +1,7 @@
 # telegram_bot/workflows/search_workflow.py
 
 import re
+import time
 from typing import Any, Literal
 
 from telegram import (
@@ -28,6 +29,14 @@ from .search_session import (
     clear_search_session,
 )
 from .search_parser import parse_search_query
+
+RESULTS_PAGE_SIZE = 5
+RESULTS_SESSION_TTL_SECONDS = 15 * 60
+FOUR_K_SIZE_MULTIPLIER = 2.0
+RESOLUTION_FILTERS: tuple[str, ...] = ("all", "720p", "1080p", "2160p")
+RESULTS_EXPIRED_MESSAGE = (
+    "? These search results have expired\\. Please start a new search\\."
+)
 
 
 def _get_session(context: ContextTypes.DEFAULT_TYPE) -> SearchSession:
@@ -119,6 +128,10 @@ async def handle_search_buttons(
                 "search_select_year_",
             )
         )
+        or action.startswith("search_select_")
+        or action.startswith("search_results_page_")
+        or action.startswith("search_results_filter_resolution_")
+        or action.startswith("search_results_sort_")
         or action == "search_tv_change_details"
     )
 
@@ -144,7 +157,13 @@ async def handle_search_buttons(
         elif action == "search_tv_change_details":
             await _handle_tv_change_details(query, context, session)
         elif action.startswith("search_select_"):
-            await _handle_result_selection_button(query, context)
+            await _handle_result_selection_button(query, context, session)
+        elif action.startswith("search_results_page_"):
+            await _handle_results_page_button(query, context, session)
+        elif action.startswith("search_results_filter_resolution_"):
+            await _handle_results_filter_button(query, context, session)
+        elif action.startswith("search_results_sort_"):
+            await _handle_results_sort_button(query, context, session)
         else:
             logger.warning(f"Received unhandled search callback: {action}")
     except SearchSessionError as exc:
@@ -187,9 +206,7 @@ async def _handle_movie_title_reply(
         session.set_final_title(full_title)
         session.advance(SearchStep.RESOLUTION)
         _save_session(context, session)
-        await _prompt_for_resolution(
-            chat_id, context, full_title, media_type="movie", session=session
-        )
+        await _search_movie_results(chat_id, context, session)
         return
     _save_session(context, session)
 
@@ -255,9 +272,7 @@ async def _handle_movie_title_reply(
         session.set_final_title(full_title)
         session.advance(SearchStep.RESOLUTION)
         _save_session(context, session)
-        await _prompt_for_resolution(
-            status_message, context, full_title, media_type="movie", session=session
-        )
+        await _search_movie_results(status_message, context, session)
         return
 
     results = await search_logic.orchestrate_searches(display_title, "movie", context)
@@ -293,9 +308,7 @@ async def _handle_movie_year_reply(
     session.set_final_title(full_title)
     session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
-    await _prompt_for_resolution(
-        chat_id, context, full_title, media_type="movie", session=session
-    )
+    await _search_movie_results(chat_id, context, session)
 
 
 async def _handle_tv_title_reply(
@@ -330,6 +343,7 @@ async def _handle_tv_title_reply(
                 sanitized_title,
                 parsed_query.season,
                 parsed_query.episode,
+                allow_detail_change=True,
             )
             return
         if parsed_query.season:
@@ -496,6 +510,7 @@ async def _fast_track_tv_episode_resolution(
     episode: int,
     *,
     notice: str | None = None,
+    allow_detail_change: bool = False,
 ) -> None:
     """Skip directly to resolution selection for a detected episode."""
     final_title = f"{title} S{int(season):02d}E{int(episode):02d}"
@@ -513,14 +528,14 @@ async def _fast_track_tv_episode_resolution(
         f"*{escape_markdown(title, version=2)}*\\."
     )
 
-    await _prompt_for_resolution(
+    session.allow_detail_change = allow_detail_change
+    _save_session(context, session)
+
+    await _search_tv_single_results(
         chat_id,
         context,
-        final_title,
-        media_type="tv",
-        session=session,
-        detected_context=detection_text,
-        allow_detail_change=True,
+        session,
+        notice=detection_text,
     )
 
 
@@ -545,6 +560,7 @@ async def _fast_track_episode_with_assumed_season(
         assumed_season,
         episode,
         notice=notice,
+        allow_detail_change=True,
     )
 
 
@@ -595,7 +611,7 @@ async def _handle_season_selection_button(
     except Exception:
         await safe_edit_message(
             query.message,
-            text="❓ An error occurred with your selection\\. Please try again\\.",
+            text="❌ An error occurred with your selection\\. Please try again\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -631,7 +647,7 @@ async def _handle_episode_selection_button(
     except Exception:
         await safe_edit_message(
             query.message,
-            text="❓ An error occurred with your selection\\. Please try again\\.",
+            text="❌ An error occurred with your selection\\. Please try again\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -655,9 +671,10 @@ async def _handle_episode_selection_button(
     session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
 
-    await _prompt_for_resolution(
-        query.message, context, full_search_term, media_type="tv", session=session
-    )
+    session.allow_detail_change = False
+    _save_session(context, session)
+
+    await _search_tv_single_results(query.message, context, session)
 
 
 async def _handle_tv_episode_reply(
@@ -684,9 +701,10 @@ async def _handle_tv_episode_reply(
     session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
 
-    await _prompt_for_resolution(
-        chat_id, context, full_search_term, media_type="tv", session=session
-    )
+    session.allow_detail_change = False
+    _save_session(context, session)
+
+    await _search_tv_single_results(chat_id, context, session)
 
 
 async def _handle_tv_change_details(
@@ -711,6 +729,7 @@ async def _handle_tv_change_details(
     session.tv_scope = None
     session.resolution = None
     session.prompt_message_id = None
+    session.allow_detail_change = False
     session.advance(SearchStep.TV_SEASON)
     _save_session(context, session)
 
@@ -818,7 +837,7 @@ async def _handle_tv_scope_selection(
         if not episode_count:
             await safe_edit_message(
                 query.message,
-                "❓ Could not verify episode count\\. Operation cancelled\\.",
+                "❌ Could not verify episode count\\. Operation cancelled\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
@@ -856,7 +875,7 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"Detected {have}/{total} episodes already in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
-                    "I will only fetch the missing episodes\\. Choose a resolution:"
+                    "I will only fetch the missing episodes in 720p/1080p\\."
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
@@ -865,16 +884,18 @@ async def _handle_tv_scope_selection(
                 query.message,
                 text=(
                     f"No existing episodes found in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
-                    "You may download a season pack if available\\. Choose a resolution:"
+                    "Searching for a season pack or matching episodes in 720p/1080p\\."
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
 
-        await _prompt_for_resolution(
+        session.allow_detail_change = False
+        _save_session(context, session)
+        await _perform_tv_season_search(
             query.message,
             context,
-            f"{title} S{int(season):02d}",
-            media_type="tv",
+            str(title),
+            int(season),
             session=session,
         )
 
@@ -920,8 +941,6 @@ async def _handle_resolution_button(
     """Handles the resolution selection and triggers the appropriate search."""
     if any(x in query.data for x in ("2160p", "4k")):
         resolution = "2160p"
-    elif "720p" in query.data:
-        resolution = "720p"
     else:
         resolution = "1080p"
 
@@ -943,7 +962,7 @@ async def _handle_resolution_button(
     if media_type == "movie":
         await safe_edit_message(
             query.message,
-            text=f"🎯 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
+            text=f"🔍 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         year_match = re.search(r"\((\d{4})\)", final_title)
@@ -952,13 +971,14 @@ async def _handle_resolution_button(
         results = await search_logic.orchestrate_searches(
             search_title, "movie", context, year=year, resolution=resolution
         )
-        filtered_results = _filter_results_by_resolution(results, resolution)
         await _present_search_results(
             query.message,
             context,
-            filtered_results,
+            results,
             f"{final_title} [{resolution}]",
+            session=session,
             max_size_gb=MAX_TORRENT_SIZE_GB,
+            initial_resolution=resolution,
         )
         return
 
@@ -969,18 +989,19 @@ async def _handle_resolution_button(
         if tv_scope == "single" and title:
             await safe_edit_message(
                 query.message,
-                text=f"🎯 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
+                text=f"🔍 Searching all sources for *{escape_markdown(final_title, version=2)}* in *{resolution}*\\.\\.\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             results = await search_logic.orchestrate_searches(
                 final_title, "tv", context, base_query_for_filter=title
             )
-            filtered_results = _filter_results_by_resolution(results, resolution)
             await _present_search_results(
                 query.message,
                 context,
-                filtered_results,
+                results,
                 f"{final_title} [{resolution}]",
+                session=session,
+                initial_resolution=resolution,
             )
             return
 
@@ -988,14 +1009,12 @@ async def _handle_resolution_button(
             await safe_edit_message(
                 query.message,
                 text=(
-                    f"🎯 Searching for Season {escape_markdown(str(season), version=2)} "
+                    f"🔍 Searching for Season {escape_markdown(str(season), version=2)} "
                     f"of *{escape_markdown(title, version=2)}* in *{resolution}*\\.\\.\\."
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-            await _perform_tv_season_search_with_resolution(
-                query.message, context, title, int(season), resolution
-            )
+            await _perform_tv_season_search(query.message, context, title, int(season))
             return
 
     await safe_edit_message(
@@ -1006,49 +1025,141 @@ async def _handle_resolution_button(
     clear_search_session(context.user_data)
 
 
-async def _handle_result_selection_button(query, context):
+async def _handle_result_selection_button(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+) -> None:
     """Handles the user selecting a specific torrent from the results list."""
-    if context.user_data is None:
-        context.user_data = {}
-    search_results = context.user_data.pop("search_results", [])
-    if not search_results:
+    if not isinstance(query.message, Message):
+        return
+
+    _ensure_results_available(session)
+
+    filtered_results = _compute_filtered_results(session)
+    if not filtered_results:
         await safe_edit_message(
             query.message,
-            "❌ This selection has expired\\. Please start the search again\\.",
+            "❌ No results match the current filters\\. Please adjust them or restart the search\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
     try:
         choice_index = int(query.data.split("_")[2])
-        selected_result = search_results[choice_index]
-        url_to_process = selected_result["page_url"]
-
-        logger.info(
-            f"User selected '{selected_result['title']}'. Passing to torrent_service: {url_to_process[:70]}"
-        )
-
-        # Handoff to the torrent service to start the download flow
-        ti = await torrent_service.process_user_input(
-            url_to_process, context, query.message
-        )
-        if not ti:
-            return
-
-        error_message, parsed_info = await validate_and_enrich_torrent(
-            ti, query.message
-        )
-        if error_message or not parsed_info:
-            return
-
-        await send_confirmation_prompt(query.message, context, ti, parsed_info)
-
     except (ValueError, IndexError):
         await safe_edit_message(
             query.message,
             "❌ An error occurred with your selection\\. Please try again\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
+        return
+
+    if not (0 <= choice_index < len(filtered_results)):
+        await safe_edit_message(
+            query.message,
+            "❌ This selection has expired\\. Please start the search again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        clear_search_session(context.user_data)
+        return
+
+    selected_result = filtered_results[choice_index]
+    url_to_process = selected_result.get("page_url")
+    if not url_to_process:
+        await safe_edit_message(
+            query.message,
+            "❌ Unable to open that result\\. Please choose another option\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    logger.info(
+        f"User selected '{selected_result.get('title')}'. Passing to torrent_service: {url_to_process[:70]}"
+    )
+
+    # Prevent duplicate selections during the download handoff.
+    clear_search_session(context.user_data)
+
+    ti = await torrent_service.process_user_input(
+        url_to_process, context, query.message
+    )
+    if not ti:
+        return
+
+    error_message, parsed_info = await validate_and_enrich_torrent(ti, query.message)
+    if error_message or not parsed_info:
+        return
+
+    await send_confirmation_prompt(query.message, context, ti, parsed_info)
+
+
+async def _handle_results_page_button(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    _ensure_results_available(session)
+
+    try:
+        target_page = int(query.data.split("_")[-1])
+    except (ValueError, IndexError):
+        await safe_edit_message(
+            query.message,
+            "❌ Unable to change pages right now\\. Please try again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    session.results_page = max(target_page, 0)
+    _save_session(context, session)
+    await _render_results_view(query.message, context, session)
+
+
+async def _handle_results_filter_button(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+    _ensure_results_available(session)
+    allowed_filters = _get_allowed_resolution_filters(session)
+    requested = query.data.split("_")[-1]
+    normalized = _normalize_resolution_filter(requested)
+    if normalized not in allowed_filters:
+        try:
+            await query.answer(
+                text="This resolution is unavailable for this search.",
+                show_alert=False,
+            )
+        except RuntimeError:
+            pass
+        return
+    session.results_resolution_filter = normalized
+    session.results_page = 0
+    _save_session(context, session)
+    await _render_results_view(query.message, context, session)
+
+
+async def _handle_results_sort_button(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+    _ensure_results_available(session)
+    sort_value = query.data.split("_")[-1]
+    if sort_value not in {"score", "seeders", "size"}:
+        sort_value = "score"
+    session.results_sort = sort_value
+    session.results_page = 0
+    _save_session(context, session)
+    await _render_results_view(query.message, context, session)
 
 
 async def _handle_year_selection_button(
@@ -1065,7 +1176,7 @@ async def _handle_year_selection_button(
             "Could not process year selection: The associated message is inaccessible."
         )
         await query.answer(
-            text="❓ Error: The original message could not be modified.",
+            text="❌ Error: The original message could not be modified.",
             show_alert=True,
         )
         return
@@ -1090,7 +1201,7 @@ async def _handle_year_selection_button(
         logger.error(f"Could not parse year from callback data: {query.data}")
         await safe_edit_message(
             query.message,
-            text="❓ An error occurred with your selection\\. Please try again\\.",
+            text="❌ An error occurred with your selection\\. Please try again\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1100,12 +1211,8 @@ async def _handle_year_selection_button(
     session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
 
-    await _prompt_for_resolution(
-        query.message, context, full_title, media_type="movie", session=session
-    )
+    await _search_movie_results(query.message, context, session)
 
-
-# --- Helper/UI Functions ---
 
 # --- Helper/UI Functions ---
 
@@ -1188,7 +1295,7 @@ async def _present_season_download_confirmation(
     if not found_torrents:
         await safe_edit_message(
             message,
-            text="❓ No torrents found for this season.",
+            text="❌ No torrents found for this season.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1317,46 +1424,186 @@ async def _prompt_for_resolution(
         _save_session(context, session)
 
 
-async def _perform_tv_season_search_with_resolution(
+async def _search_movie_results(
+    target: Message | int,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+) -> None:
+    """Searches for movie torrents across 1080p and 4K in a single scrape."""
+    try:
+        final_title = session.require_final_title()
+    except SearchSessionError as exc:
+        if isinstance(target, Message):
+            await safe_edit_message(
+                target,
+                text=exc.user_message,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        else:
+            await safe_send_message(
+                context.bot,
+                chat_id=target,
+                text=exc.user_message,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        clear_search_session(context.user_data)
+        return
+
+    display_title = escape_markdown(final_title, version=2)
+    progress_text = (
+        f"🔍 Searching all sources for *{display_title}* in 1080p and 4K\\.\\.\\."
+    )
+
+    if isinstance(target, Message):
+        status_message = target
+        await safe_edit_message(
+            status_message,
+            text=progress_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    else:
+        status_message = await safe_send_message(
+            context.bot,
+            chat_id=target,
+            text=progress_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+    search_title = final_title.split("(")[0].strip() or final_title
+    year_match = re.search(r"\((\d{4})\)", final_title)
+    year = year_match.group(1) if year_match else None
+
+    combined_results: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for resolution in ("1080p", "2160p"):
+        results = await search_logic.orchestrate_searches(
+            search_title,
+            "movie",
+            context,
+            year=year,
+            resolution=resolution,
+        )
+        for item in results or []:
+            key = item.get("page_url") or item.get("magnet") or item.get("title")
+            if key and key in seen_keys:
+                continue
+            if key:
+                seen_keys.add(key)
+            combined_results.append(item)
+
+    await _present_search_results(
+        status_message,
+        context,
+        combined_results,
+        f"{final_title} [All]",
+        session=session,
+        max_size_gb=MAX_TORRENT_SIZE_GB,
+        initial_resolution="all",
+    )
+
+
+async def _search_tv_single_results(
+    target: Message | int,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+    *,
+    notice: str | None = None,
+) -> None:
+    """Searches for a single TV episode without requiring a resolution prompt."""
+    try:
+        final_title = session.require_final_title()
+    except SearchSessionError as exc:
+        if isinstance(target, Message):
+            await safe_edit_message(
+                target,
+                text=exc.user_message,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        else:
+            await safe_send_message(
+                context.bot,
+                chat_id=target,
+                text=exc.user_message,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        clear_search_session(context.user_data)
+        return
+
+    base_title = session.effective_title or session.title or ""
+    display_title = escape_markdown(final_title, version=2)
+    status_lines = []
+    if notice:
+        status_lines.append(notice)
+    status_lines.append(
+        f"🔎 Searching all sources for *{display_title}* in 720p and 1080p\\.\\.\\."
+    )
+    progress_text = "\n".join(status_lines)
+
+    if isinstance(target, Message):
+        status_message = target
+        await safe_edit_message(
+            status_message,
+            text=progress_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    else:
+        status_message = await safe_send_message(
+            context.bot,
+            chat_id=target,
+            text=progress_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+    results = await search_logic.orchestrate_searches(
+        final_title,
+        "tv",
+        context,
+        base_query_for_filter=base_title or None,
+    )
+
+    await _present_search_results(
+        status_message,
+        context,
+        results,
+        f"{final_title} [All]",
+        session=session,
+        initial_resolution="all",
+    )
+
+
+async def _perform_tv_season_search(
     message: Message,
     context: ContextTypes.DEFAULT_TYPE,
     title: str,
     season: int,
-    resolution: str,
     *,
     force_individual_episodes: bool = False,
     session: SearchSession | None = None,
 ) -> None:
     """
-    Searches for a TV season pack or individual episodes, applying a resolution filter.
+    Searches for a TV season pack or individual episodes without prompting for resolution.
     On success, presents a confirmation summary to queue the season download.
     """
-    # Try a couple of season query variants first
     season_queries = [f"{title} S{season:02d}", f"{title} Season {season}"]
     found_results: list[dict[str, Any]] = []
     for q in season_queries:
-        # Use the base title as a stricter filter to avoid spin-off mis-matches
         res = await search_logic.orchestrate_searches(
             q, "tv", context, base_query_for_filter=title
         )
         if res:
-            # Do not filter season packs by resolution; many packs omit it in the title
             found_results.extend(res)
         if len(found_results) >= 3:
             break
 
     torrents_to_queue: list[dict[str, Any]] = []
-
-    # Primary strategy: look for an actual season pack (unless explicitly skipped)
-    season_pack_torrent = None
-    pack_candidates = []
-    # Enforce individual episodes if any are already owned
     if session is None:
         session = _get_session(context)
 
     existing_owned = set(session.existing_episodes or [])
     must_individual = bool(force_individual_episodes or existing_owned)
 
+    season_pack_torrent = None
+    pack_candidates = []
     if not must_individual:
         season_token = f"s{season:02d} "
         for item in found_results:
@@ -1374,118 +1621,105 @@ async def _perform_tv_season_search_with_resolution(
         )
 
     if season_pack_torrent and not must_individual:
-        # Present all pack-like candidates as a normal results list with details
-        query_str = f"{title} S{season:02d} [{resolution}]"
-        await _present_search_results(message, context, pack_candidates, query_str)
+        await _present_search_results(
+            message,
+            context,
+            pack_candidates,
+            f"{title} S{int(season):02d} [All]",
+            session=session,
+            initial_resolution="all",
+        )
+        return
+
+    episode_count = int(session.season_episode_count or 0)
+    raw_targets = session.missing_episode_numbers
+    if isinstance(raw_targets, list) and raw_targets:
+        targets = list(raw_targets)
+    elif isinstance(raw_targets, list):
+        await safe_edit_message(
+            message,
+            text=(
+                f"All episodes for *{escape_markdown(title, version=2)}* "
+                f"S{int(season):02d} already exist in your library\\."
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         return
     else:
-        # Fallback: search for each episode individually
-        # Guard for Optional user_data to satisfy type checkers/IDEs
-        episode_count = int(session.season_episode_count or 0)
-        # Determine target episodes:
-        # - If season_missing_episode_numbers is explicitly present, use it;
-        #   if it's an empty list, then everything is already owned.
-        # - If not present at all, default to the full season [1..episode_count].
-        raw_targets = session.missing_episode_numbers
-        if isinstance(raw_targets, list) and raw_targets:
-            targets = list(raw_targets)
-        elif isinstance(raw_targets, list):
-            await safe_edit_message(
-                message,
-                text=(
-                    f"All episodes for *{escape_markdown(title, version=2)}* "
-                    f"S{int(season):02d} already exist in your library\\."
-                ),
-                parse_mode=ParseMode.MARKDOWN_V2,
+        targets = list(range(1, episode_count + 1))
+
+    titles_map: dict[int, str] = {}
+    corrected_title: str | None = None
+    try:
+        logger.info(
+            f"[WIKI] Fetching episode titles from Wikipedia for '{title}' S{season:02d}."
+        )
+        (
+            titles_map,
+            corrected_title,
+        ) = await scraping_service.fetch_episode_titles_for_season(title, season)
+        logger.info(
+            f"[WIKI] Retrieved {len(titles_map)} episode titles for '{title}' S{season:02d}."
+        )
+        if corrected_title and corrected_title != title:
+            logger.info(
+                f"[WIKI] Title corrected by Wikipedia: '{title}' -> '{corrected_title}'."
             )
-            return
         else:
-            targets = list(range(1, episode_count + 1))
-        # Fetch all episode titles once to avoid per-episode Wikipedia lookups
-        titles_map: dict[int, str] = {}
-        corrected_title: str | None = None
-        try:
-            logger.info(
-                f"[WIKI] Fetching episode titles from Wikipedia for '{title}' S{season:02d}."
-            )
-            (
-                titles_map,
-                corrected_title,
-            ) = await scraping_service.fetch_episode_titles_for_season(title, season)
-            logger.info(
-                f"[WIKI] Retrieved {len(titles_map)} episode titles for '{title}' S{season:02d}."
-            )
-            if corrected_title and corrected_title != title:
-                logger.info(
-                    f"[WIKI] Title corrected by Wikipedia: '{title}' -> '{corrected_title}'."
-                )
-            else:
-                logger.debug(
-                    f"[WIKI] No title correction for '{title}'. Using original."
-                )
-            logger.debug(
-                f"[WIKI] Episode title keys available: {sorted(list(titles_map.keys()))}"
-            )
-        except Exception:
-            titles_map, corrected_title = {}, None
+            logger.debug(f"[WIKI] No title correction for '{title}'. Using original.")
+    except Exception:
+        titles_map, corrected_title = {}, None
 
-        # Progress feedback: update the message after each episode search
-        processed_eps = 0
+    processed_eps = 0
 
-        def _progress_text(last_ep: int | None) -> str:
-            base = (
-                f"🔎 Searching for Season {escape_markdown(str(season), version=2)} "
-                f"of *{escape_markdown(title, version=2)}* in *{escape_markdown(resolution, version=2)}*\\.\\.\\."
-            )
-            total_targets = len(targets) if targets else episode_count
-            if total_targets:
-                return base + f"\nProgress: {processed_eps}/{total_targets}"
-            return base
+    def _progress_text(last_ep: int | None) -> str:
+        base = (
+            f"🔎 Searching for Season {escape_markdown(str(season), version=2)} "
+            f"of *{escape_markdown(title, version=2)}* in 720p and 1080p\\.\\.\\."
+        )
+        total_targets = len(targets) if targets else episode_count
+        if total_targets:
+            return base + f"\nProgress: {processed_eps}/{total_targets}"
+        return base
 
-        for ep in targets:
-            search_term = f"{title} S{season:02d}E{ep:02d}"
-            ep_results = await search_logic.orchestrate_searches(
-                search_term, "tv", context, base_query_for_filter=title
-            )
-            # Do not filter by resolution for episodes in season fallback
-            if not ep_results:
-                processed_eps += 1
-                await safe_edit_message(
-                    message,
-                    text=_progress_text(ep),
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                )
-                continue
-            best = ep_results[0]
-            link = best.get("page_url")
-            if not link:
-                processed_eps += 1
-                await safe_edit_message(
-                    message,
-                    text=_progress_text(ep),
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                )
-                continue
-            parsed_info = parse_torrent_name(best.get("title", ""))
-            parsed_info["title"] = title
-            parsed_info["season"] = season
-            parsed_info["episode"] = ep
-            parsed_info["type"] = "tv"
-
-            # Use pre-fetched episode titles from Wikipedia (cached per season)
-            parsed_info["episode_title"] = titles_map.get(ep)
-            if corrected_title:
-                parsed_info["title"] = corrected_title
-
-            torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
-
-            # Update progress after successful episode processing
+    for ep in targets:
+        search_term = f"{title} S{season:02d}E{ep:02d}"
+        ep_results = await search_logic.orchestrate_searches(
+            search_term, "tv", context, base_query_for_filter=title
+        )
+        if not ep_results:
             processed_eps += 1
             await safe_edit_message(
                 message,
                 text=_progress_text(ep),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
+            continue
+        best = ep_results[0]
+        link = best.get("page_url")
+        if not link:
+            processed_eps += 1
+            await safe_edit_message(
+                message,
+                text=_progress_text(ep),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            continue
+        parsed_info = parse_torrent_name(best.get("title", ""))
+        parsed_info["title"] = corrected_title or title
+        parsed_info["season"] = season
+        parsed_info["episode"] = ep
+        parsed_info["type"] = "tv"
+        parsed_info["episode_title"] = titles_map.get(ep)
+
+        torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
+
+        processed_eps += 1
+        await safe_edit_message(
+            message,
+            text=_progress_text(ep),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
 
     await _present_season_download_confirmation(
         message, context, torrents_to_queue, session=session
@@ -1503,8 +1737,6 @@ async def handle_reject_season_pack(
     session = _get_session(context)
     title = session.effective_title or session.title
     season = session.season
-    resolution = session.resolution or "1080p"
-
     if not title or season is None:
         await safe_edit_message(
             query.message,
@@ -1515,7 +1747,7 @@ async def handle_reject_season_pack(
         return
 
     prefix = escape_markdown(
-        "🎯 Rejected season pack\\. Collecting single episodes for ", version=2
+        "⛔ Rejected season pack\\. Collecting single episodes for ", version=2
     )
     title_md = escape_markdown(str(title), version=2)
     message_text = f"{prefix}*{title_md}* S{int(season):02d}."
@@ -1525,12 +1757,11 @@ async def handle_reject_season_pack(
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-    await _perform_tv_season_search_with_resolution(
+    await _perform_tv_season_search(
         query.message,
         context,
         str(title),
         int(season),
-        str(resolution),
         force_individual_episodes=True,
         session=session,
     )
@@ -1553,10 +1784,18 @@ def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[
 
 
 async def _present_search_results(
-    message, context, results, query_str, *, max_size_gb: float | None = None
+    message,
+    context,
+    results,
+    query_str,
+    *,
+    session: SearchSession | None = None,
+    max_size_gb: float | None = None,
+    initial_resolution: str | None = None,
 ):
-    """Formats and displays the final list of search results, pre-filtered by size."""
-    _clear_search_context(context)
+    """Persists result metadata on the session and renders the first page."""
+    if session is None:
+        session = _get_session(context)
 
     escaped_query = escape_markdown(query_str, version=2)
 
@@ -1568,56 +1807,272 @@ async def _present_search_results(
         )
         return
 
-    # Filter the results list to exclude torrents larger than the configured limit
-    # Optionally allow a per-call override (e.g., for 4K movies which are larger).
-    size_cap = (
-        max_size_gb if isinstance(max_size_gb, (int, float)) else MAX_TORRENT_SIZE_GB
+    resolution_filter = _normalize_resolution_filter(initial_resolution)
+    allowed_filters = _get_allowed_resolution_filters(session)
+    if resolution_filter not in allowed_filters:
+        resolution_filter = "all"
+    session.advance(SearchStep.CONFIRMATION)
+    session.results = list(results)
+    session.results_query = query_str
+    session.results_page = 0
+    session.results_resolution_filter = resolution_filter
+    session.results_sort = "score"
+    session.results_max_size_gb = (
+        float(max_size_gb) if isinstance(max_size_gb, (int, float)) else None
     )
-    original_count = len(results)
-    filtered_results = [
-        r for r in results if r.get("size_gb", float("inf")) <= size_cap
-    ]
+    session.results_generated_at = time.time()
+    _save_session(context, session)
 
-    # Handle the case where all found results were too large
-    if not filtered_results:
-        await safe_edit_message(
-            message,
-            text=(
-                f"ℹ️ Found {original_count} result\\(s\\) for '`{escaped_query}`', "
-                f"but none were under the *{escape_markdown(str(MAX_TORRENT_SIZE_GB), version=2)} GB* size limit\\."
-            ),
-            parse_mode=ParseMode.MARKDOWN_V2,
+    await _render_results_view(message, context, session)
+
+
+def _normalize_resolution_filter(value: str | None) -> str:
+    if not value:
+        return "all"
+    lowered = str(value).lower()
+    if lowered in RESOLUTION_FILTERS:
+        return lowered
+    if lowered in ("4k", "uhd", "2160"):
+        return "2160p"
+    return "all"
+
+
+def _get_allowed_resolution_filters(session: SearchSession) -> list[str]:
+    if session.media_type == "movie":
+        return ["all", "1080p", "2160p"]
+    if session.media_type == "tv":
+        return ["all", "720p", "1080p"]
+    return list(RESOLUTION_FILTERS)
+
+
+def _ensure_results_available(session: SearchSession) -> None:
+    if not session.results or not session.results_query:
+        raise SearchSessionError(RESULTS_EXPIRED_MESSAGE)
+    generated_at = session.results_generated_at
+    if not isinstance(generated_at, (int, float)):
+        raise SearchSessionError(RESULTS_EXPIRED_MESSAGE)
+    if time.time() - float(generated_at) > RESULTS_SESSION_TTL_SECONDS:
+        raise SearchSessionError(RESULTS_EXPIRED_MESSAGE)
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _determine_size_cap(
+    session: SearchSession, resolution_filter: str | None = None
+) -> float | None:
+    cap = session.results_max_size_gb
+    if cap is None:
+        return None
+    active = _normalize_resolution_filter(
+        resolution_filter or session.results_resolution_filter
+    )
+    if active == "2160p":
+        return cap * FOUR_K_SIZE_MULTIPLIER
+    return cap
+
+
+def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
+    working = list(session.results or [])
+    if not working:
+        return []
+
+    resolution_filter = _normalize_resolution_filter(session.results_resolution_filter)
+    if resolution_filter != "all":
+        working = _filter_results_by_resolution(working, resolution_filter)
+
+    size_cap = _determine_size_cap(session, resolution_filter)
+    if size_cap is not None:
+        limited: list[dict[str, Any]] = []
+        for item in working:
+            size_value = _safe_float(item.get("size_gb"))
+            if size_value is None or size_value <= size_cap:
+                limited.append(item)
+        working = limited
+
+    sort_mode = (session.results_sort or "score").lower()
+    if sort_mode == "seeders":
+        working = sorted(
+            working,
+            key=lambda r: _safe_int(r.get("seeders")),
+            reverse=True,
         )
-        return
+    elif sort_mode == "size":
+        working = sorted(
+            working,
+            key=lambda r: _safe_float(r.get("size_gb")) or float("inf"),
+        )
 
-    # Use the filtered list from this point on
-    context.user_data["search_results"] = filtered_results
-    keyboard = []
+    return working
 
-    results_text = f"Found {len(filtered_results)} valid result\\(s\\) for *{escaped_query}*\\. Please select one to download:"
 
-    for i, result in enumerate(filtered_results[:5]):  # Limit to 5 choices
-        source_site = result.get("source", "Site")
-        source_name = source_site.split(".")[0]
-        button_label = f"{result.get('codec', 'N/A')} | S: {result.get('seeders', 0)} | {result.get('size_gb', 0.0):.2f} GB | [{source_name}]"
+def _format_result_button_label(result: dict[str, Any]) -> str:
+    codec = result.get("codec") or "N/A"
+    seeders = _safe_int(result.get("seeders"))
+    size_value = _safe_float(result.get("size_gb"))
+    size_text = f"{size_value:.2f} GB" if size_value is not None else "? GB"
+    source_site = result.get("source") or "source"
+    source_name = source_site.split(".")[0]
+    return f"{codec} | S:{seeders} | {size_text} | [{source_name}]"
+
+
+def _build_results_keyboard(
+    session: SearchSession,
+    filtered_results: list[dict[str, Any]],
+    total_pages: int,
+) -> list[list[InlineKeyboardButton]]:
+    keyboard: list[list[InlineKeyboardButton]] = []
+    start = session.results_page * RESULTS_PAGE_SIZE
+    end = min(start + RESULTS_PAGE_SIZE, len(filtered_results))
+
+    for idx in range(start, end):
         keyboard.append(
-            [InlineKeyboardButton(button_label, callback_data=f"search_select_{i}")]
+            [
+                InlineKeyboardButton(
+                    _format_result_button_label(filtered_results[idx]),
+                    callback_data=f"search_select_{idx}",
+                )
+            ]
+        )
+
+    if total_pages > 1:
+        nav_row: list[InlineKeyboardButton] = []
+        if session.results_page > 0:
+            nav_row.append(
+                InlineKeyboardButton(
+                    "< Prev",
+                    callback_data=f"search_results_page_{session.results_page - 1}",
+                )
+            )
+        if session.results_page < total_pages - 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    "Next >",
+                    callback_data=f"search_results_page_{session.results_page + 1}",
+                )
+            )
+        if nav_row:
+            keyboard.append(nav_row)
+
+    res_row: list[InlineKeyboardButton] = []
+    allowed_filters = _get_allowed_resolution_filters(session)
+    label_map = {
+        "all": "All",
+        "720p": "720p",
+        "1080p": "1080p",
+        "2160p": "2160p",
+    }
+    active_filter = _normalize_resolution_filter(session.results_resolution_filter)
+    if active_filter not in allowed_filters:
+        active_filter = "all"
+    for value in allowed_filters:
+        label = label_map.get(value, value.upper())
+        prefix = "🟢" if active_filter == value else ""
+        res_row.append(
+            InlineKeyboardButton(
+                f"{prefix}{label}",
+                callback_data=f"search_results_filter_resolution_{value}",
+            )
+        )
+    keyboard.append(res_row)
+
+    sort_row: list[InlineKeyboardButton] = []
+    for key, label in (("score", "Score"), ("seeders", "Seeders"), ("size", "Size")):
+        prefix = "🟢" if (session.results_sort or "score") == key else ""
+        sort_row.append(
+            InlineKeyboardButton(
+                f"{prefix}{label}",
+                callback_data=f"search_results_sort_{key}",
+            )
+        )
+    keyboard.append(sort_row)
+
+    if (
+        session.allow_detail_change
+        and session.media_type == "tv"
+        and session.tv_scope == "single"
+    ):
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "🔄️ Change", callback_data="search_tv_change_details"
+                )
+            ]
         )
 
     keyboard.append(
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]
     )
+    return keyboard
+
+
+def _clear_search_context(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clears persisted search session state (legacy helper for tests)."""
+    clear_search_session(getattr(context, "user_data", None))
+
+
+async def _render_results_view(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    filtered_results = _compute_filtered_results(session)
+    total_all = len(session.results or [])
+    total_filtered = len(filtered_results)
+
+    total_pages = (
+        max(1, (total_filtered + RESULTS_PAGE_SIZE - 1) // RESULTS_PAGE_SIZE)
+        if total_filtered
+        else 1
+    )
+    if total_filtered == 0:
+        session.results_page = 0
+    else:
+        session.results_page = min(
+            max(session.results_page, 0), max(total_pages - 1, 0)
+        )
+
+    _save_session(context, session)
+
+    raw_query = session.results_query or "this title"
+    trim = slice(-6)
+    processed_query = raw_query[trim]
+    escaped_query = escape_markdown(processed_query, version=2)
+    filters_text = (
+        f"Resolution: *{session.results_resolution_filter.upper()}* \\| "
+        f"Sort: *{(session.results_sort or 'score').title()}*"
+    )
+
+    if total_filtered == 0:
+        results_text = (
+            f"Found {total_all} result\\(s\\) for *{escaped_query}*, but none match the current filters\\.\n"
+            f"{filters_text}\n"
+            "Use the buttons below to adjust the filters or restart the search\\."
+        )
+    else:
+        results_text = (
+            f"Found {total_all} result\\(s\\) for:\n"
+            f"*{escaped_query}*\n"
+            f"{filters_text}\n"
+            "Choose a torrent to continue:"
+        )
+
+    keyboard = _build_results_keyboard(session, filtered_results, total_pages)
     await safe_edit_message(
         message,
         text=results_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
-
-
-def _clear_search_context(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Clears the persisted search session."""
-    clear_search_session(getattr(context, "user_data", None))
 
 
 async def _process_preliminary_results(
@@ -1646,7 +2101,7 @@ async def _process_preliminary_results(
         await safe_edit_message(
             status_message,
             text=_with_notice(
-                rf"❓ No results found for '{escaped_title}'\. Please check the title and try again\."
+                rf"❌ No results found for '{escaped_title}'\. Please check the title and try again\."
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -1670,22 +2125,20 @@ async def _process_preliminary_results(
     elif len(unique_years) == 1:
         year = unique_years[0]
         logger.info(
-            f"Found one unique year for '{title}': {year}. Proceeding to resolution selection."
+            f"Found one unique year for '{title}': {year}. Gathering multi-resolution search results."
         )
         full_title = f"{title} ({year})"
         session.set_final_title(full_title)
         session.advance(SearchStep.RESOLUTION)
         _save_session(context, session)
-        await _prompt_for_resolution(
-            status_message, context, full_title, media_type="movie", session=session
-        )
+        await _search_movie_results(status_message, context, session)
 
     else:
         logger.warning(
             f"Found results for '{title}', but could not determine any release years."
         )
         message_text = _with_notice(
-            rf"❓ Found results for '{escaped_title}', but could not determine a release year\.\n\n"
+            rf"❌ Found results for '{escaped_title}', but could not determine a release year\.\n\n"
             rf"Please try the search again and include the year manually \(e.g., '{escaped_title}' 2023\)\."
         )
         await safe_edit_message(

@@ -63,12 +63,11 @@ async def test_tv_season_fallback_uses_wiki_titles_and_corrected_title(mocker):
     session.save(ctx.user_data)
     message = Mock()
 
-    await search_workflow._perform_tv_season_search_with_resolution(
+    await search_workflow._perform_tv_season_search(
         message,
         ctx,
         title="Show",
         season=1,
-        resolution="1080p",
         force_individual_episodes=True,
     )
 
