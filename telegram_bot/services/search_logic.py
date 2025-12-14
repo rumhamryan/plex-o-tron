@@ -49,6 +49,12 @@ async def orchestrate_searches(
         "yts": scraping_service.scrape_yts,
         "yts.lt": scraping_service.scrape_yts,
         "yts.mx": scraping_service.scrape_yts,
+        "tpb": scraping_service.scrape_tpb,
+        "the pirate bay": scraping_service.scrape_tpb,
+        "thepiratebay": scraping_service.scrape_tpb,
+        "thepiratebay.org": scraping_service.scrape_tpb,
+        "pirate bay": scraping_service.scrape_tpb,
+        "piratebay": scraping_service.scrape_tpb,
         "eztv": (
             lambda search_query, media_type, site_url, context, **extra_kwargs: (
                 scraping_service.scrape_yaml_site(

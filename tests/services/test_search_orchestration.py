@@ -204,3 +204,29 @@ async def test_orchestrate_searches_normalizes_eztv_domains(mocker):
     assert m_yaml.await_count == 1
     call = m_yaml.await_args
     assert call.kwargs.get("site_name") == "eztv"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_uses_tpb_scraper(mocker):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "TPB",
+                "enabled": True,
+                "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0",
+            }
+        ]
+    )
+
+    m_tpb = mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_tpb",
+        new=AsyncMock(return_value=[{"title": "Movie", "score": 8, "source": "tpb"}]),
+    )
+
+    results = await orchestrate_searches("Movie", "movie", ctx)
+    assert results and results[0]["source"] == "tpb"
+    assert m_tpb.await_count == 1
+    call = m_tpb.await_args
+    # Query forwarded as-is; base_query_for_filter also included.
+    assert call.args[0] == "Movie"
+    assert call.kwargs.get("base_query_for_filter") == "Movie"

@@ -19,6 +19,7 @@ from .generic import (
     _score_candidate_links,
 )
 from .yaml import scrape_yaml_site
+from .tpb import scrape_tpb
 from .utils import _get_page_html
 
 __all__ = [
@@ -39,5 +40,6 @@ __all__ = [
     "_strategy_find_in_tables",
     "_score_candidate_links",
     "scrape_yaml_site",
+    "scrape_tpb",
     "_get_page_html",
 ]
