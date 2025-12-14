@@ -163,6 +163,42 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
 
 
 @pytest.mark.asyncio
+async def test_tv_title_fast_path_skips_prompts(
+    mocker, context, make_callback_query, make_message
+):
+    send_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_send_message",
+        new=AsyncMock(return_value=make_message()),
+    )
+    seasons_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_total_seasons_from_wikipedia",
+        new=AsyncMock(),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=10,
+            callback_query=make_callback_query("search_start_tv", make_message()),
+        ),
+        context,
+    )
+
+    await handle_search_workflow(
+        Update(update_id=11, message=make_message("The Bear S02E05")), context
+    )
+
+    seasons_mock.assert_not_awaited()
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.RESOLUTION
+    assert session.season == 2
+    assert session.episode == 5
+    assert session.tv_scope == "single"
+    assert session.final_title == "The Bear S02E05"
+
+    assert send_mock.await_count >= 1
+
+
+@pytest.mark.asyncio
 async def test_search_cancel_clears_context(
     mocker, context, make_callback_query, make_message
 ):

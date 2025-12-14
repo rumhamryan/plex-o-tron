@@ -27,7 +27,7 @@
 - Ensure the session object remains JSON-serializable (only use primitives/tuples) because `context.user_data` persists via PTB persistence.
 - Keep backwards compatibility for any code paths that still check `"active_workflow"`; either store that flag in the session or add a shim that mirrors the old keys during the transition.
 
-## Initiative 2 — Fast-Path Parsing for TV Queries
+## Initiative 2 — Fast-Path Parsing for TV Queries (✅ Complete – 2025‑12‑13)
 ### Goals
 - When the user includes a season/episode hint in the initial title message (`"The Bear S02E05"`, `"Severance season 1"`, `"Episode 3"`), skip redundant prompts and drive the workflow directly to the appropriate step.
 - Maintain the existing guided flow for users who prefer step-by-step prompts.

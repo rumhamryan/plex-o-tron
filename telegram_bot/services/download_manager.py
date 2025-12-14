@@ -653,10 +653,26 @@ async def add_season_to_queue(update, context):
         if not link:
             continue
         parsed_info = torrent_data.get("parsed_info", {})
+        title = parsed_info.get("title") or "Download"
+        season_value = parsed_info.get("season")
+        clean_name = title
+        if season_value not in (None, ""):
+            try:
+                season_number = int(season_value)
+            except (TypeError, ValueError):
+                logger.debug(
+                    "Could not parse season value '%s' for title '%s'.",
+                    season_value,
+                    title,
+                )
+            else:
+                clean_name = f"{title} S{season_number:02d}"
+
         source_dict = {
             "value": link,
             "type": "magnet" if link.startswith("magnet:") else "url",
             "parsed_info": parsed_info,
+            "clean_name": clean_name,
             "batch_id": batch_id,
             "original_message_id": query.message.message_id,
         }

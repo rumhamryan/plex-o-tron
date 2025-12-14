@@ -415,8 +415,14 @@ async def test_add_season_to_queue(
     callback = make_callback_query(data="confirm_season_download", message=message)
     update = make_update(callback_query=callback)
     context.user_data["pending_season_download"] = [
-        {"link": "magnet1", "parsed_info": {"episode": 1}},
-        {"link": "magnet2", "parsed_info": {"episode": 2}},
+        {
+            "link": "magnet1",
+            "parsed_info": {"title": "Example Show", "season": 5, "episode": 1},
+        },
+        {
+            "link": "magnet2",
+            "parsed_info": {"title": "Example Show", "season": "5", "episode": 2},
+        },
     ]
     context.bot_data["active_downloads"] = {}
     context.bot_data["download_queues"] = {}
@@ -438,6 +444,8 @@ async def test_add_season_to_queue(
     q = context.bot_data["download_queues"][str(message.chat.id)]
     assert len(q) == 2
     assert q[0]["source_dict"]["parsed_info"]["episode"] == 1
+    assert q[0]["source_dict"]["clean_name"] == "Example Show S05"
+    assert q[1]["source_dict"]["clean_name"] == "Example Show S05"
     process_mock.assert_awaited_once_with(message.chat.id, context.application)
 
 
