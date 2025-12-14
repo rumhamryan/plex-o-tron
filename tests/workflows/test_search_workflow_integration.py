@@ -47,8 +47,11 @@ async def test_tv_season_fallback_uses_wiki_titles_and_corrected_title(mocker):
 
     captured = {}
 
-    async def _capture_confirmation(_message, _context, torrents, *, session=None):
+    async def _capture_confirmation(
+        _message, _context, torrents, *, session=None, consistency_summary=None
+    ):
         captured["torrents"] = torrents
+        captured["summary"] = consistency_summary
 
     mocker.patch(
         "telegram_bot.workflows.search_workflow._present_season_download_confirmation",

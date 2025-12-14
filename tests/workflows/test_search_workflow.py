@@ -13,6 +13,8 @@ from telegram_bot.workflows.search_workflow import (
     _compute_filtered_results,
     _build_results_keyboard,
     RESULTS_SESSION_TTL_SECONDS,
+    EpisodeCandidate,
+    _select_consistent_episode_set,
 )
 
 
@@ -825,3 +827,67 @@ async def test_entire_season_all_owned_exits_early(
     perform_mock.assert_not_awaited()
     # Confirm we informed the user
     assert "already exist" in (edit_mock.await_args.kwargs.get("text") or "")
+
+
+def _make_candidate(
+    episode: int,
+    uploader: str,
+    *,
+    size_gb: float,
+    resolution: str = "1080p",
+    source: str = "1337x",
+    seeders: int = 150,
+) -> EpisodeCandidate:
+    return EpisodeCandidate(
+        episode=episode,
+        link=f"magnet:?xt=urn:btih:{episode}-{uploader}",
+        title=f"Show S01E{episode:02d} {resolution} {uploader}",
+        source=source,
+        uploader=uploader,
+        size_gb=size_gb,
+        seeders=seeders,
+        resolution=resolution,
+        score=seeders,
+    )
+
+
+def test_consistent_episode_selection_prefers_uniform_release():
+    candidates: dict[int, list[EpisodeCandidate]] = {}
+    for ep in range(1, 4):
+        candidates[ep] = [
+            _make_candidate(ep, "SceneGroup", size_gb=1.0 + ep * 0.02),
+            _make_candidate(ep, "Scatter", size_gb=1.9 + ep * 0.3, seeders=500),
+        ]
+
+    selection, summary = _select_consistent_episode_set(candidates)
+    assert [cand.uploader for cand in selection] == ["SceneGroup"] * 3
+    assert summary is not None
+    assert summary.release_uploader == "SceneGroup"
+    assert summary.fallback_episodes == []
+
+
+def test_consistent_episode_selection_handles_4k_target():
+    candidates: dict[int, list[EpisodeCandidate]] = {}
+    for ep in range(1, 3):
+        candidates[ep] = [
+            _make_candidate(
+                ep,
+                "UHDVision",
+                size_gb=4.4 + ep * 0.1,
+                resolution="2160p",
+                source="EZTV",
+            ),
+            _make_candidate(
+                ep,
+                "HDGroup",
+                size_gb=1.0 + ep * 0.5,
+                resolution="1080p",
+                source="EZTV",
+                seeders=400,
+            ),
+        ]
+
+    selection, summary = _select_consistent_episode_set(candidates)
+    assert all(c.resolution == "2160p" for c in selection)
+    assert summary is not None
+    assert summary.resolution == "2160p"

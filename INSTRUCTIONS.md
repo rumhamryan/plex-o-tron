@@ -100,7 +100,7 @@ Each milestone should land with targeted unit tests and manual smoke-testing (`/
 
 ## Post-Refactor Enhancements (Messaging, Consistency, Collections)
 
-### Initiative 5 - Harmonize Download Success Messaging
+### Initiative 5 - Harmonize Download Success Messaging (✅ Complete – 2025‑12‑14)
 #### Goals
 - Ensure the success toast sent after `handle_successful_download` mirrors the richer confirmation used in the delete workflow so users receive consistent, information-rich feedback.
 
@@ -115,7 +115,7 @@ Each milestone should land with targeted unit tests and manual smoke-testing (`/
 - Preserve the ability to omit the Plex scan blurb when `plex_config` is missing while still using the unified format.
 - Ensure the helper is safe to call from other workflows later (delete workflow can adopt it too for symmetry).
 
-### Initiative 6 - Consistent Episode Selection When No Season Packs Exist
+### Initiative 6 - Consistent Episode Selection When No Season Packs Exist (✅ Complete – 2025‑12‑14)
 #### Goals
 - When `_perform_tv_season_search_with_resolution` falls back to individual episodes, prefer torrents that are nearly identical in size (≈1 GB for 1080p/720p) and ideally come from the same uploader/seeder so the season is uniform.
 

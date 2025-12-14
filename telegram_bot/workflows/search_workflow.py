@@ -2,7 +2,9 @@
 
 import re
 import time
+from dataclasses import dataclass, field
 from typing import Any, Literal
+from collections import Counter
 
 from telegram import (
     Update,
@@ -37,6 +39,57 @@ RESOLUTION_FILTERS: tuple[str, ...] = ("all", "720p", "1080p", "2160p")
 RESULTS_EXPIRED_MESSAGE = (
     "? These search results have expired\\. Please start a new search\\."
 )
+EPISODE_CANDIDATE_LIMIT = 3
+DEFAULT_SIZE_TARGET_GB = 1.05
+RESOLUTION_SIZE_TARGETS = {
+    "720p": 0.9,
+    "1080p": 1.3,
+    "2160p": 5.0,
+}
+SIZE_VARIANCE_WEIGHT = 12.0
+SIZE_DEVIATION_WEIGHT = 8.0
+
+
+@dataclass(slots=True)
+class EpisodeCandidate:
+    episode: int
+    link: str
+    title: str
+    source: str
+    uploader: str
+    size_gb: float | None = None
+    seeders: int | None = None
+    resolution: str | None = None
+    score: float | None = None
+
+    @property
+    def release_key(self) -> tuple[str, str]:
+        normalized_source = (self.source or "Unknown").strip() or "Unknown"
+        normalized_uploader = (self.uploader or "Anonymous").strip() or "Anonymous"
+        return (normalized_source, normalized_uploader)
+
+
+@dataclass(slots=True)
+class SeasonConsistencySummary:
+    release_source: str | None
+    release_uploader: str | None
+    avg_size_gb: float | None
+    size_spread_gb: float | None
+    matched_count: int
+    total_count: int
+    fallback_episodes: list[int] = field(default_factory=list)
+    resolution: str | None = None
+
+    @property
+    def coverage_ratio(self) -> float:
+        if self.total_count <= 0:
+            return 0.0
+        return self.matched_count / self.total_count
+
+    def release_label(self) -> str:
+        uploader = (self.release_uploader or "Anonymous").strip() or "Anonymous"
+        source = (self.release_source or "Unknown").strip() or "Unknown"
+        return f"{uploader} via {source}"
 
 
 def _get_session(context: ContextTypes.DEFAULT_TYPE) -> SearchSession:
@@ -1285,6 +1338,8 @@ async def _present_season_download_confirmation(
     context: ContextTypes.DEFAULT_TYPE,
     found_torrents: list[dict[str, Any]],
     session: SearchSession | None = None,
+    *,
+    consistency_summary: SeasonConsistencySummary | None = None,
 ) -> None:
     """Summarizes season search results and asks for confirmation."""
     if session is None:
@@ -1315,9 +1370,22 @@ async def _present_season_download_confirmation(
         is_pack = False
 
     if is_pack:
-        summary = f"Found a season pack for Season {season}\\."
+        summary_text = escape_markdown(
+            f"Found a season pack for Season {season}.", version=2
+        )
     else:
-        summary = f"Found torrents for {len(found_torrents)} of {target_total} episode\\(s\\) in Season {season}\\."
+        summary_text = escape_markdown(
+            f"Found torrents for {len(found_torrents)} of {target_total} episode(s) "
+            f"in Season {season}.",
+            version=2,
+        )
+
+    extra_summary = _format_consistency_summary(consistency_summary)
+    lines = [summary_text]
+    if extra_summary:
+        lines.append("")
+        lines.append(extra_summary)
+    rendered_summary = "\n".join(lines)
 
     if is_pack:
         keyboard = [
@@ -1341,12 +1409,188 @@ async def _present_season_download_confirmation(
 
     await safe_edit_message(
         message,
-        text=summary,
+        text=rendered_summary,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     context.user_data.setdefault("pending_season_download", list())
     context.user_data["pending_season_download"] = found_torrents
+
+
+def _normalize_release_field(value: Any, default: str) -> str:
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or default
+    return default
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _infer_resolution_from_title(title: Any) -> str | None:
+    if not isinstance(title, str):
+        return None
+    lowered = title.lower()
+    if "2160p" in lowered or "4k" in lowered or "uhd" in lowered:
+        return "2160p"
+    if "1080p" in lowered:
+        return "1080p"
+    if "720p" in lowered:
+        return "720p"
+    return None
+
+
+def _target_size_for_resolution(resolution: str | None) -> float:
+    if not resolution:
+        return DEFAULT_SIZE_TARGET_GB
+    return RESOLUTION_SIZE_TARGETS.get(resolution, DEFAULT_SIZE_TARGET_GB)
+
+
+def _select_consistent_episode_set(
+    candidates_by_episode: dict[int, list[EpisodeCandidate]],
+) -> tuple[list[EpisodeCandidate], SeasonConsistencySummary | None]:
+    if not candidates_by_episode:
+        return [], None
+
+    episodes = sorted(candidates_by_episode)
+    default_selection = [candidates_by_episode[ep][0] for ep in episodes]
+
+    release_keys: set[tuple[str, str]] = set()
+    for candidates in candidates_by_episode.values():
+        for candidate in candidates:
+            release_keys.add(candidate.release_key)
+
+    total_eps = len(episodes)
+    best_entry: (
+        tuple[
+            tuple[str, str],
+            float,
+            list[EpisodeCandidate],
+            float | None,
+            float,
+            str | None,
+        ]
+        | None
+    ) = None
+
+    for key in release_keys:
+        matched: list[EpisodeCandidate] = []
+        sizes: list[float] = []
+        resolution_counter: Counter[str] = Counter()
+        for ep in episodes:
+            matched_candidate: EpisodeCandidate | None = next(
+                (cand for cand in candidates_by_episode[ep] if cand.release_key == key),
+                None,
+            )
+            if matched_candidate is None:
+                continue
+            matched.append(matched_candidate)
+            if matched_candidate.size_gb is not None:
+                sizes.append(matched_candidate.size_gb)
+            if matched_candidate.resolution:
+                resolution_counter[matched_candidate.resolution] += 1
+
+        if not matched:
+            continue
+
+        coverage_ratio = len(matched) / total_eps
+        avg_size = sum(sizes) / len(sizes) if sizes else None
+        spread = (max(sizes) - min(sizes)) if len(sizes) > 1 else 0.0
+        primary_resolution = (
+            resolution_counter.most_common(1)[0][0] if resolution_counter else None
+        )
+        target_size = _target_size_for_resolution(primary_resolution)
+        size_deviation = abs(avg_size - target_size) if avg_size is not None else 0.0
+        score = (
+            coverage_ratio * 100
+            - spread * SIZE_VARIANCE_WEIGHT
+            - size_deviation * SIZE_DEVIATION_WEIGHT
+        )
+        if best_entry is None or score > best_entry[1]:
+            best_entry = (
+                key,
+                score,
+                matched,
+                avg_size,
+                float(spread),
+                primary_resolution,
+            )
+
+    if best_entry is None:
+        return default_selection, None
+
+    release_key, _, matched, avg_size, spread, resolution = best_entry
+    matched_map = {cand.episode: cand for cand in matched}
+    final_selection: list[EpisodeCandidate] = []
+    fallback_eps: list[int] = []
+    for ep in episodes:
+        selected: EpisodeCandidate | None = matched_map.get(ep)
+        if selected is None:
+            fallback_candidate = candidates_by_episode[ep][0]
+            selected = fallback_candidate
+            fallback_eps.append(ep)
+        assert selected is not None
+        final_selection.append(selected)
+
+    summary = SeasonConsistencySummary(
+        release_source=release_key[0],
+        release_uploader=release_key[1],
+        avg_size_gb=avg_size,
+        size_spread_gb=spread,
+        matched_count=len(matched),
+        total_count=total_eps,
+        fallback_episodes=fallback_eps,
+        resolution=resolution,
+    )
+    return final_selection, summary
+
+
+def _format_consistency_summary(
+    summary: SeasonConsistencySummary | None,
+) -> str | None:
+    if summary is None or summary.matched_count == 0:
+        return None
+
+    label = escape_markdown(summary.release_label().split()[-1], version=2)
+    coverage = f"{summary.matched_count}/{summary.total_count}"
+    details: list[str] = []
+    if summary.resolution:
+        details.append(
+            "\nResolution: " + escape_markdown(summary.resolution.lower(), version=2)
+        )
+    if summary.avg_size_gb is not None:
+        details.append(
+            escape_markdown(f"\nAverage size: {summary.avg_size_gb:.2f} GB", version=2)
+        )
+        total_size = escape_markdown(
+            str(round(float(summary.avg_size_gb) * float(summary.matched_count), 2)),
+            version=2,
+        )
+        details.append(escape_markdown(f"\nTotal Size: {total_size} GB"))
+    base_line = f"Consistency: {label}" f" \\({escape_markdown(coverage, version=2)}\\)"
+    if details:
+        base_line += " ".join(details)
+
+    lines = [base_line]
+    if summary.fallback_episodes:
+        fallback_str = ", ".join(f"E{num:02d}" for num in summary.fallback_episodes)
+        lines.append(f"⚠️ Fallback episodes: {escape_markdown(fallback_str, version=2)}")
+    return "\n".join(lines)
 
 
 async def _prompt_for_resolution(
@@ -1595,7 +1839,6 @@ async def _perform_tv_season_search(
         if len(found_results) >= 3:
             break
 
-    torrents_to_queue: list[dict[str, Any]] = []
     if session is None:
         session = _get_session(context)
 
@@ -1670,6 +1913,8 @@ async def _perform_tv_season_search(
     except Exception:
         titles_map, corrected_title = {}, None
 
+    episode_candidates: dict[int, list[EpisodeCandidate]] = {}
+    missing_candidates: list[int] = []
     processed_eps = 0
 
     def _progress_text(last_ep: int | None) -> str:
@@ -1687,33 +1932,30 @@ async def _perform_tv_season_search(
         ep_results = await search_logic.orchestrate_searches(
             search_term, "tv", context, base_query_for_filter=title
         )
-        if not ep_results:
-            processed_eps += 1
-            await safe_edit_message(
-                message,
-                text=_progress_text(ep),
-                parse_mode=ParseMode.MARKDOWN_V2,
-            )
-            continue
-        best = ep_results[0]
-        link = best.get("page_url")
-        if not link:
-            processed_eps += 1
-            await safe_edit_message(
-                message,
-                text=_progress_text(ep),
-                parse_mode=ParseMode.MARKDOWN_V2,
-            )
-            continue
-        parsed_info = parse_torrent_name(best.get("title", ""))
-        parsed_info["title"] = corrected_title or title
-        parsed_info["season"] = season
-        parsed_info["episode"] = ep
-        parsed_info["type"] = "tv"
-        parsed_info["episode_title"] = titles_map.get(ep)
-
-        torrents_to_queue.append({"link": link, "parsed_info": parsed_info})
-
+        normalized_candidates: list[EpisodeCandidate] = []
+        if ep_results:
+            for raw in ep_results:
+                link = raw.get("page_url")
+                if not link:
+                    continue
+                candidate = EpisodeCandidate(
+                    episode=ep,
+                    link=link,
+                    title=str(raw.get("title", "")),
+                    source=_normalize_release_field(raw.get("source"), "Unknown"),
+                    uploader=_normalize_release_field(raw.get("uploader"), "Anonymous"),
+                    size_gb=_coerce_float(raw.get("size_gb")),
+                    seeders=_coerce_int(raw.get("seeders")),
+                    resolution=_infer_resolution_from_title(raw.get("title")),
+                    score=_coerce_float(raw.get("score")),
+                )
+                normalized_candidates.append(candidate)
+                if len(normalized_candidates) >= EPISODE_CANDIDATE_LIMIT:
+                    break
+        if normalized_candidates:
+            episode_candidates[ep] = normalized_candidates
+        else:
+            missing_candidates.append(ep)
         processed_eps += 1
         await safe_edit_message(
             message,
@@ -1721,8 +1963,54 @@ async def _perform_tv_season_search(
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
+    if missing_candidates:
+        logger.warning(
+            "[SEARCH] No torrents found for %s S%02d episodes: %s",
+            title,
+            season,
+            ", ".join(f"E{num:02d}" for num in missing_candidates),
+        )
+
+    torrents_to_queue: list[dict[str, Any]] = []
+    consistency_summary: SeasonConsistencySummary | None = None
+    selected_candidates: list[EpisodeCandidate] = []
+    if episode_candidates:
+        selected_candidates, consistency_summary = _select_consistent_episode_set(
+            episode_candidates
+        )
+
+    for candidate in selected_candidates:
+        parsed_info = parse_torrent_name(candidate.title)
+        parsed_info["title"] = corrected_title or title
+        parsed_info["season"] = season
+        parsed_info["episode"] = candidate.episode
+        parsed_info["type"] = "tv"
+        parsed_info["episode_title"] = titles_map.get(candidate.episode)
+        torrents_to_queue.append(
+            {
+                "link": candidate.link,
+                "parsed_info": parsed_info,
+                "source": candidate.source,
+                "uploader": candidate.uploader,
+                "size_gb": candidate.size_gb,
+                "resolution": candidate.resolution,
+            }
+        )
+
+    if consistency_summary and consistency_summary.fallback_episodes:
+        logger.warning(
+            "[SEARCH] Mixed sources for %s S%02d due to missing releases on %s.",
+            title,
+            season,
+            consistency_summary.release_label(),
+        )
+
     await _present_season_download_confirmation(
-        message, context, torrents_to_queue, session=session
+        message,
+        context,
+        torrents_to_queue,
+        session=session,
+        consistency_summary=consistency_summary,
     )
 
 
