@@ -136,27 +136,34 @@ Each milestone should land with targeted unit tests and manual smoke-testing (`/
 
 ### Initiative 7 - Movie Collection Workflow & Storage
 #### Goals
-- Add first-class support for downloading curated movie collections: allow the user to queue multiple individual movies under a collection name, store them under `movies_save_path/<Collection Name>/`, and automatically create/update the matching Plex collection.
+- Preserve the single-movie experience while adding a "collection" path that clones a seed torrent's quality (resolution, codec, approximate size) across the rest of the franchise.
+- Automatically create `<movies_save_path/<Franchise Name>/`, queue every missing movie in that franchise, and register the finished set as a Plex collection.
 
 #### Implementation Steps
-1. UX updates in `search_workflow.py`:
-   - Before the search begins, it must mimic the tv show path format of button options: single movie, collection, cancel
-   - For single movie, nothing about the current workflow must change
-   - If the user selects collection add prompts to capture the collection name (validate filesystem-safe) and desired number of movies. Allow the user to keep adding movies until they select "Finish Collection".
-   - Track collection context inside the `SearchSession` (fields for `collection_name`, `collection_members`, `target_resolution`).
-2. Enforce "no packs" by filtering movie search results to single-file torrents only; reuse `_filter_results_by_resolution` and add a size guard (≈2 GB target for 1080p, configurable upper bound for 4K such as 12 GB) with preference for torrents sharing the same uploader or media group.
-3. Enhance `media_manager._get_final_destination_path` to detect when `parsed_info` contains `collection_name` and create `<movies_save_path>/<collection>/<Movie Title (Year)>`, ensuring names are sanitized.
-4. Extend `media_manager.handle_successful_download` to accept a `collection_context` payload so it can place each movie correctly and optionally defer Plex scans until the collection run finishes.
-5. Add Plex integration helpers in `telegram_bot/services/plex_service.py`:
-   - `ensure_plex_collection(collection_name)` to create the collection if missing via Plex API.
-   - `add_movie_to_collection(rating_key, collection_name)` to associate downloaded movies after the Plex scan (may require querying Plex for the new item by title/year).
-6. After every collection download completes, trigger the Plex scan once, then call the helper to attach all members and send a summary message (list movies, sizes, and collection path).
-7. Tests:
-   - Workflow tests for the new collection prompts and state machine.
-   - Service tests using PlexAPI mocks to confirm collection creation and membership calls.
-   - Media manager tests verifying directories and metadata for collection downloads.
+1. Movie entrypoint:
+   - After the user chooses "movie", prompt them to pick "Single Movie" (current behavior) or "Collection". If they choose single, continue unchanged.
+   - Choosing "Collection" sets `session.collection_mode = True` but otherwise keeps the same search UI for the seed movie.
+2. Seed template capture:
+   - When the seed torrent is confirmed, capture its parsed title/year plus resolution, codec, and `size_gb`. Store a release fingerprint (infohash/uploader/site) to help find similar encodes later.
+3. Franchise determination:
+   - Identify whether the movie belongs to a franchise (via wikipedia). If not, notify the user ("No collection will be created") and ask the user if they would like to finish as a standard single-movie download.
+   - If a franchise exists, show the derived name, sanitize it for filesystem use, and confirm with the user before proceeding.
+4. Collection queuing:
+   - Enumerate franchise titles, skipping ones we already have or have queued. For each missing movie, run searches biased toward the seed template (same resolution/codec, +/-10% size, ideally same uploader) and enqueue the selected torrent with metadata referencing the franchise context.
+5. Directory management:
+   - Create `<movies_save_path/<Franchise Name>/` immediately. As each movie finishes (seed included), move it into `<Franchise Name/<Movie Title (Year)>/` using the existing rename logic.
+   - Move any movieswe already have to the directory as well.
+6. Plex orchestration:
+   - After the last queued franchise download completes and is moved, trigger a single Plex library scan.
+   - Once the scan completes, create or update a Plex collection using the franchise name and add each downloaded movie (lookup by rating key/title-year).
+7. User messaging:
+   - Keep the user informed when no franchise is found, when a collection run starts (include movie count + quality template), and when it finishes (summaries plus Plex collection confirmation).
+8. Tests & docs:
+   - Workflow tests for branch selection, the "no franchise" path, and queue orchestration.
+   - Service tests for franchise detection, download queueing, directory placement, and Plex collection helpers (mock Plex API).
+   - Update README/config guidance once the feature lands.
 
 #### Considerations
-- Respect existing quota/size guards; when the user selects 4K, widen the average-size threshold but still enforce an upper limit per movie to prevent bloated torrents.
-- Decide how collection sessions expire (e.g., timeout after N minutes of inactivity) and ensure cancellation cleans up partial state.
-- Document the new behavior in README/config templates once implemented.
+- Franchise detection should fail gracefully; never leave the user stuck in collection mode.
+- Respect existing download limits and avoid duplicate queue entries.
+- Provide a cancel/reset path so collection runs can be aborted safely.
