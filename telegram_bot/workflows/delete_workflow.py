@@ -408,6 +408,23 @@ async def _delete_item_from_plex(
         )
 
 
+def _has_valid_plex_credentials(plex_config: dict | None) -> bool:
+    """Detect whether Plex credentials look usable."""
+    if not plex_config:
+        return False
+    token = (plex_config.get("token") or "").strip()
+    return bool(token) and token.upper() != "PLEX_TOKEN"
+
+
+def _format_manual_delete_failure(detail: str) -> str:
+    """Build a Markdown-ready failure string for manual deletions."""
+    if detail == "missing":
+        return "? *Deletion Failed*\nThe path no longer exists on the server\\."
+    return "? *Manual Deletion Failed*\n`{}`".format(
+        escape_markdown(detail or "Unknown error", version=2)
+    )
+
+
 async def handle_delete_workflow(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -872,6 +889,7 @@ async def _handle_confirm_delete_button(query, context):
     path_to_delete = context.user_data.pop("path_to_delete", None)
     delete_target_kind = context.user_data.get("delete_target_kind")
     plex_config = context.bot_data.get("PLEX_CONFIG")
+    has_valid_plex = _has_valid_plex_credentials(plex_config)
     message_text = ""
     plex: PlexServer | None = None
 
@@ -884,7 +902,7 @@ async def _handle_confirm_delete_button(query, context):
             f"Deletion attempted for '{path_to_delete}' but DELETION_ENABLED is False."
         )
         message_text = "ℹ️ *Deletion Confirmed*\n\n(Note: Actual file deletion is disabled by the administrator)"
-    elif plex_config:
+    else:
         display_name = _get_display_name(path_to_delete)
         size_label = _format_size_label(path_to_delete)
 
@@ -895,81 +913,117 @@ async def _handle_confirm_delete_button(query, context):
                 size_label=size_label,
             )
 
-        await safe_edit_message(
-            query.message,
-            text="Connecting to Plex and attempting to delete the item...",
-            reply_markup=None,
-        )
-
-        result, plex = await _delete_item_from_plex(path_to_delete, plex_config)
-        status = result.get("status", "error")
-        detail = result.get("detail", "")
-
-        if status == "success":
-            message_text = _format_item_line("🗑️ *Successfully Deleted from Plex*")
-        elif status == "skip":
-            logger.info(
-                "Plex deletion skipped for '%s'; falling back to filesystem removal.",
-                path_to_delete,
+        if has_valid_plex:
+            await safe_edit_message(
+                query.message,
+                text="Connecting to Plex and attempting to delete the item...",
+                reply_markup=None,
             )
-            manual_success, manual_detail = await _delete_from_filesystem(
-                path_to_delete
-            )
-            if manual_success:
-                message_text = (
-                    _format_item_line("⚠️ *Plex Skipped, Removed From Disk*")
-                    + "\n"
-                    + "Plex library left untouched because other encodes still exist\\."
+
+            result, plex = await _delete_item_from_plex(path_to_delete, plex_config)  # type: ignore[arg-type]
+            status = result.get("status", "error")
+            detail = result.get("detail", "")
+
+            if status == "success":
+                message_text = _format_item_line("🗑️ *Successfully Deleted from Plex*")
+            elif status == "skip":
+                logger.info(
+                    "Plex deletion skipped for '%s'; falling back to filesystem removal.",
+                    path_to_delete,
                 )
-            else:
-                if manual_detail == "missing":
-                    message_text = "❌ *Deletion Failed*\nThe path no longer exists on the server\\."
-                else:
-                    message_text = "❌ *Manual Deletion Failed*\n`{}`".format(
-                        escape_markdown(manual_detail, version=2)
+                manual_success, manual_detail = await _delete_from_filesystem(
+                    path_to_delete
+                )
+                if manual_success:
+                    note = escape_markdown(
+                        "Plex library left untouched because other encodes still exist.",
+                        version=2,
                     )
-        elif status == "not_found":
-            logger.warning(
-                "Item not found in Plex, falling back to manual filesystem deletion."
-            )
-            manual_success, manual_detail = await _delete_from_filesystem(
-                path_to_delete
-            )
-            if manual_success:
-                message_text = _format_item_line(
-                    "🗑️ *Item Not in Plex, Deleted Manually*"
-                )
-            else:
-                if manual_detail == "missing":
-                    message_text = "❌ *Deletion Failed*\nThe path no longer exists on the server\\."
+                    message_text = (
+                        _format_item_line("⚠️ *Plex Skipped, Removed From Disk*")
+                        + "\n"
+                        + note
+                    )
                 else:
-                    message_text = "❌ *Manual Deletion Failed*\n`{}`".format(
-                        escape_markdown(manual_detail, version=2)
+                    message_text = _format_manual_delete_failure(manual_detail)
+            elif status == "not_found":
+                logger.warning(
+                    "Item not found in Plex, falling back to manual filesystem deletion."
+                )
+                manual_success, manual_detail = await _delete_from_filesystem(
+                    path_to_delete
+                )
+                if manual_success:
+                    message_text = _format_item_line(
+                        "🗑️ *Item Not in Plex, Deleted Manually*"
+                    )
+                else:
+                    message_text = _format_manual_delete_failure(manual_detail)
+            else:
+                if plex is None:
+                    logger.warning(
+                        "Unable to communicate with Plex for '%s': %s",
+                        path_to_delete,
+                        detail,
+                    )
+                    manual_success, manual_detail = await _delete_from_filesystem(
+                        path_to_delete
+                    )
+                    if manual_success:
+                        error_note = escape_markdown(
+                            f"Plex deletion failed: {detail or 'Unknown error'}",
+                            version=2,
+                        )
+                        message_text = (
+                            _format_item_line("⚠️ *Plex Unavailable, Deleted From Disk*")
+                            + "\n"
+                            + error_note
+                        )
+                    else:
+                        message_text = _format_manual_delete_failure(manual_detail)
+                else:
+                    message_text = "❌ *Deletion Failed*\n`{}`".format(
+                        escape_markdown(detail or "Unknown error", version=2)
+                    )
+
+            filesystem_deleted = not os.path.exists(path_to_delete)
+            if (
+                filesystem_deleted
+                and delete_target_kind == "movie_collection"
+                and plex is not None
+            ):
+                base_collection_name = _get_display_name(path_to_delete)
+                try:
+                    await _delete_plex_collection(plex, base_collection_name)
+                except Exception as exc:
+                    message_text += "\n" + "⚠️ Failed to delete Plex collection\\."
+                    logger.error(
+                        "Failed to delete Plex collection '%s': %s",
+                        base_collection_name,
+                        exc,
+                        exc_info=True,
                     )
         else:
-            message_text = "❌ *Deletion Failed*\n`{}`".format(
-                escape_markdown(detail or "Unknown error", version=2)
-            )
-
-        filesystem_deleted = not os.path.exists(path_to_delete)
-        if (
-            filesystem_deleted
-            and delete_target_kind == "movie_collection"
-            and plex is not None
-        ):
-            base_collection_name = _get_display_name(path_to_delete)
-            try:
-                await _delete_plex_collection(plex, base_collection_name)
-            except Exception as exc:
-                message_text += "\n" + "⚠️ Failed to delete Plex collection\\."
-                logger.error(
-                    "Failed to delete Plex collection '%s': %s",
-                    base_collection_name,
-                    exc,
-                    exc_info=True,
+            if plex_config:
+                logger.warning(
+                    "Plex token missing or placeholder; skipping Plex API deletion."
                 )
-    else:
-        message_text = "❌ *Plex Not Configured*\nCannot perform a library-aware delete. Please configure Plex in your `config.ini` file\\."
+                reason_note = (
+                    "Plex token is set to the placeholder; deleted item from disk only."
+                )
+            else:
+                reason_note = (
+                    "Plex integration is not configured; deleted item from disk."
+                )
+
+            manual_success, manual_detail = await _delete_from_filesystem(
+                path_to_delete
+            )
+            if manual_success:
+                note = escape_markdown(reason_note, version=2)
+                message_text = _format_item_line("✅ *Deleted From Disk*") + "\n" + note
+            else:
+                message_text = _format_manual_delete_failure(manual_detail)
 
     # Clear the user's conversational context
     keys_to_clear = [

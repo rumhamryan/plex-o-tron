@@ -155,6 +155,84 @@ async def test_confirm_delete_skip_due_to_name_twin(
 
 
 @pytest.mark.asyncio
+async def test_confirm_delete_placeholder_token_uses_manual_delete(
+    mocker, context, make_callback_query, make_message
+):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    delete_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_item_from_plex",
+        new=AsyncMock(),
+    )
+    fs_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_from_filesystem",
+        new=AsyncMock(return_value=(True, "file")),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow._format_size_label",
+        return_value="1.0 GB",
+    )
+
+    context.user_data["path_to_delete"] = "/downloads/movie.mkv"
+    context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "PLEX_TOKEN"}
+
+    await _handle_confirm_delete_button(
+        make_callback_query("confirm_delete", make_message()), context
+    )
+
+    delete_mock.assert_not_called()
+    fs_mock.assert_awaited_once_with("/downloads/movie.mkv")
+    final_text = safe_edit_mock.await_args.kwargs["text"]
+    assert "Deleted From Disk" in final_text
+    assert "placeholder" in final_text
+
+
+@pytest.mark.asyncio
+async def test_confirm_delete_manual_fallback_on_connection_error(
+    mocker, context, make_callback_query, make_message
+):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    delete_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_item_from_plex",
+        new=AsyncMock(
+            return_value=(
+                {
+                    "status": "error",
+                    "detail": "An error occurred while communicating with Plex: boom",
+                },
+                None,
+            )
+        ),
+    )
+    fs_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow._delete_from_filesystem",
+        new=AsyncMock(return_value=(True, "file")),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow._format_size_label",
+        return_value="3.0 GB",
+    )
+
+    context.user_data["path_to_delete"] = "/downloads/show"
+    context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "t"}
+
+    await _handle_confirm_delete_button(
+        make_callback_query("confirm_delete", make_message()), context
+    )
+
+    delete_mock.assert_awaited_once()
+    fs_mock.assert_awaited_once_with("/downloads/show")
+    final_text = safe_edit_mock.await_args.kwargs["text"]
+    assert "Plex Unavailable" in final_text
+    assert "boom" in final_text
+
+
+@pytest.mark.asyncio
 async def test_collection_delete_triggers_plex_cleanup(
     mocker, context, make_callback_query, make_message
 ):
