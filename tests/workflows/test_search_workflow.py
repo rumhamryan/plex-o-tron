@@ -27,6 +27,15 @@ def _extract_filter_row_texts(keyboard):
     return []
 
 
+def _extract_codec_row_texts(keyboard):
+    for row in keyboard:
+        if row and getattr(row[0], "callback_data", "").startswith(
+            "search_results_filter_codec_"
+        ):
+            return [btn.text for btn in row]
+    return []
+
+
 @pytest.mark.asyncio
 async def test_search_movie_happy_path(
     mocker, context, make_callback_query, make_message
@@ -326,6 +335,53 @@ def test_tv_filter_row_excludes_2160p():
 
 
 @pytest.mark.asyncio
+async def test_codec_filter_buttons_toggle_state(
+    mocker, context, make_callback_query, make_message
+):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="movie")
+    session.results = [
+        {
+            "title": "x264 option",
+            "page_url": "x",
+            "codec": "x264",
+            "seeders": 10,
+            "size_gb": 5,
+            "source": "site",
+        },
+        {
+            "title": "x265 option",
+            "page_url": "y",
+            "codec": "x265",
+            "seeders": 15,
+            "size_gb": 6,
+            "source": "site",
+        },
+    ]
+    session.results_query = "Example"
+    session.results_generated_at = time.time()
+    session.save(context.user_data)
+
+    update = Update(
+        update_id=1,
+        callback_query=make_callback_query(
+            "search_results_filter_codec_x265", make_message(message_id=10)
+        ),
+    )
+    await handle_search_buttons(update, context)
+
+    persisted = SearchSession.from_user_data(context.user_data)
+    assert persisted.results_codec_filter == "x265"
+    filtered = _compute_filtered_results(persisted)
+    keyboard = _build_results_keyboard(persisted, filtered, 1)
+    codec_labels = _extract_codec_row_texts(keyboard)
+    assert "🟢x265" in codec_labels
+
+
+@pytest.mark.asyncio
 async def test_results_pagination_callback_updates_page(
     mocker, context, make_callback_query, make_message
 ):
@@ -435,6 +491,39 @@ def test_size_filter_allows_large_when_filtering_for_4k():
     session.results_resolution_filter = "2160p"
     filtered_four_k = _compute_filtered_results(session)
     assert [r["title"] for r in filtered_four_k] == ["Huge 4K"]
+
+
+def test_compute_filtered_results_filters_by_codec():
+    session = SearchSession(media_type="movie")
+    session.results = [
+        {
+            "title": "Option A",
+            "page_url": "a",
+            "codec": "x264",
+            "seeders": 20,
+            "size_gb": 5,
+            "source": "site",
+        },
+        {
+            "title": "Option B",
+            "page_url": "b",
+            "codec": "x265",
+            "seeders": 25,
+            "size_gb": 6,
+            "source": "site",
+        },
+        {
+            "title": "No Codec",
+            "page_url": "c",
+            "seeders": 10,
+            "size_gb": 4,
+            "source": "site",
+        },
+    ]
+    session.results_codec_filter = "x265"
+
+    filtered = _compute_filtered_results(session)
+    assert [r["title"] for r in filtered] == ["Option B"]
 
 
 @pytest.mark.asyncio

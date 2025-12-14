@@ -184,7 +184,7 @@ async def handle_search_buttons(
         or action.startswith("search_select_")
         or action.startswith("search_results_page_")
         or action.startswith("search_results_filter_resolution_")
-        or action.startswith("search_results_sort_")
+        or action.startswith("search_results_filter_codec_")
         or action == "search_tv_change_details"
     )
 
@@ -215,8 +215,8 @@ async def handle_search_buttons(
             await _handle_results_page_button(query, context, session)
         elif action.startswith("search_results_filter_resolution_"):
             await _handle_results_filter_button(query, context, session)
-        elif action.startswith("search_results_sort_"):
-            await _handle_results_sort_button(query, context, session)
+        elif action.startswith("search_results_filter_codec_"):
+            await _handle_results_codec_filter_button(query, context, session)
         else:
             logger.warning(f"Received unhandled search callback: {action}")
     except SearchSessionError as exc:
@@ -955,8 +955,6 @@ async def _handle_tv_scope_selection(
 
 # --- Button Press Handlers ---
 
-# --- Button Press Handlers ---
-
 
 async def _handle_start_button(query, context):
     """Handles the initial 'Movie' or 'TV Show' button press."""
@@ -1198,18 +1196,30 @@ async def _handle_results_filter_button(
     await _render_results_view(query.message, context, session)
 
 
-async def _handle_results_sort_button(
+async def _handle_results_codec_filter_button(
     query: CallbackQuery,
     context: ContextTypes.DEFAULT_TYPE,
     session: SearchSession,
 ) -> None:
+    """Handles codec filter toggles in the search results view."""
     if not isinstance(query.message, Message):
         return
+
     _ensure_results_available(session)
-    sort_value = query.data.split("_")[-1]
-    if sort_value not in {"score", "seeders", "size"}:
-        sort_value = "score"
-    session.results_sort = sort_value
+    requested = query.data.split("_")[-1].lower()
+    if requested not in {"all", "x264", "x265"}:
+        try:
+            await query.answer(
+                text="Unsupported codec filter for these results.",
+                show_alert=False,
+            )
+        except RuntimeError:
+            pass
+        return
+
+    session.results_codec_filter = SearchSession.normalize_results_codec_filter(
+        requested
+    )
     session.results_page = 0
     _save_session(context, session)
     await _render_results_view(query.message, context, session)
@@ -2104,7 +2114,7 @@ async def _present_search_results(
     session.results_query = query_str
     session.results_page = 0
     session.results_resolution_filter = resolution_filter
-    session.results_sort = "score"
+    session.results_codec_filter = "all"
     session.results_max_size_gb = (
         float(max_size_gb) if isinstance(max_size_gb, (int, float)) else None
     )
@@ -2176,6 +2186,17 @@ def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
     if not working:
         return []
 
+    codec_filter = SearchSession.normalize_results_codec_filter(
+        session.results_codec_filter
+    )
+    if codec_filter != "all":
+        filtered_by_codec: list[dict[str, Any]] = []
+        for item in working:
+            codec_value = item.get("codec")
+            if isinstance(codec_value, str) and codec_value.lower() == codec_filter:
+                filtered_by_codec.append(item)
+        working = filtered_by_codec
+
     resolution_filter = _normalize_resolution_filter(session.results_resolution_filter)
     if resolution_filter != "all":
         working = _filter_results_by_resolution(working, resolution_filter)
@@ -2188,19 +2209,6 @@ def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
             if size_value is None or size_value <= size_cap:
                 limited.append(item)
         working = limited
-
-    sort_mode = (session.results_sort or "score").lower()
-    if sort_mode == "seeders":
-        working = sorted(
-            working,
-            key=lambda r: _safe_int(r.get("seeders")),
-            reverse=True,
-        )
-    elif sort_mode == "size":
-        working = sorted(
-            working,
-            key=lambda r: _safe_float(r.get("size_gb")) or float("inf"),
-        )
 
     return working
 
@@ -2275,16 +2283,19 @@ def _build_results_keyboard(
         )
     keyboard.append(res_row)
 
-    sort_row: list[InlineKeyboardButton] = []
-    for key, label in (("score", "Score"), ("seeders", "Seeders"), ("size", "Size")):
-        prefix = "🟢" if (session.results_sort or "score") == key else ""
-        sort_row.append(
+    codec_row: list[InlineKeyboardButton] = []
+    active_codec = SearchSession.normalize_results_codec_filter(
+        session.results_codec_filter
+    )
+    for value, label in (("all", "All"), ("x264", "x264"), ("x265", "x265")):
+        prefix = "🟢" if active_codec == value else ""
+        codec_row.append(
             InlineKeyboardButton(
                 f"{prefix}{label}",
-                callback_data=f"search_results_sort_{key}",
+                callback_data=f"search_results_filter_codec_{value}",
             )
         )
-    keyboard.append(sort_row)
+    keyboard.append(codec_row)
 
     if (
         session.allow_detail_change
@@ -2335,9 +2346,17 @@ async def _render_results_view(
     trim = slice(-6)
     processed_query = raw_query[trim]
     escaped_query = escape_markdown(processed_query, version=2)
+    active_codec = SearchSession.normalize_results_codec_filter(
+        session.results_codec_filter
+    )
+    codec_label = "  All  " if active_codec == "all" else active_codec
+    resolution_label = (
+        "   All    "
+        if session.results_resolution_filter == "all"
+        else session.results_resolution_filter.lower()
+    )
     filters_text = (
-        f"Resolution: *{session.results_resolution_filter.upper()}* \\| "
-        f"Sort: *{(session.results_sort or 'score').title()}*"
+        f"Resolution: *{resolution_label}* \\| " f"Codec filter: *{codec_label}*"
     )
 
     if total_filtered == 0:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, MutableMapping, Literal
+from typing import Any, MutableMapping, Literal, cast
 
 CONTEXT_LOST_MESSAGE = "❓ Search context has expired\\. Please start over\\."
 
@@ -32,6 +32,8 @@ class SearchSessionError(Exception):
 class SearchSession:
     """Serializable search session stored in PTB user_data."""
 
+    CodecFilter = Literal["all", "x264", "x265"]
+
     step: SearchStep = SearchStep.TITLE
     media_type: Literal["movie", "tv"] | None = None
     title: str | None = None
@@ -49,7 +51,7 @@ class SearchSession:
     results_query: str | None = None
     results_page: int = 0
     results_resolution_filter: str = "all"
-    results_sort: str = "score"
+    results_codec_filter: CodecFilter = "all"
     results_max_size_gb: float | None = None
     results_generated_at: float | None = None
     allow_detail_change: bool = False
@@ -96,7 +98,9 @@ class SearchSession:
             results_query=payload.get("results_query"),
             results_page=int(payload.get("results_page") or 0),
             results_resolution_filter=payload.get("results_resolution_filter") or "all",
-            results_sort=payload.get("results_sort") or "score",
+            results_codec_filter=cls.normalize_results_codec_filter(
+                payload.get("results_codec_filter")
+            ),
             results_max_size_gb=payload.get("results_max_size_gb"),
             results_generated_at=payload.get("results_generated_at"),
             allow_detail_change=bool(payload.get("allow_detail_change")),
@@ -180,7 +184,7 @@ class SearchSession:
             "results_query": self.results_query,
             "results_page": int(self.results_page or 0),
             "results_resolution_filter": self.results_resolution_filter,
-            "results_sort": self.results_sort,
+            "results_codec_filter": self.results_codec_filter,
             "results_max_size_gb": self.results_max_size_gb,
             "results_generated_at": self.results_generated_at,
             "allow_detail_change": self.allow_detail_change,
@@ -188,6 +192,16 @@ class SearchSession:
 
     def save(self, user_data: MutableMapping[str, Any]) -> None:
         user_data[self._SESSION_KEY] = self.to_dict()
+
+    @staticmethod
+    def normalize_results_codec_filter(value: Any) -> "SearchSession.CodecFilter":
+        """Normalizes persisted codec filter values."""
+        if not isinstance(value, str):
+            return "all"
+        lowered = value.strip().lower()
+        if lowered in {"all", "x264", "x265"}:
+            return cast(SearchSession.CodecFilter, lowered)
+        return "all"
 
 
 def clear_search_session(user_data: MutableMapping[str, Any] | None) -> None:

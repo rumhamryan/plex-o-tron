@@ -2,11 +2,28 @@
 
 import html
 import json
+import time
 import traceback
+from typing import Final
+
 from telegram import Update
+from telegram.error import NetworkError
 from telegram.ext import ContextTypes
 
 from ..config import logger
+
+_TRANSIENT_LOG_THROTTLE_SECONDS: Final[float] = 30.0
+_LAST_TRANSIENT_LOG: dict[str, float] = {}
+
+
+def _throttle_transient_event(event_key: str) -> bool:
+    """Returns True when the event should be suppressed due to throttling."""
+    now = time.monotonic()
+    last_logged = _LAST_TRANSIENT_LOG.get(event_key, 0.0)
+    if now - last_logged < _TRANSIENT_LOG_THROTTLE_SECONDS:
+        return True
+    _LAST_TRANSIENT_LOG[event_key] = now
+    return False
 
 
 async def global_error_handler(
@@ -19,6 +36,15 @@ async def global_error_handler(
     # --- Add a guard clause to ensure there's an error to handle. ---
     if not context.error:
         logger.warning("Error handler was called but context.error is None.")
+        return
+
+    # Treat network hiccups as transient noise and avoid flooding logs.
+    if isinstance(context.error, NetworkError):
+        if not _throttle_transient_event("network_error"):
+            logger.warning(
+                "Transient network error while communicating with Telegram: %s",
+                context.error,
+            )
         return
 
     # 1. Log the exception with the full traceback.
