@@ -49,7 +49,7 @@
 - Ensure Markdown escaping still works when we reuse the user’s raw title.
 - Watch for conflicts with movie detection—if the user enters "Dune Part 2", we must not misinterpret "2" as a season number. Prefer explicit prefixes (`S`, `Season`, `Episode`).
 
-## Initiative 3 — Wikipedia Lookup Caching & Fallbacks
+## Initiative 3 — Wikipedia Lookup Caching & Fallbacks (✅ Complete – 2025‑12‑13)
 ### Goals
 - Avoid repeated HTTP requests to Wikipedia for the same title/season/episode data during a single bot process lifetime.
 - Surface clearer messaging when `SEARCH_CONFIG` is absent (current logic silently disables the year picker).

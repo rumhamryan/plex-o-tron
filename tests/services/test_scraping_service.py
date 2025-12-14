@@ -29,6 +29,55 @@ def _clear_wiki_caches():
         scraping_service._WIKI_MOVIE_CACHE.clear()  # type: ignore[attr-defined]
     except Exception:
         pass
+    try:
+        scraping_service.clear_wiki_cache()
+    except Exception:
+        pass
+
+
+def test_wiki_cache_evicts_and_expires():
+    class FakeClock:
+        def __init__(self) -> None:
+            self.value = 0.0
+
+        def __call__(self) -> float:
+            return self.value
+
+    clock = FakeClock()
+    cache = scraping_service.WikiCache(max_entries=2, ttl=10, clock=clock)
+    cache.set(("a",), "alpha")
+    clock.value += 5
+    assert cache.get(("a",)) == "alpha"
+    clock.value += 6
+    assert cache.get(("a",)) is scraping_service.WikiCache.MISS
+
+    cache.set(("b",), "bravo")
+    cache.set(("c",), "charlie")
+    cache.set(("d",), "delta")
+    assert cache.get(("b",)) is scraping_service.WikiCache.MISS
+    assert cache.get(("c",)) == "charlie"
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_years_uses_cache(mocker):
+    mock_call = mocker.patch(
+        "telegram_bot.services.scraping_service._raw_fetch_movie_years",
+        new=AsyncMock(return_value=([1999], None)),
+    )
+    await scraping_service.fetch_movie_years_from_wikipedia("The Matrix")
+    await scraping_service.fetch_movie_years_from_wikipedia("The Matrix")
+    assert mock_call.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_years_negative_cache(mocker):
+    mock_call = mocker.patch(
+        "telegram_bot.services.scraping_service._raw_fetch_movie_years",
+        new=AsyncMock(return_value=([], None)),
+    )
+    await scraping_service.fetch_movie_years_from_wikipedia("Made Up Title")
+    await scraping_service.fetch_movie_years_from_wikipedia("Made Up Title")
+    assert mock_call.await_count == 1
 
 
 class DummyResponse:

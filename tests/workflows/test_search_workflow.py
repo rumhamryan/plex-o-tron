@@ -78,6 +78,81 @@ async def test_search_movie_happy_path(
 
 
 @pytest.mark.asyncio
+async def test_movie_search_uses_cached_year_without_config(
+    mocker, context, make_callback_query, make_message
+):
+    context.bot_data.clear()
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.get_cached_movie_years",
+        return_value=([2013], "Oblivion"),
+    )
+    fetch_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_movie_years_from_wikipedia",
+        new=AsyncMock(),
+    )
+    prompt_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._prompt_for_resolution",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
+        new=AsyncMock(return_value=[]),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=1,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(
+        Update(update_id=2, message=make_message("Oblivion")), context
+    )
+    fetch_mock.assert_not_awaited()
+    prompt_mock.assert_awaited_once()
+    args = prompt_mock.await_args.args
+    assert args[2] == "Oblivion (2013)"
+
+
+@pytest.mark.asyncio
+async def test_movie_search_without_config_sets_notice(
+    mocker, context, make_callback_query, make_message
+):
+    context.bot_data.clear()
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.get_cached_movie_years",
+        return_value=None,
+    )
+    fetch_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_movie_years_from_wikipedia",
+        new=AsyncMock(),
+    )
+    process_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._process_preliminary_results",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
+        new=AsyncMock(return_value=[]),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=1,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(
+        Update(update_id=2, message=make_message("Interstellar")), context
+    )
+    fetch_mock.assert_not_awaited()
+    notice = process_mock.await_args.kwargs.get("notice")
+    assert notice and "Search configuration unavailable" in notice
+
+
+@pytest.mark.asyncio
 async def test_search_tv_happy_path(mocker, context, make_callback_query, make_message):
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message",
@@ -478,7 +553,7 @@ async def test_present_season_download_confirmation_pack_has_reject_button(
     # Find the Reject button in the inline keyboard
     keyboard = kwargs["reply_markup"].inline_keyboard
     labels = [btn.text for row in keyboard for btn in row]
-    assert "Reject" in labels
+    assert "⛔ Reject" in labels
 
 
 @pytest.mark.asyncio

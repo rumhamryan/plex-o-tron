@@ -193,6 +193,13 @@ async def _handle_movie_title_reply(
         return
     _save_session(context, session)
 
+    bot_data = (
+        context.bot_data if isinstance(getattr(context, "bot_data", None), dict) else {}
+    )
+    has_search_config = bool(bot_data.get("SEARCH_CONFIG"))
+    used_cached_years = False
+    missing_config_notice_needed = False
+
     status_message = await safe_send_message(
         context.bot,
         chat_id,
@@ -200,12 +207,23 @@ async def _handle_movie_title_reply(
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-    try:
-        years, corrected = await scraping_service.fetch_movie_years_from_wikipedia(
-            title
-        )
-    except Exception:
-        years, corrected = [], None
+    years: list[int] = []
+    corrected: str | None = None
+
+    if has_search_config:
+        try:
+            years, corrected = await scraping_service.fetch_movie_years_from_wikipedia(
+                title
+            )
+        except Exception:
+            years, corrected = [], None
+    else:
+        cached = scraping_service.get_cached_movie_years(title)
+        if cached:
+            years, corrected = cached
+            used_cached_years = True
+        else:
+            missing_config_notice_needed = True
 
     if corrected and isinstance(corrected, str) and corrected.strip():
         session.set_title(corrected, resolved_title=corrected)
@@ -213,11 +231,15 @@ async def _handle_movie_title_reply(
     else:
         display_title = title
 
-    bot_data = (
-        context.bot_data if isinstance(getattr(context, "bot_data", None), dict) else {}
-    )
-    has_search_config = bool(bot_data.get("SEARCH_CONFIG"))
-    effective_years = years if has_search_config else []
+    wiki_notice: str | None = None
+    if missing_config_notice_needed:
+        wiki_notice = (
+            "⚠️ Search configuration unavailable; skipping Wikipedia hints for "
+            f"*{escape_markdown(display_title, version=2)}*."
+        )
+
+    allow_year_prompts = has_search_config or used_cached_years
+    effective_years = years if allow_year_prompts else []
 
     if isinstance(effective_years, list) and len(effective_years) > 1:
         unique_years = [str(y) for y in sorted({int(y) for y in effective_years})]
@@ -240,7 +262,7 @@ async def _handle_movie_title_reply(
 
     results = await search_logic.orchestrate_searches(display_title, "movie", context)
     await _process_preliminary_results(
-        status_message, context, results, session=session
+        status_message, context, results, session=session, notice=wiki_notice
     )
 
 
@@ -1194,19 +1216,19 @@ async def _present_season_download_confirmation(
         keyboard = [
             [
                 InlineKeyboardButton(
-                    "Confirm", callback_data="confirm_season_download"
+                    "✅ Confirm", callback_data="confirm_season_download"
                 ),
-                InlineKeyboardButton("Reject", callback_data="reject_season_pack"),
-                InlineKeyboardButton("Cancel", callback_data="cancel_operation"),
+                InlineKeyboardButton("⛔ Reject", callback_data="reject_season_pack"),
+                InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
             ]
         ]
     else:
         keyboard = [
             [
                 InlineKeyboardButton(
-                    "Confirm", callback_data="confirm_season_download"
+                    "✅ Confirm", callback_data="confirm_season_download"
                 ),
-                InlineKeyboardButton("Cancel", callback_data="cancel_operation"),
+                InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
             ]
         ]
 
@@ -1242,22 +1264,30 @@ async def _prompt_for_resolution(
     if media_type == "tv":
         keyboard_rows = [
             [
-                InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
-                InlineKeyboardButton("720p", callback_data="search_resolution_720p"),
+                InlineKeyboardButton(
+                    "💎 1080p", callback_data="search_resolution_1080p"
+                ),
+                InlineKeyboardButton("💩 720p", callback_data="search_resolution_720p"),
             ]
         ]
     else:
         keyboard_rows = [
             [
-                InlineKeyboardButton("1080p", callback_data="search_resolution_1080p"),
                 InlineKeyboardButton(
-                    "4K (2160p)", callback_data="search_resolution_4k"
+                    "🪙 1080p", callback_data="search_resolution_1080p"
+                ),
+                InlineKeyboardButton(
+                    "💎 4K (2160p)", callback_data="search_resolution_4k"
                 ),
             ]
         ]
     if allow_detail_change and media_type == "tv":
         keyboard_rows.append(
-            [InlineKeyboardButton("Change", callback_data="search_tv_change_details")]
+            [
+                InlineKeyboardButton(
+                    "🔄️ Change", callback_data="search_tv_change_details"
+                )
+            ]
         )
     keyboard_rows.append(
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]
@@ -1596,6 +1626,7 @@ async def _process_preliminary_results(
     results: list[dict],
     *,
     session: SearchSession | None = None,
+    notice: str | None = None,
 ) -> None:
     """Analyzes preliminary search results to decide the next step in the movie workflow."""
     if session is None:
@@ -1603,12 +1634,20 @@ async def _process_preliminary_results(
 
     title = session.effective_title or session.title or "this movie"
     escaped_title = escape_markdown(title, version=2)
+    notice_text = notice or ""
+
+    def _with_notice(text: str) -> str:
+        if not notice_text:
+            return text
+        return f"{notice_text}\n\n{text}"
 
     if not results:
         logger.warning(f"Preliminary search for '{title}' yielded no results.")
         await safe_edit_message(
             status_message,
-            text=f"❓ No results found for `'{escaped_title}'`\\. Please check the title and try again\\.",
+            text=_with_notice(
+                rf"❓ No results found for '{escaped_title}'\. Please check the title and try again\."
+            ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1645,9 +1684,9 @@ async def _process_preliminary_results(
         logger.warning(
             f"Found results for '{title}', but could not determine any release years."
         )
-        message_text = (
-            f"❓ Found results for `'{escaped_title}'`, but could not determine a release year\\.\n\n"
-            f"Please try the search again and include the year manually \\(e.g., `{escaped_title} 2023`\\)\\."
+        message_text = _with_notice(
+            rf"❓ Found results for '{escaped_title}', but could not determine a release year\.\n\n"
+            rf"Please try the search again and include the year manually \(e.g., '{escaped_title}' 2023\)\."
         )
         await safe_edit_message(
             status_message, text=message_text, parse_mode=ParseMode.MARKDOWN_V2

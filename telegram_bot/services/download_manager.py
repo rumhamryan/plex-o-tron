@@ -100,7 +100,7 @@ class ProgressReporter:
             )
 
             # Use a single toggle button for both pause and resume actions.
-            # Build control row and conditionally add "Cancel All" if there is a queue
+            # Build control row and conditionally add "Stop" if there is a queue
             controls_row = []
             if is_paused:
                 controls_row.append(
@@ -119,9 +119,7 @@ class ProgressReporter:
                 dq = self.application.bot_data.get("download_queues", {})
                 if dq.get(str(self.chat_id)):
                     controls_row.append(
-                        InlineKeyboardButton(
-                            "🧹 Cancel All", callback_data="cancel_all"
-                        )
+                        InlineKeyboardButton("🛑 Stop", callback_data="cancel_all")
                     )
             except Exception:
                 pass
@@ -521,15 +519,13 @@ async def _start_download_task(download_data: dict, application: Application):
 
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
 
-    # Build initial controls and include "Cancel All" if queue exists for this user
+    # Build initial controls and include "Stop" if queue exists for this user
     controls_row = [
         InlineKeyboardButton("⏹️ Cancel Download", callback_data="cancel_download")
     ]
     dq = application.bot_data.get("download_queues", {})
     if dq.get(chat_id_str):
-        controls_row.append(
-            InlineKeyboardButton("🧹 Cancel All", callback_data="cancel_all")
-        )
+        controls_row.append(InlineKeyboardButton("🛑 Stop", callback_data="cancel_all"))
     reply_markup = InlineKeyboardMarkup([controls_row])
     await safe_edit_message(
         application.bot,
