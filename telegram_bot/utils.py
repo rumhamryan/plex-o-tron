@@ -418,7 +418,7 @@ def score_torrent_result(
         if trusted_uploader.lower() == uploader.lower():
             score += value
 
-    # Add the raw seeder count directly to the score
-    score += seeders
+    # Cap seed influence so preference weights still matter even on huge swarms.
+    score += min(seeders, 100)
 
     return score
