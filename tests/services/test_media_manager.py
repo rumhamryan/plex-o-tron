@@ -8,6 +8,7 @@ from telegram_bot.services.media_manager import (
     parse_resolution_from_name,
     handle_successful_download,
 )
+from telegram_bot.ui.messages import format_media_summary
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -47,6 +48,31 @@ def test_parse_resolution_from_name(name, expected):
     assert parse_resolution_from_name(name) == expected
 
 
+def test_format_media_summary_with_icons():
+    result = format_media_summary(
+        prefix="🗑️ *Removed*",
+        title="Movie (2024)",
+        size_label="2.5 GB",
+        destination_label="/movies/Movie (2024)",
+        title_icon="🎬",
+        size_icon="📦",
+        destination_icon="📁",
+    )
+    lines = result.split("\n")
+    assert lines[0] == "🗑️ *Removed*"
+    assert lines[1] == "🎬 Movie \\(2024\\)"
+    assert lines[2] == "📦 Size: 2\\.5 GB"
+    assert lines[3] == "📁 Destination: `/movies/Movie \\(2024\\)`"
+
+
+def test_format_media_summary_without_optional_fields():
+    result = format_media_summary(
+        prefix="✅ Done",
+        title="Plain Title",
+    )
+    assert result == "✅ Done\nPlain Title"
+
+
 class DummyFiles:
     def num_files(self):
         return 1
@@ -76,6 +102,10 @@ async def test_handle_successful_download(mocker):
         "telegram_bot.services.media_manager._trigger_plex_scan",
         return_value="scan",
     )
+    size_mock = mocker.patch(
+        "telegram_bot.services.media_manager._get_path_size_bytes",
+        return_value=1024,
+    )
 
     result = await handle_successful_download(
         ti,
@@ -93,7 +123,10 @@ async def test_handle_successful_download(mocker):
     move_mock.assert_called_once_with(expected_source_path, expected_dest_path)
 
     scan_mock.assert_called_once()
-    assert "Success" in result
+    size_mock.assert_called_once_with(expected_dest_path)
+    assert "Successfully Added to Plex" in result
+    assert "📦 Size: 1\\.0 KB" in result
+    assert "📁 Destination: `/final/Sample \\(2023\\)\\.mkv`" in result
 
 
 class SeasonFiles:
@@ -134,6 +167,10 @@ async def test_handle_successful_download_season_pack(mocker):
         "telegram_bot.services.media_manager._trigger_plex_scan",
         return_value="",
     )
+    size_mock = mocker.patch(
+        "telegram_bot.services.media_manager._get_path_size_bytes",
+        side_effect=[1024, 2048],
+    )
 
     result = await handle_successful_download(
         ti,
@@ -158,4 +195,7 @@ async def test_handle_successful_download_season_pack(mocker):
     assert fetch_mock.await_count == 2
     # One scan after all files have been moved
     assert scan_mock.call_count == 1
-    assert "Processed and moved 2 episodes" in result
+    assert size_mock.call_count == 2
+    assert "Successfully Added to Plex" in result
+    assert "📦 Size: 3\\.0 KB" in result
+    assert "Processed and moved 2 episodes from the season pack." in result

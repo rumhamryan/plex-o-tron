@@ -17,6 +17,7 @@ from ..config import (
     MAX_TORRENT_SIZE_GB,
     logger,
 )
+from ..ui.messages import format_media_summary
 from ..utils import format_bytes, safe_edit_message, parse_torrent_name
 from .scraping_service import fetch_episode_title_from_wikipedia
 
@@ -108,6 +109,43 @@ def validate_torrent_files(ti: lt.torrent_info) -> str | None:  # type: ignore
     return None
 
 
+def _build_media_display_name(parsed_info: dict[str, Any]) -> str:
+    """Return a human-readable label for success toasts."""
+    title = str(parsed_info.get("title") or "Download").strip() or "Download"
+    media_type = parsed_info.get("type")
+    is_season_pack = parsed_info.get("is_season_pack")
+
+    if media_type == "movie":
+        year = parsed_info.get("year")
+        if year:
+            return f"{title} ({year})"
+        return title
+
+    if media_type == "tv":
+        season = parsed_info.get("season")
+        episode = parsed_info.get("episode")
+        if is_season_pack:
+            if isinstance(season, int):
+                return f"{title} - Season {season:02d}"
+            return f"{title} - Season"
+        if isinstance(season, int) and isinstance(episode, int):
+            return f"{title} - S{season:02d}E{episode:02d}"
+        if isinstance(season, int):
+            return f"{title} - Season {season:02d}"
+        return title
+
+    return title
+
+
+def _get_path_size_bytes(path: str) -> int | None:
+    """Safely return file size in bytes."""
+    try:
+        return os.path.getsize(path)
+    except OSError as exc:
+        logger.info("Unable to determine size for '%s': %s", path, exc)
+        return None
+
+
 async def validate_and_enrich_torrent(
     ti: lt.torrent_info,  # type: ignore
     progress_message: Message,  # type: ignore
@@ -194,11 +232,21 @@ async def handle_successful_download(
     Moves completed downloads to the correct media directory, renames them
     for Plex, and triggers a library scan.
     """
+    summary_destination: str | None = None
+    summary_size_bytes: int | None = None
+    season_pack_processed = 0
+    scan_status_message = ""
+    summary_title = _build_media_display_name(parsed_info)
+    is_season_pack = bool(parsed_info.get("is_season_pack"))
+
     try:
         files = ti.files()
 
-        if parsed_info.get("is_season_pack"):
+        if is_season_pack:
             processed = 0
+            total_size_bytes = 0
+            season_destination: str | None = None
+
             for i in range(files.num_files()):
                 path_in_torrent = files.file_path(i)
                 _, ext = os.path.splitext(path_in_torrent)
@@ -212,22 +260,17 @@ async def handle_successful_download(
                 parsed_info_for_file["season"] = parsed_info.get("season")
                 parsed_info_for_file["type"] = "tv"
 
-                # 1. Extract the values into local variables for type narrowing.
                 show_title = parsed_info_for_file.get("title")
                 season_num = parsed_info_for_file.get("season")
                 episode_num = parsed_info_for_file.get("episode")
 
-                # 2. Use isinstance to validate the types. This is what the IDE needs.
                 if (
                     not isinstance(show_title, str)
                     or not isinstance(season_num, int)
                     or not isinstance(episode_num, int)
                 ):
-                    # If any crucial info is missing, skip this file entirely.
                     continue
 
-                # 3. Call the function with the validated local variables.
-                # The IDE now knows these variables cannot be None.
                 (
                     episode_title,
                     corrected_show_title,
@@ -237,7 +280,6 @@ async def handle_successful_download(
                     episode=episode_num,
                 )
 
-                # 4. Safely update the dictionary with the results.
                 parsed_info_for_file["episode_title"] = episode_title
                 if corrected_show_title:
                     parsed_info_for_file["title"] = corrected_show_title
@@ -254,61 +296,85 @@ async def handle_successful_download(
                 await asyncio.to_thread(shutil.move, current_path, new_path)
 
                 processed += 1
+                if season_destination is None:
+                    season_destination = destination_directory
 
-            # Trigger a single Plex scan after all files are moved
+                moved_size = _get_path_size_bytes(new_path)
+                if moved_size is not None:
+                    total_size_bytes += moved_size
+
             scan_status_message = await _trigger_plex_scan("tv", plex_config)
-            # Telegram MarkdownV2 requires escaping '.' characters
-            return (
-                "✅ *Success\\!*\n"
-                f"Processed and moved {processed} episodes from the season pack\\."
-                f"{scan_status_message}"
-            )
+            summary_destination = season_destination
+            summary_size_bytes = total_size_bytes if total_size_bytes > 0 else None
+            season_pack_processed = processed
 
-        # --- Single file torrent processing ---
-        target_file_in_torrent = None
-        original_extension = ".mkv"  # Default
-
-        for i in range(files.num_files()):
-            path_in_torrent = files.file_path(i)
-            _, ext = os.path.splitext(path_in_torrent)
-            if ext.lower() in ALLOWED_EXTENSIONS:
-                target_file_in_torrent = path_in_torrent
-                original_extension = ext
-                break
-
-        if not target_file_in_torrent:
-            raise FileNotFoundError(
-                "No valid media file (.mkv, .mp4) found in the completed torrent."
-            )
-
-        current_path = os.path.join(initial_download_path, target_file_in_torrent)
-        final_filename = generate_plex_filename(parsed_info, original_extension)
-        destination_directory = _get_final_destination_path(parsed_info, save_paths)
-        os.makedirs(destination_directory, exist_ok=True)
-        new_path = os.path.join(destination_directory, final_filename)
-
-        logger.info(f"Moving file from '{current_path}' to '{new_path}'")
-        await asyncio.to_thread(shutil.move, current_path, new_path)
-
-        # Optionally defer Plex scan when part of a multi-episode batch
-        if defer_scan:
-            scan_status_message = ""
         else:
-            scan_status_message = await _trigger_plex_scan(
-                parsed_info.get("type"), plex_config
-            )
+            target_file_in_torrent = None
+            original_extension = ".mkv"  # Default
+
+            for i in range(files.num_files()):
+                path_in_torrent = files.file_path(i)
+                _, ext = os.path.splitext(path_in_torrent)
+                if ext.lower() in ALLOWED_EXTENSIONS:
+                    target_file_in_torrent = path_in_torrent
+                    original_extension = ext
+                    break
+
+            if not target_file_in_torrent:
+                raise FileNotFoundError(
+                    "No valid media file (.mkv, .mp4) found in the completed torrent."
+                )
+
+            current_path = os.path.join(initial_download_path, target_file_in_torrent)
+            final_filename = generate_plex_filename(parsed_info, original_extension)
+            destination_directory = _get_final_destination_path(parsed_info, save_paths)
+            os.makedirs(destination_directory, exist_ok=True)
+            new_path = os.path.join(destination_directory, final_filename)
+
+            logger.info(f"Moving file from '{current_path}' to '{new_path}'")
+            await asyncio.to_thread(shutil.move, current_path, new_path)
+
+            summary_destination = new_path
+            summary_size_bytes = _get_path_size_bytes(new_path)
+
+            if defer_scan:
+                scan_status_message = ""
+            else:
+                scan_status_message = await _trigger_plex_scan(
+                    parsed_info.get("type"), plex_config
+                )
 
     except Exception as e:
         logger.error(f"Post-processing failed: {e}", exc_info=True)
         return f"❌ *Post-Processing Error*\nDownload completed but failed during file handling.\n\n`{escape_markdown(str(e))}`"
 
-    clean_name = parsed_info.get("title", "Download")
-    return (
-        f"✅ *Success\\!*\n"
-        f"Renamed and moved to Plex Server:\n"
-        f"`{escape_markdown(clean_name)}`"
-        f"{scan_status_message}"
+    size_label = (
+        format_bytes(summary_size_bytes) if summary_size_bytes is not None else None
     )
+    destination_label = (
+        summary_destination.replace("\\", "/") if summary_destination else None
+    )
+
+    media_type = parsed_info.get("type")
+    title_icon = "🎬" if media_type == "movie" else "📺" if media_type == "tv" else None
+    summary_text = format_media_summary(
+        prefix="✅ *Successfully Added to Plex*",
+        title=summary_title,
+        size_label=size_label,
+        destination_label=destination_label,
+        title_icon=title_icon,
+        size_icon="📦",
+        destination_icon="📁",
+    )
+
+    season_note = ""
+    if is_season_pack:
+        processed_label = season_pack_processed or 0
+        season_note = (
+            "\n" f"Processed and moved {processed_label} episodes from the season pack."
+        )
+
+    return f"{summary_text}{season_note}{scan_status_message}"
 
 
 def _get_final_destination_path(

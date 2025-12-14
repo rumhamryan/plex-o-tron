@@ -28,6 +28,7 @@ from ..services.search_logic import (
     find_season_directory,
     find_episode_file,
 )
+from ..ui.messages import format_media_summary
 from ..utils import format_bytes, safe_edit_message, safe_send_message
 
 if TYPE_CHECKING:
@@ -885,12 +886,14 @@ async def _handle_confirm_delete_button(query, context):
         message_text = "ℹ️ *Deletion Confirmed*\n\n(Note: Actual file deletion is disabled by the administrator)"
     elif plex_config:
         display_name = _get_display_name(path_to_delete)
-        escaped_name = escape_markdown(display_name, version=2)
         size_label = _format_size_label(path_to_delete)
-        escaped_size = escape_markdown(size_label, version=2)
 
         def _format_item_line(prefix: str) -> str:
-            return f"{prefix}\n{escaped_name}\nSize: {escaped_size}"
+            return format_media_summary(
+                prefix=prefix,
+                title=display_name,
+                size_label=size_label,
+            )
 
         await safe_edit_message(
             query.message,
