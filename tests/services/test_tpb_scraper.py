@@ -128,12 +128,12 @@ async def test_scrape_tpb_matches_season_and_episode(mocker):
     mocker.patch("httpx.AsyncClient", return_value=fake_client)
 
     context = _ctx()
-    base = "Example Show S01E02"
+    base = "Example Show S02E01"
     results = await scrape_tpb(
         base, "tv", "unused", context, base_query_for_filter=base
     )
-    assert len(results) == 1
-    assert "S01E02" in results[0]["title"]
+    assert len(results) == 2
+    assert "S02E01" in results[0]["title"]
 
 
 @pytest.mark.asyncio

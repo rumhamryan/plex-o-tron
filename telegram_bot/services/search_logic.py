@@ -223,7 +223,7 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
         for field in ordered_fields:
             lines.append(f"  {field}: {result.get(field)}")
         lines.append("--------------------")
-    logger.info("\n".join(lines))
+    # logger.info("\n".join(lines))
 
 
 def _parse_size_to_gb(size_str: str) -> float:
