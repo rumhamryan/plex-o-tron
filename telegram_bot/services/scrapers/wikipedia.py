@@ -11,7 +11,9 @@ from ...config import logger
 from ...utils import extract_first_int
 
 # --- Wikipedia caching (per-process) ---
-_WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], set[int], str | None]] = {}
+_WIKI_TITLES_CACHE: dict[
+    tuple[str, int], tuple[dict[int, str], set[int], str | None]
+] = {}
 _WIKI_SOUP_CACHE: dict[str, BeautifulSoup] = {}
 _WIKI_MOVIE_CACHE: dict[str, tuple[list[int], str | None]] = {}
 _WIKI_FRANCHISE_CACHE: dict[str, dict[str, Any] | None] = {}
@@ -37,7 +39,9 @@ def _sanitize_wikipedia_title(title: str) -> str:
             break
         cleaned = new_cleaned
     # Also strip (film series) or (franchise) if present
-    cleaned = re.sub(r"\s*\((?:film\s+series|franchise)\)\s*$", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(
+        r"\s*\((?:film\s+series|franchise)\)\s*$", "", cleaned, flags=re.IGNORECASE
+    ).strip()
     return cleaned or title
 
 
@@ -787,6 +791,7 @@ async def _extract_titles_for_season(
     soup: BeautifulSoup, season: int
 ) -> tuple[dict[int, str], set[int]]:
     """Returns (titles_map, released_episode_numbers)."""
+
     def _get_column_indices(
         table: Tag, *, default_ep: int, default_title: int
     ) -> tuple[int, int, int]:
@@ -799,7 +804,7 @@ async def _extract_titles_for_season(
             for i, h in enumerate(headers):
                 if ("no" in h and "season" in h) or ("in season" in h):
                     ep_idx = i
-            if ep_idx == -1: # Fallback if no specific season col
+            if ep_idx == -1:  # Fallback if no specific season col
                 for i, h in enumerate(headers):
                     if "no" in h:
                         ep_idx = i
@@ -1305,7 +1310,7 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
 
         for i, h in enumerate(headers):
             if "film" in h or "title" in h or "movie" in h:
-                if title_idx == -1: # Take first match
+                if title_idx == -1:  # Take first match
                     title_idx = i
             if "release" in h or "date" in h or "year" in h:
                 if date_idx == -1:
@@ -1354,7 +1359,13 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
                                 year = int(m.group(1))
 
                     if clean_title:
-                        current_table_movies.append({"title": clean_title, "year": year, "release_date": release_date})
+                        current_table_movies.append(
+                            {
+                                "title": clean_title,
+                                "year": year,
+                                "release_date": release_date,
+                            }
+                        )
                 except Exception:
                     continue
 
@@ -1363,7 +1374,7 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
                 # Prioritize table that has both title and date
                 if date_idx != -1:
                     return current_table_movies
-                movies = current_table_movies # Fallback if only titles found
+                movies = current_table_movies  # Fallback if only titles found
 
     return movies
 
@@ -1373,7 +1384,13 @@ async def _parse_sequels_section(soup: BeautifulSoup) -> list[dict[str, Any]]:
     movies: list[dict[str, Any]] = []
 
     # Find a header containing "Sequel"
-    headers = soup.find_all(lambda tag: tag.name in ["h2", "h3"] and ("sequel" in tag.get_text().lower() or "film series" in tag.get_text().lower()))
+    headers = soup.find_all(
+        lambda tag: tag.name in ["h2", "h3"]
+        and (
+            "sequel" in tag.get_text().lower()
+            or "film series" in tag.get_text().lower()
+        )
+    )
 
     for header in headers:
         # Look for a list <ul> immediately following
