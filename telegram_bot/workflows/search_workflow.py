@@ -1965,6 +1965,7 @@ async def _perform_tv_season_search(
         targets = list(range(1, episode_count + 1))
 
     titles_map: dict[int, str] = {}
+    released_eps: set[int] = set()
     corrected_title: str | None = None
     try:
         logger.info(
@@ -1972,6 +1973,7 @@ async def _perform_tv_season_search(
         )
         (
             titles_map,
+            released_eps,
             corrected_title,
         ) = await scraping_service.fetch_episode_titles_for_season(title, season)
         logger.info(
@@ -1984,7 +1986,20 @@ async def _perform_tv_season_search(
         else:
             logger.debug(f"[WIKI] No title correction for '{title}'. Using original.")
     except Exception:
-        titles_map, corrected_title = {}, None
+        titles_map, released_eps, corrected_title = {}, set(), None
+
+    # Filter targets to exclude unreleased episodes
+    if released_eps:
+        # If we have release info, trust it strictly
+        targets = [t for t in targets if t in released_eps]
+
+    if not targets:
+        await safe_edit_message(
+            message,
+            text=f"❌ No released episodes found for Season {season} of *{escape_markdown(title, version=2)}*\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
 
     episode_candidates: dict[int, list[EpisodeCandidate]] = {}
     missing_candidates: list[int] = []

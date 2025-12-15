@@ -90,7 +90,7 @@ async def test_search_movie_happy_path(
     # But _handle_movie_title_reply sets title and resolved_title.
     # _prompt_for_collection_mode updates step.
     session = SearchSession.from_user_data(context.user_data)
-    session.set_final_title("Inception (2010)")  # Was set in handle_movie_title_reply
+    session.set_final_title("Inception (2010)") # Was set in handle_movie_title_reply
     session.save(context.user_data)
 
     collection_update = Update(
@@ -158,7 +158,7 @@ async def test_movie_search_uses_cached_year_without_config(
     prompt_collection_mock.assert_awaited_once()
 
     session = SearchSession.from_user_data(context.user_data)
-    assert session.resolved_title == "Oblivion"  # Set before prompt
+    assert session.resolved_title == "Oblivion" # Set before prompt
 
 
 @pytest.mark.asyncio
@@ -644,7 +644,7 @@ async def test_handle_tv_scope_selection_season(
 ):
     mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-        new=AsyncMock(return_value=({}, None)),
+        new=AsyncMock(return_value=({}, set(), None)),
     )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
@@ -695,7 +695,7 @@ async def test_handle_tv_scope_selection_season_fallback(
 ):
     mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-        new=AsyncMock(return_value=({1: "Episode 1", 2: "Episode 2"}, None)),
+        new=AsyncMock(return_value=({1: "Episode 1", 2: "Episode 2"}, {1, 2}, None)),
     )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
@@ -833,7 +833,7 @@ async def test_entire_season_skips_pack_and_targets_missing(
 ):
     mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-        new=AsyncMock(return_value=({i: f"Ep {i}" for i in range(1, 6)}, None)),
+        new=AsyncMock(return_value=({i: f"Ep {i}" for i in range(1, 6)}, {1, 2, 3, 4, 5}, None)),
     )
     # Mock messaging and data sources
     mocker.patch(

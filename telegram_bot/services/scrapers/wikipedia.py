@@ -1,6 +1,7 @@
 import asyncio
 import re
 import warnings
+from datetime import datetime
 from typing import Any
 
 import wikipedia
@@ -10,7 +11,7 @@ from ...config import logger
 from ...utils import extract_first_int
 
 # --- Wikipedia caching (per-process) ---
-_WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], str | None]] = {}
+_WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], set[int], str | None]] = {}
 _WIKI_SOUP_CACHE: dict[str, BeautifulSoup] = {}
 _WIKI_MOVIE_CACHE: dict[str, tuple[list[int], str | None]] = {}
 _WIKI_FRANCHISE_CACHE: dict[str, dict[str, Any] | None] = {}
@@ -36,9 +37,7 @@ def _sanitize_wikipedia_title(title: str) -> str:
             break
         cleaned = new_cleaned
     # Also strip (film series) or (franchise) if present
-    cleaned = re.sub(
-        r"\s*\((?:film\s+series|franchise)\)\s*$", "", cleaned, flags=re.IGNORECASE
-    ).strip()
+    cleaned = re.sub(r"\s*\((?:film\s+series|franchise)\)\s*$", "", cleaned, flags=re.IGNORECASE).strip()
     return cleaned or title
 
 
@@ -60,6 +59,34 @@ warnings.filterwarnings(
 )
 
 
+def _parse_wiki_date(text: str) -> datetime | None:
+    # Try ISO date in parens first: (2022-01-01)
+    m = re.search(r"\((\d{4}-\d{2}-\d{2})\)", text)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), "%Y-%m-%d")
+        except ValueError:
+            pass
+
+    # Clean text
+    clean_text = re.sub(r"\[.*?\]", "", text)
+    clean_text = re.sub(r"\(.*?\)", "", clean_text).strip()
+
+    formats = ["%B %d, %Y", "%d %B %Y", "%Y-%m-%d", "%Y"]
+    for fmt in formats:
+        try:
+            return datetime.strptime(clean_text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _is_released(date_obj: datetime | None) -> bool:
+    if not date_obj:
+        return False
+    return date_obj <= datetime.now()
+
+
 async def fetch_episode_title_from_wikipedia(
     show_title: str, season: int, episode: int, _last_resort: bool = False
 ) -> tuple[str | None, str | None]:
@@ -69,7 +96,7 @@ async def fetch_episode_title_from_wikipedia(
 
     cached = _WIKI_TITLES_CACHE.get(cache_key)
     if cached:
-        titles_map, corrected = cached
+        titles_map, _, corrected = cached
         return titles_map.get(episode), corrected
     canonical_title = normalized_input
     main_page: wikipedia.WikipediaPage | None = None
@@ -172,9 +199,9 @@ async def fetch_episode_title_from_wikipedia(
         return None, None
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
-    titles_map = await _extract_titles_for_season(soup, season)
+    titles_map, released_eps = await _extract_titles_for_season(soup, season)
     if titles_map:
-        _WIKI_TITLES_CACHE[cache_key] = (titles_map, corrected_show_title)
+        _WIKI_TITLES_CACHE[cache_key] = (titles_map, released_eps, corrected_show_title)
     episode_title = titles_map.get(episode) if titles_map else None
 
     if not episode_title:
@@ -458,14 +485,14 @@ async def fetch_movie_years_from_wikipedia(
 
 async def fetch_episode_titles_for_season(
     show_title: str, season: int, _last_resort: bool = False
-) -> tuple[dict[int, str], str | None]:
+) -> tuple[dict[int, str], set[int], str | None]:
     cache_key = (show_title.strip().lower(), season)
     cached = _WIKI_TITLES_CACHE.get(cache_key)
     if cached:
         logger.info(
             f"[WIKI] Cache hit for episode titles: '{show_title}' S{season:02d}."
         )
-        return cached[0], cached[1]
+        return cached[0], cached[1], cached[2]
 
     corrected_show_title: str | None = None
     canonical_title = show_title
@@ -486,7 +513,7 @@ async def fetch_episode_titles_for_season(
                 return await fetch_episode_titles_for_season(
                     qualified, season, _last_resort=True
                 )
-            return {}, None
+            return {}, set(), None
         main_page = await asyncio.to_thread(
             wikipedia.page, search_results[0], auto_suggest=False, redirect=True
         )
@@ -510,7 +537,7 @@ async def fetch_episode_titles_for_season(
             return await fetch_episode_titles_for_season(
                 qualified, season, _last_resort=True
             )
-        return {}, None
+        return {}, set(), None
 
     html_to_scrape: str | None = None
     try:
@@ -553,15 +580,15 @@ async def fetch_episode_titles_for_season(
             return await fetch_episode_titles_for_season(
                 qualified, season, _last_resort=True
             )
-        return {}, corrected_show_title
+        return {}, set(), corrected_show_title
 
     soup = BeautifulSoup(html_to_scrape, "lxml")
-    titles_map = await _extract_titles_for_season(soup, season)
+    titles_map, released_eps = await _extract_titles_for_season(soup, season)
     if titles_map:
         logger.info(
             f"[WIKI] Parsed {len(titles_map)} episode titles for '{canonical_title}' S{season:02d}."
         )
-        _WIKI_TITLES_CACHE[cache_key] = (titles_map, corrected_show_title)
+        _WIKI_TITLES_CACHE[cache_key] = (titles_map, released_eps, corrected_show_title)
     if not titles_map and not _last_resort:
         qualified = f"{show_title} (TV series)"
         logger.info(
@@ -570,7 +597,7 @@ async def fetch_episode_titles_for_season(
         return await fetch_episode_titles_for_season(
             qualified, season, _last_resort=True
         )
-    return titles_map, corrected_show_title
+    return titles_map, released_eps, corrected_show_title
 
 
 async def fetch_total_seasons_from_wikipedia(
@@ -758,11 +785,12 @@ async def _parse_episode_tables(
 
 async def _extract_titles_for_season(
     soup: BeautifulSoup, season: int
-) -> dict[int, str]:
+) -> tuple[dict[int, str], set[int]]:
+    """Returns (titles_map, released_episode_numbers)."""
     def _get_column_indices(
         table: Tag, *, default_ep: int, default_title: int
-    ) -> tuple[int, int]:
-        ep_idx, title_idx = default_ep, default_title
+    ) -> tuple[int, int, int]:
+        ep_idx, title_idx, date_idx = default_ep, default_title, -1
         header_row = table.find("tr")
         if isinstance(header_row, Tag):
             headers = [
@@ -771,8 +799,7 @@ async def _extract_titles_for_season(
             for i, h in enumerate(headers):
                 if ("no" in h and "season" in h) or ("in season" in h):
                     ep_idx = i
-                    break
-            else:
+            if ep_idx == -1: # Fallback if no specific season col
                 for i, h in enumerate(headers):
                     if "no" in h:
                         ep_idx = i
@@ -781,7 +808,11 @@ async def _extract_titles_for_season(
                 if "title" in h:
                     title_idx = i
                     break
-        return ep_idx, title_idx
+            for i, h in enumerate(headers):
+                if "air" in h and "date" in h:
+                    date_idx = i
+                    break
+        return ep_idx, title_idx, date_idx
 
     def _extract_title_text(title_cell: Tag) -> str:
         italic = title_cell.find("i")
@@ -797,6 +828,53 @@ async def _extract_titles_for_season(
         return text_full.strip('"')
 
     results: dict[int, str] = {}
+    released: set[int] = set()
+
+    def _process_table(target_table, default_ep, default_title):
+        ep_idx, title_idx, date_idx = _get_column_indices(
+            target_table, default_ep=default_ep, default_title=default_title
+        )
+        for row in target_table.find_all("tr")[1:]:
+            if not isinstance(row, Tag):
+                continue
+            cells = row.find_all(["th", "td"])
+
+            # Sometimes parsing fails if we don't check bounds carefully
+            required_idx = max(ep_idx, title_idx, date_idx)
+            if len(cells) <= required_idx and len(cells) <= max(ep_idx, title_idx):
+                continue
+
+            try:
+                # Episode Number
+                ep_text = cells[ep_idx].get_text(" ", strip=True)
+                ep_num = extract_first_int(ep_text)
+                if not ep_num:
+                    continue
+
+                # Title
+                if len(cells) > title_idx:
+                    title_cell = cells[title_idx]
+                    if isinstance(title_cell, Tag):
+                        results[ep_num] = _extract_title_text(title_cell)
+
+                # Date
+                if date_idx != -1 and len(cells) > date_idx:
+                    date_text = cells[date_idx].get_text(strip=True)
+                    if "tba" in date_text.lower():
+                        continue
+                    date_obj = _parse_wiki_date(date_text)
+                    if _is_released(date_obj):
+                        released.add(ep_num)
+                else:
+                    # If no date column found, assume released if we found a title?
+                    # Safer to assume yes if title exists, unless we are strict.
+                    # User instructions: "guard against searching for ... that have not come out yet".
+                    # If date column missing, we can't guard. Default to True?
+                    # Most wikis have air date.
+                    released.add(ep_num)
+
+            except Exception:
+                continue
 
     season_header_pattern = re.compile(rf"Season\s+{season}", re.IGNORECASE)
     header_tag = soup.find(
@@ -806,28 +884,9 @@ async def _extract_titles_for_season(
     if isinstance(header_tag, Tag):
         target_table = header_tag.find_next("table", class_="wikitable")
         if isinstance(target_table, Tag):
-            ep_idx, title_idx = _get_column_indices(
-                target_table, default_ep=1, default_title=2
-            )
-            for row in target_table.find_all("tr")[1:]:
-                if not isinstance(row, Tag):
-                    continue
-                cells = row.find_all(["th", "td"])
-                if len(cells) <= max(ep_idx, title_idx):
-                    continue
-                try:
-                    ep_text = cells[ep_idx].get_text(" ", strip=True)
-                    ep_num = extract_first_int(ep_text)
-                    if not ep_num:
-                        continue
-                    title_cell = cells[title_idx]
-                    if not isinstance(title_cell, Tag):
-                        continue
-                    results[ep_num] = _extract_title_text(title_cell)
-                except Exception:
-                    continue
+            _process_table(target_table, 1, 2)
             if results:
-                return results
+                return results, released
 
     episodes_header_pattern = re.compile(r"Episodes", re.IGNORECASE)
     episodes_header_tag = soup.find(
@@ -837,27 +896,9 @@ async def _extract_titles_for_season(
     if isinstance(episodes_header_tag, Tag):
         target_table = episodes_header_tag.find_next("table", class_="wikitable")
         if isinstance(target_table, Tag):
-            ep_idx, title_idx = _get_column_indices(
-                target_table, default_ep=0, default_title=1
-            )
-            for row in target_table.find_all("tr")[1:]:
-                if not isinstance(row, Tag):
-                    continue
-                cells = row.find_all(["td", "th"])
-                if len(cells) <= max(ep_idx, title_idx):
-                    continue
-                try:
-                    ep_num = extract_first_int(cells[ep_idx].get_text(" ", strip=True))
-                    if not ep_num:
-                        continue
-                    title_cell = cells[title_idx]
-                    if not isinstance(title_cell, Tag):
-                        continue
-                    results[ep_num] = _extract_title_text(title_cell)
-                except Exception:
-                    continue
+            _process_table(target_table, 0, 1)
 
-    return results
+    return results, released
 
 
 async def _extract_title_from_dedicated_table(
@@ -1038,7 +1079,7 @@ async def fetch_season_episode_count_from_wikipedia(
 
     count_from_titles: int | None = None
     try:
-        titles_map = await _extract_titles_for_season(soup, season)
+        titles_map, _ = await _extract_titles_for_season(soup, season)
         if titles_map:
             ep_numbers = sorted(titles_map.keys())
             count_from_titles = ep_numbers[-1] if ep_numbers else len(titles_map)
@@ -1210,6 +1251,21 @@ async def fetch_franchise_details(movie_title: str) -> dict[str, Any] | None:
             if not movies and query == movie_title:
                 movies = await _parse_sequels_section(soup)
 
+            # Filter unreleased movies
+            released_movies = []
+            current_year = datetime.now().year
+            for m in movies:
+                r_date = m.get("release_date")
+                year = m.get("year")
+                if r_date:
+                    if _is_released(r_date):
+                        released_movies.append(m)
+                elif year and year <= current_year:
+                    # Fallback to year check if no full date
+                    released_movies.append(m)
+
+            movies = released_movies
+
             # 3. Validation: Franchise needs at least 2 movies
             if movies and len(movies) >= 2:
                 franchise_name = _sanitize_wikipedia_title(page.title)
@@ -1249,7 +1305,7 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
 
         for i, h in enumerate(headers):
             if "film" in h or "title" in h or "movie" in h:
-                if title_idx == -1:  # Take first match
+                if title_idx == -1: # Take first match
                     title_idx = i
             if "release" in h or "date" in h or "year" in h:
                 if date_idx == -1:
@@ -1286,16 +1342,19 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
                     clean_title = re.sub(r"\[.*?\]", "", raw_title).strip('"').strip()
 
                     year = None
+                    release_date = None
                     if date_idx != -1 and len(cells) > date_idx:
                         date_text = cells[date_idx].get_text(strip=True)
-                        m = re.search(r"\b(19\d{2}|20\d{2})\b", date_text)
-                        if m:
-                            year = int(m.group(1))
+                        release_date = _parse_wiki_date(date_text)
+                        if release_date:
+                            year = release_date.year
+                        else:
+                            m = re.search(r"\b(19\d{2}|20\d{2})\b", date_text)
+                            if m:
+                                year = int(m.group(1))
 
                     if clean_title:
-                        current_table_movies.append(
-                            {"title": clean_title, "year": year}
-                        )
+                        current_table_movies.append({"title": clean_title, "year": year, "release_date": release_date})
                 except Exception:
                     continue
 
@@ -1304,7 +1363,7 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
                 # Prioritize table that has both title and date
                 if date_idx != -1:
                     return current_table_movies
-                movies = current_table_movies  # Fallback if only titles found
+                movies = current_table_movies # Fallback if only titles found
 
     return movies
 
@@ -1314,13 +1373,7 @@ async def _parse_sequels_section(soup: BeautifulSoup) -> list[dict[str, Any]]:
     movies: list[dict[str, Any]] = []
 
     # Find a header containing "Sequel"
-    headers = soup.find_all(
-        lambda tag: tag.name in ["h2", "h3"]
-        and (
-            "sequel" in tag.get_text().lower()
-            or "film series" in tag.get_text().lower()
-        )
-    )
+    headers = soup.find_all(lambda tag: tag.name in ["h2", "h3"] and ("sequel" in tag.get_text().lower() or "film series" in tag.get_text().lower()))
 
     for header in headers:
         # Look for a list <ul> immediately following

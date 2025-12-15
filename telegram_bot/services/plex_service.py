@@ -162,9 +162,7 @@ async def create_plex_collection(
     if not plex_config:
         return ""
 
-    logger.info(
-        f"Creating Plex collection '{collection_name}' with {len(movie_list)} items."
-    )
+    logger.info(f"Creating Plex collection '{collection_name}' with {len(movie_list)} items.")
 
     try:
         plex = await asyncio.to_thread(
@@ -206,9 +204,7 @@ async def create_plex_collection(
                 await asyncio.to_thread(target_item.addCollection, collection_name)
                 added_count += 1
             else:
-                logger.debug(
-                    f"Could not find movie '{title}' ({year}) in Plex to add to collection."
-                )
+                logger.debug(f"Could not find movie '{title}' ({year}) in Plex to add to collection.")
 
         msg = f"Created collection '{collection_name}' with {added_count} items."
         logger.info(msg)
