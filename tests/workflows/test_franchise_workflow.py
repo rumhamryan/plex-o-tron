@@ -135,7 +135,7 @@ async def test_franchise_confirm_flow():
         patch(
             "telegram_bot.workflows.franchise_workflow.process_queue_for_user",
             new_callable=AsyncMock,
-        ) as mock_process,
+        ),
         patch(
             "telegram_bot.services.plex_service.create_plex_collection",
             new_callable=AsyncMock,
