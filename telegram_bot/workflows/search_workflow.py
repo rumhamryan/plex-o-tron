@@ -185,6 +185,7 @@ async def handle_search_buttons(
         or action.startswith("search_results_page_")
         or action.startswith("search_results_filter_resolution_")
         or action.startswith("search_results_filter_codec_")
+        or action.startswith("search_mode_")
         or action == "search_tv_change_details"
     )
 
@@ -217,6 +218,8 @@ async def handle_search_buttons(
             await _handle_results_filter_button(query, context, session)
         elif action.startswith("search_results_filter_codec_"):
             await _handle_results_codec_filter_button(query, context, session)
+        elif action.startswith("search_mode_"):
+            await _handle_collection_mode_selection(query, context, session)
         else:
             logger.warning(f"Received unhandled search callback: {action}")
     except SearchSessionError as exc:
@@ -257,9 +260,8 @@ async def _handle_movie_title_reply(
     if parsed_query.year:
         full_title = f"{title} ({parsed_query.year})"
         session.set_final_title(full_title)
-        session.advance(SearchStep.RESOLUTION)
         _save_session(context, session)
-        await _search_movie_results(chat_id, context, session)
+        await _prompt_for_collection_mode(chat_id, context, session)
         return
     _save_session(context, session)
 
@@ -323,9 +325,8 @@ async def _handle_movie_title_reply(
     if isinstance(effective_years, list) and len(effective_years) == 1:
         full_title = f"{display_title} ({effective_years[0]})"
         session.set_final_title(full_title)
-        session.advance(SearchStep.RESOLUTION)
         _save_session(context, session)
-        await _search_movie_results(status_message, context, session)
+        await _prompt_for_collection_mode(status_message, context, session)
         return
 
     results = await search_logic.orchestrate_searches(display_title, "movie", context)
@@ -359,9 +360,8 @@ async def _handle_movie_year_reply(
 
     full_title = f"{title} ({query})"
     session.set_final_title(full_title)
-    session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
-    await _search_movie_results(chat_id, context, session)
+    await _prompt_for_collection_mode(chat_id, context, session)
 
 
 async def _handle_tv_title_reply(
@@ -1142,6 +1142,9 @@ async def _handle_result_selection_button(
     if error_message or not parsed_info:
         return
 
+    if session.collection_mode:
+        parsed_info["collection_mode"] = True
+
     await send_confirmation_prompt(query.message, context, ti, parsed_info)
 
 
@@ -1194,6 +1197,67 @@ async def _handle_results_filter_button(
     session.results_page = 0
     _save_session(context, session)
     await _render_results_view(query.message, context, session)
+
+
+async def _handle_collection_mode_selection(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+) -> None:
+    """Handles the user's choice between Single Movie and Collection."""
+    if not isinstance(query.message, Message):
+        return
+
+    is_collection = query.data == "search_mode_collection"
+    session.collection_mode = is_collection
+
+    # Proceed to resolution
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
+
+    await _search_movie_results(query.message, context, session)
+
+
+async def _prompt_for_collection_mode(
+    target: Message | int,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+) -> None:
+    """Asks the user if they want to search for a single movie or a collection."""
+    if session.media_type != "movie":
+        return
+
+    session.advance(SearchStep.COLLECTION_MODE_SELECTION)
+    _save_session(context, session)
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Single Movie", callback_data="search_mode_single"),
+            InlineKeyboardButton("Collection", callback_data="search_mode_collection"),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+    ]
+
+    title = session.require_final_title()
+    text = f"Found *{escape_markdown(title, version=2)}*\\. Do you want to download just this movie or the entire collection?"
+
+    if isinstance(target, Message):
+        await safe_edit_message(
+            target,
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    elif isinstance(target, int):
+        sent_message = await safe_send_message(
+            context.bot,
+            chat_id=target,
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        session.prompt_message_id = sent_message.message_id
+        _save_session(context, session)
 
 
 async def _handle_results_codec_filter_button(
@@ -1271,10 +1335,9 @@ async def _handle_year_selection_button(
 
     session.set_final_title(full_title)
     session.media_type = "movie"
-    session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
 
-    await _search_movie_results(query.message, context, session)
+    await _prompt_for_collection_mode(query.message, context, session)
 
 
 # --- Helper/UI Functions ---
@@ -1902,6 +1965,7 @@ async def _perform_tv_season_search(
         targets = list(range(1, episode_count + 1))
 
     titles_map: dict[int, str] = {}
+    released_eps: set[int] = set()
     corrected_title: str | None = None
     try:
         logger.info(
@@ -1909,6 +1973,7 @@ async def _perform_tv_season_search(
         )
         (
             titles_map,
+            released_eps,
             corrected_title,
         ) = await scraping_service.fetch_episode_titles_for_season(title, season)
         logger.info(
@@ -1921,7 +1986,20 @@ async def _perform_tv_season_search(
         else:
             logger.debug(f"[WIKI] No title correction for '{title}'. Using original.")
     except Exception:
-        titles_map, corrected_title = {}, None
+        titles_map, released_eps, corrected_title = {}, set(), None
+
+    # Filter targets to exclude unreleased episodes
+    if released_eps:
+        # If we have release info, trust it strictly
+        targets = [t for t in targets if t in released_eps]
+
+    if not targets:
+        await safe_edit_message(
+            message,
+            text=f"❌ No released episodes found for Season {season} of *{escape_markdown(title, version=2)}*\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
 
     episode_candidates: dict[int, list[EpisodeCandidate]] = {}
     missing_candidates: list[int] = []
@@ -2436,9 +2514,8 @@ async def _process_preliminary_results(
         )
         full_title = f"{title} ({year})"
         session.set_final_title(full_title)
-        session.advance(SearchStep.RESOLUTION)
         _save_session(context, session)
-        await _search_movie_results(status_message, context, session)
+        await _prompt_for_collection_mode(status_message, context, session)
 
     else:
         logger.warning(

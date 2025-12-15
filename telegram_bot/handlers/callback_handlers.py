@@ -15,6 +15,11 @@ from ..services.download_manager import (
 )
 from ..workflows.delete_workflow import handle_delete_buttons
 from ..workflows.search_workflow import handle_search_buttons, handle_reject_season_pack
+from ..workflows.franchise_workflow import (
+    handle_franchise_confirmation,
+    handle_franchise_toggle,
+    handle_franchise_confirm,
+)
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -42,11 +47,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await handle_delete_buttons(update, context)
 
     elif action == "confirm_download":
-        await add_download_to_queue(update, context)
+        # Intercept for collection mode
+        pending = context.user_data.get("pending_torrent", {})
+        info = pending.get("parsed_info", {})
+        if info.get("collection_mode"):
+            await handle_franchise_confirmation(update, context)
+        else:
+            await add_download_to_queue(update, context)
     elif action == "confirm_season_download":
         await add_season_to_queue(update, context)
     elif action == "reject_season_pack":
         await handle_reject_season_pack(update, context)
+
+    elif action.startswith("franchise_toggle_"):
+        await handle_franchise_toggle(update, context)
+    elif action == "franchise_confirm":
+        await handle_franchise_confirm(update, context)
 
     elif action == "pause_resume":
         await handle_pause_resume(update, context)

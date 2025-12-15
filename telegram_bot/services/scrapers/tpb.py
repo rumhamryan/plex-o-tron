@@ -145,7 +145,9 @@ def _transform_results(
         normalized_candidate = _normalize(candidate_title)
         if not normalized_candidate:
             normalized_candidate = _normalize(raw_title)
-        fuzz_score = fuzz.token_set_ratio(normalized_target, normalized_candidate)
+        # Use token_sort_ratio to penalize extra tokens (e.g. "Dune Part Two" vs "Dune")
+        # token_set_ratio would return 100 for subset matches.
+        fuzz_score = fuzz.token_sort_ratio(normalized_target, normalized_candidate)
         if fuzz_score < _FUZZ_THRESHOLD:
             continue
 

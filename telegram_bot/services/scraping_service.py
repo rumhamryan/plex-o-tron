@@ -15,6 +15,7 @@ from .scrapers import (
     fetch_episode_titles_for_season as _raw_fetch_episode_titles_for_season,
     fetch_total_seasons_from_wikipedia as _raw_fetch_total_seasons,
     fetch_season_episode_count_from_wikipedia as _raw_fetch_episode_count,
+    fetch_franchise_details,
     scrape_yts,
     scrape_1337x,
     scrape_tpb,
@@ -217,7 +218,7 @@ async def fetch_season_episode_count_from_wikipedia(
 
 async def fetch_episode_titles_for_season(
     show_title: str, season: int, _last_resort: bool = False
-) -> tuple[dict[int, str], str | None]:
+) -> tuple[dict[int, str], set[int], str | None]:
     normalized_title = _display_title(show_title)
     cache_key = _episode_titles_cache_key(show_title, season)
     season_tag = _season_label(normalized_title, season)
@@ -244,6 +245,7 @@ __all__ = [
     "fetch_episode_titles_for_season",
     "fetch_total_seasons_from_wikipedia",
     "fetch_season_episode_count_from_wikipedia",
+    "fetch_franchise_details",
     "scrape_yts",
     "scrape_1337x",
     "scrape_tpb",
