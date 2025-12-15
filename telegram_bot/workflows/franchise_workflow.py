@@ -15,10 +15,14 @@ from ..services.download_manager import add_download_to_queue, process_queue_for
 from ..services.media_manager import parse_resolution_from_name
 from ..utils import safe_edit_message, parse_torrent_name, safe_send_message
 
-def _sanitize_filename(name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', '', name).strip()
 
-async def handle_franchise_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def _sanitize_filename(name: str) -> str:
+    return re.sub(r'[<>:"/\\|?*]', "", name).strip()
+
+
+async def handle_franchise_confirmation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """
     Handles the confirmation of a seed movie in collection mode.
     """
@@ -35,7 +39,10 @@ async def handle_franchise_confirmation(update: Update, context: ContextTypes.DE
     if is_collection_mode:
         asyncio.create_task(run_franchise_logic(update, context, seed_torrent))
 
-async def run_franchise_logic(update: Update, context: ContextTypes.DEFAULT_TYPE, seed_torrent: dict[str, Any]) -> None:
+
+async def run_franchise_logic(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, seed_torrent: dict[str, Any]
+) -> None:
     parsed_info = seed_torrent.get("parsed_info", {})
     movie_title = parsed_info.get("title")
     if not movie_title:
@@ -43,21 +50,30 @@ async def run_franchise_logic(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     chat_id = update.effective_chat.id if update.effective_chat else 0
     status_msg = await safe_send_message(
-        context.bot, chat_id,
+        context.bot,
+        chat_id,
         f"🎬 *Collection Mode*\nDetecting franchise details for *{escape_markdown(movie_title, version=2)}*\\.\\.\\.",
-        parse_mode=ParseMode.MARKDOWN_V2
+        parse_mode=ParseMode.MARKDOWN_V2,
     )
 
     # 1. Fetch Details
     franchise_info = await scraping_service.fetch_franchise_details(movie_title)
     if not franchise_info:
-        await safe_edit_message(status_msg, f"⚠️ Could not detect a franchise for *{escape_markdown(movie_title, version=2)}*\\. Proceeding as single movie\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(
+            status_msg,
+            f"⚠️ Could not detect a franchise for *{escape_markdown(movie_title, version=2)}*\\. Proceeding as single movie\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         return
 
     franchise_name = franchise_info["name"]
     movies = franchise_info["movies"]
 
-    await safe_edit_message(status_msg, f"Found franchise: *{escape_markdown(franchise_name, version=2)}* \\({len(movies)} movies\\)\\.\nOrganizing collection\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    await safe_edit_message(
+        status_msg,
+        f"Found franchise: *{escape_markdown(franchise_name, version=2)}* \\({len(movies)} movies\\)\\.\nOrganizing collection\\.\\.\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
 
     # 2. Setup Directory
     save_paths = context.bot_data.get("SAVE_PATHS", {})
@@ -91,23 +107,33 @@ async def run_franchise_logic(update: Update, context: ContextTypes.DEFAULT_TYPE
             continue
 
         # Search and Queue
-        await safe_edit_message(status_msg, f"Searching for: *{escape_markdown(title, version=2)}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(
+            status_msg,
+            f"Searching for: *{escape_markdown(title, version=2)}*\\.\\.\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
 
         results = await search_logic.orchestrate_searches(
-            title, "movie", context, year=str(year) if year else None, resolution=seed_res
+            title,
+            "movie",
+            context,
+            year=str(year) if year else None,
+            resolution=seed_res,
         )
 
         if not results:
-             # Fallback to broader search
-             logger.info(f"No results for {title} in {seed_res}, trying fallback.")
-             results = await search_logic.orchestrate_searches(
+            # Fallback to broader search
+            logger.info(f"No results for {title} in {seed_res}, trying fallback.")
+            results = await search_logic.orchestrate_searches(
                 title, "movie", context, year=str(year) if year else None
             )
 
         candidate = _select_best_candidate(results, seed_res)
 
         if candidate:
-            await _queue_franchise_item(context, candidate, franchise_dir, chat_id, title, year)
+            await _queue_franchise_item(
+                context, candidate, franchise_dir, chat_id, title, year
+            )
             queued_count += 1
         else:
             logger.warning(f"Could not find torrent for franchise movie: {title}")
@@ -115,10 +141,16 @@ async def run_franchise_logic(update: Update, context: ContextTypes.DEFAULT_TYPE
     # 6. Plex Collection
     await plex_service.create_plex_collection(context, franchise_name, movies)
 
-    await safe_edit_message(status_msg, f"✅ Franchise *{escape_markdown(franchise_name, version=2)}* processed\\.\nMoved: {moved_count}, Queued: {queued_count}\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    await safe_edit_message(
+        status_msg,
+        f"✅ Franchise *{escape_markdown(franchise_name, version=2)}* processed\\.\nMoved: {moved_count}, Queued: {queued_count}\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
 
 def _update_seed_destination(context, seed_torrent, dest_path):
     original_msg_id = seed_torrent.get("original_message_id")
+
     def _update(data_list):
         for data in data_list:
             if data.get("message_id") == original_msg_id:
@@ -131,13 +163,17 @@ def _update_seed_destination(context, seed_torrent, dest_path):
     active = context.bot_data.get("active_downloads", {})
     queues = context.bot_data.get("download_queues", {})
 
-    if _update(active.values()): return
+    if _update(active.values()):
+        return
     for q in queues.values():
-        if _update(q): return
+        if _update(q):
+            return
+
 
 async def _move_existing_movies(root, dest, movies_list):
     count = 0
-    if not os.path.exists(root): return 0
+    if not os.path.exists(root):
+        return 0
 
     # Prepare map for checking
     targets = []
@@ -182,11 +218,14 @@ async def _move_existing_movies(root, dest, movies_list):
 
     return count
 
+
 def _normalize_title(title):
-    return re.sub(r'[^a-z0-9]', '', title.lower())
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
 
 def _is_movie_present(folder, title, year):
-    if not os.path.exists(folder): return False
+    if not os.path.exists(folder):
+        return False
     target_norm = _normalize_title(title)
 
     for item in os.listdir(folder):
@@ -202,49 +241,64 @@ def _is_movie_present(folder, title, year):
             return True
     return False
 
+
 def _is_same_movie(t1, y1, t2, y2):
-    if not t1 or not t2: return False
-    return _normalize_title(t1) == _normalize_title(t2) and (not y1 or not y2 or int(y1) == int(y2))
+    if not t1 or not t2:
+        return False
+    return _normalize_title(t1) == _normalize_title(t2) and (
+        not y1 or not y2 or int(y1) == int(y2)
+    )
+
 
 def _select_best_candidate(results, target_res):
-    if not results: return None
+    if not results:
+        return None
     # 1. Filter by resolution
     same_res = [r for r in results if target_res.lower() in r.get("title", "").lower()]
     if same_res:
-        return same_res[0] # Take best score
+        return same_res[0]  # Take best score
     return results[0]
+
 
 async def _queue_franchise_item(context, result, dest_folder, chat_id, title, year):
     link = result.get("page_url") or result.get("magnet")
-    if not link: return
+    if not link:
+        return
 
     parsed = parse_torrent_name(result.get("title", ""))
     parsed["title"] = title
-    if year: parsed["year"] = year
+    if year:
+        parsed["year"] = year
     parsed["destination_folder"] = dest_folder
     parsed["type"] = "movie"
     parsed["collection_mode"] = True
 
-    msg = await safe_send_message(context.bot, chat_id, f"⬇️ Queuing *{escape_markdown(title, version=2)}*\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    msg = await safe_send_message(
+        context.bot,
+        chat_id,
+        f"⬇️ Queuing *{escape_markdown(title, version=2)}*\\.\\.\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
 
     source_dict = {
         "value": link,
         "type": "magnet" if link.startswith("magnet:") else "url",
         "parsed_info": parsed,
         "clean_name": f"{title} ({year})" if year else title,
-        "original_message_id": msg.message_id
+        "original_message_id": msg.message_id,
     }
 
     download_data = {
         "source_dict": source_dict,
         "chat_id": chat_id,
         "message_id": msg.message_id,
-        "save_path": context.bot_data.get("SAVE_PATHS", {}).get("default")
+        "save_path": context.bot_data.get("SAVE_PATHS", {}).get("default"),
     }
 
     queues = context.bot_data.get("download_queues", {})
     chat_str = str(chat_id)
-    if chat_str not in queues: queues[chat_str] = []
+    if chat_str not in queues:
+        queues[chat_str] = []
     queues[chat_str].append(download_data)
 
     await process_queue_for_user(chat_id, context.application)

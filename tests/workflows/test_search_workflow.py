@@ -90,7 +90,7 @@ async def test_search_movie_happy_path(
     # But _handle_movie_title_reply sets title and resolved_title.
     # _prompt_for_collection_mode updates step.
     session = SearchSession.from_user_data(context.user_data)
-    session.set_final_title("Inception (2010)") # Was set in handle_movie_title_reply
+    session.set_final_title("Inception (2010)")  # Was set in handle_movie_title_reply
     session.save(context.user_data)
 
     collection_update = Update(
@@ -158,7 +158,7 @@ async def test_movie_search_uses_cached_year_without_config(
     prompt_collection_mock.assert_awaited_once()
 
     session = SearchSession.from_user_data(context.user_data)
-    assert session.resolved_title == "Oblivion" # Set before prompt
+    assert session.resolved_title == "Oblivion"  # Set before prompt
 
 
 @pytest.mark.asyncio

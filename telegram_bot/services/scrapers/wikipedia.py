@@ -36,7 +36,9 @@ def _sanitize_wikipedia_title(title: str) -> str:
             break
         cleaned = new_cleaned
     # Also strip (film series) or (franchise) if present
-    cleaned = re.sub(r"\s*\((?:film\s+series|franchise)\)\s*$", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(
+        r"\s*\((?:film\s+series|franchise)\)\s*$", "", cleaned, flags=re.IGNORECASE
+    ).strip()
     return cleaned or title
 
 
@@ -1247,7 +1249,7 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
 
         for i, h in enumerate(headers):
             if "film" in h or "title" in h or "movie" in h:
-                if title_idx == -1: # Take first match
+                if title_idx == -1:  # Take first match
                     title_idx = i
             if "release" in h or "date" in h or "year" in h:
                 if date_idx == -1:
@@ -1291,7 +1293,9 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
                             year = int(m.group(1))
 
                     if clean_title:
-                        current_table_movies.append({"title": clean_title, "year": year})
+                        current_table_movies.append(
+                            {"title": clean_title, "year": year}
+                        )
                 except Exception:
                     continue
 
@@ -1300,7 +1304,7 @@ def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
                 # Prioritize table that has both title and date
                 if date_idx != -1:
                     return current_table_movies
-                movies = current_table_movies # Fallback if only titles found
+                movies = current_table_movies  # Fallback if only titles found
 
     return movies
 
@@ -1310,7 +1314,13 @@ async def _parse_sequels_section(soup: BeautifulSoup) -> list[dict[str, Any]]:
     movies: list[dict[str, Any]] = []
 
     # Find a header containing "Sequel"
-    headers = soup.find_all(lambda tag: tag.name in ["h2", "h3"] and ("sequel" in tag.get_text().lower() or "film series" in tag.get_text().lower()))
+    headers = soup.find_all(
+        lambda tag: tag.name in ["h2", "h3"]
+        and (
+            "sequel" in tag.get_text().lower()
+            or "film series" in tag.get_text().lower()
+        )
+    )
 
     for header in headers:
         # Look for a list <ul> immediately following
