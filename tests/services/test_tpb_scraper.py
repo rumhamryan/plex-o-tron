@@ -143,3 +143,40 @@ async def test_scrape_tpb_handles_http_errors(mocker):
     context = _ctx()
     results = await scrape_tpb("Example", "movie", "unused", context)
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_scrape_tpb_filters_out_superset_matches(mocker):
+    # Regression test: Ensure searching for "Dune" doesn't return "Dune Part Two"
+    data = [
+        {
+            "id": "1",
+            "name": "Dune 1080p",
+            "info_hash": "A" * 40,
+            "seeders": "100",
+            "leechers": "10",
+            "size": str(4 * 1024**3),
+            "username": "Uploader",
+            "category": "207",
+        },
+        {
+            "id": "2",
+            "name": "Dune Part Two 1080p",
+            "info_hash": "B" * 40,
+            "seeders": "200",
+            "leechers": "10",
+            "size": str(4 * 1024**3),
+            "username": "Uploader",
+            "category": "207",
+        },
+    ]
+    fake_client = FakeAsyncClient(response=FakeResponse(data))
+    mocker.patch("httpx.AsyncClient", return_value=fake_client)
+
+    context = _ctx()
+    # Search for "Dune"
+    results = await scrape_tpb("Dune", "movie", "unused", context)
+
+    # "Dune Part Two" should be filtered out because token_sort_ratio < 78
+    assert len(results) == 1
+    assert results[0]["title"] == "Dune 1080p"
