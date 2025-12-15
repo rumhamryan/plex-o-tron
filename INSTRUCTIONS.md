@@ -141,20 +141,24 @@ Each milestone should land with targeted unit tests and manual smoke-testing (`/
 
 #### Implementation Steps
 1. Movie entrypoint:
-   - After the user chooses "movie", prompt them to pick "Single Movie" (current behavior) or "Collection". If they choose single, continue unchanged.
-   - Choosing "Collection" sets `session.collection_mode = True` but otherwise keeps the same search UI for the seed movie.
-2. Seed template capture:
-   - When the seed torrent is confirmed, capture its parsed title/year plus resolution, codec, and `size_gb`. Store a release fingerprint (infohash/uploader/site) to help find similar encodes later.
-3. Franchise determination:
-   - Identify whether the movie belongs to a franchise (via wikipedia). If not, notify the user ("No collection will be created") and ask the user if they would like to finish as a standard single-movie download.
+   - Before the user is prompted for a movie title send them 2 buttons, "Single Movie" and "Collection".
+   - Choosing "Collection" sets `session.collection_mode = True`
+   - The "Single Movie" path retains the current movie search workflow
+2. Franchise confirmation:
+   - Find the franchise or collection name via wikipedia. If no match is found, notify the user "No franchise found".
    - If a franchise exists, show the derived name, sanitize it for filesystem use, and confirm with the user before proceeding.
 4. Collection queuing:
-   - Enumerate franchise titles, skipping ones we already have or have queued. For each missing movie, run searches biased toward the seed template (same resolution/codec, +/-10% size, ideally same uploader) and enqueue the selected torrent with metadata referencing the franchise context.
+   - Prompt the user for the resolution and codec they prefer, a seed template.
+   - Enumerate franchise movie titles, skipping ones we already have or have queued.
+   - Present the movies titles to the user, 1 button per title, and instruct them to tap the titles they wish to remove. The last 2 buttons are "Confirm" and "Cancel" to move to the next step or abort.
+   - For each missing movie, run searches biased toward the seed template (same resolution/codec, +/-10% size, ideally same uploader) and enqueue the selected torrent with metadata referencing the franchise context.
+   - If no match is found default to the next highest scoring match for that movie {year}.
 5. Directory management:
    - Create `<movies_save_path/<Franchise Name>/` immediately. As each movie finishes (seed included), move it into `<Franchise Name/<Movie Title (Year)>/` using the existing rename logic.
-   - Move any movieswe already have to the directory as well.
+   - There are no external systems locking down the filesystem, you have permission to move and rename files as necessary.
+   - Search directory for all movies in the franchise, any movies we already have get moved to the new directory.
 6. Plex orchestration:
-   - After the last queued franchise download completes and is moved, trigger a single Plex library scan.
+   - After the last queued franchise download completes and is moved, trigger a single Plex library scan. ONLY 1 SCAN PER COLLECTION.
    - Once the scan completes, create or update a Plex collection using the franchise name and add each downloaded movie (lookup by rating key/title-year).
 7. User messaging:
    - Keep the user informed when no franchise is found, when a collection run starts (include movie count + quality template), and when it finishes (summaries plus Plex collection confirmation).
