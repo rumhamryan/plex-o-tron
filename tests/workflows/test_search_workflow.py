@@ -64,6 +64,10 @@ async def test_search_movie_happy_path(
             ]
         ),
     )
+    prompt_collection_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._prompt_for_collection_mode",
+        new=AsyncMock(),
+    )
 
     # Step 1: press start movie button
     start_update = Update(
@@ -75,10 +79,26 @@ async def test_search_movie_happy_path(
     assert session.media_type == "movie"
     assert session.step == SearchStep.TITLE
 
-    # Step 2: user provides title and triggers combined search
+    # Step 2: user provides title. Now prompts for collection mode.
     await handle_search_workflow(
         Update(update_id=2, message=make_message("Inception")), context
     )
+    prompt_collection_mock.assert_awaited_once()
+
+    # Step 3: User chooses "Single Movie"
+    # Need to simulate session state if prompt_collection_mock didn't update it
+    # But _handle_movie_title_reply sets title and resolved_title.
+    # _prompt_for_collection_mode updates step.
+    session = SearchSession.from_user_data(context.user_data)
+    session.set_final_title("Inception (2010)") # Was set in handle_movie_title_reply
+    session.save(context.user_data)
+
+    collection_update = Update(
+        update_id=3,
+        callback_query=make_callback_query("search_mode_single", make_message()),
+    )
+    await handle_search_buttons(collection_update, context)
+
     assert orchestrate_mock.await_count == 2
     first_call = orchestrate_mock.await_args_list[0]
     second_call = orchestrate_mock.await_args_list[1]
@@ -113,6 +133,10 @@ async def test_movie_search_uses_cached_year_without_config(
         "telegram_bot.workflows.search_workflow._search_movie_results",
         new=AsyncMock(),
     )
+    prompt_collection_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._prompt_for_collection_mode",
+        new=AsyncMock(),
+    )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
         new=AsyncMock(return_value=[]),
@@ -129,9 +153,12 @@ async def test_movie_search_uses_cached_year_without_config(
         Update(update_id=2, message=make_message("Oblivion")), context
     )
     fetch_mock.assert_not_awaited()
-    search_mock.assert_awaited_once()
+    # Should now prompt for collection instead of searching immediately
+    search_mock.assert_not_awaited()
+    prompt_collection_mock.assert_awaited_once()
+
     session = SearchSession.from_user_data(context.user_data)
-    assert session.final_title == "Oblivion (2013)"
+    assert session.resolved_title == "Oblivion" # Set before prompt
 
 
 @pytest.mark.asyncio

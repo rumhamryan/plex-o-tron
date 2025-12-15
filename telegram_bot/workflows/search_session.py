@@ -12,6 +12,7 @@ class SearchStep(str, Enum):
 
     TITLE = "title"
     YEAR = "year"
+    COLLECTION_MODE_SELECTION = "collection_mode_selection"
     RESOLUTION = "resolution"
     TV_SEASON = "tv_season"
     TV_SCOPE = "tv_scope"
@@ -55,6 +56,8 @@ class SearchSession:
     results_max_size_gb: float | None = None
     results_generated_at: float | None = None
     allow_detail_change: bool = False
+    collection_mode: bool = False
+    franchise_name: str | None = None
 
     _SESSION_KEY = "search_session"
 
@@ -104,6 +107,8 @@ class SearchSession:
             results_max_size_gb=payload.get("results_max_size_gb"),
             results_generated_at=payload.get("results_generated_at"),
             allow_detail_change=bool(payload.get("allow_detail_change")),
+            collection_mode=bool(payload.get("collection_mode")),
+            franchise_name=payload.get("franchise_name"),
         )
         return session
 
@@ -188,6 +193,8 @@ class SearchSession:
             "results_max_size_gb": self.results_max_size_gb,
             "results_generated_at": self.results_generated_at,
             "allow_detail_change": self.allow_detail_change,
+            "collection_mode": self.collection_mode,
+            "franchise_name": self.franchise_name,
         }
 
     def save(self, user_data: MutableMapping[str, Any]) -> None:

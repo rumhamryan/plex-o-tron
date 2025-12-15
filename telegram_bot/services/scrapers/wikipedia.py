@@ -1,6 +1,7 @@
 import asyncio
 import re
 import warnings
+from typing import Any
 
 import wikipedia
 from bs4 import BeautifulSoup, Tag, GuessedAtParserWarning
@@ -12,6 +13,7 @@ from ...utils import extract_first_int
 _WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], str | None]] = {}
 _WIKI_SOUP_CACHE: dict[str, BeautifulSoup] = {}
 _WIKI_MOVIE_CACHE: dict[str, tuple[list[int], str | None]] = {}
+_WIKI_FRANCHISE_CACHE: dict[str, dict[str, Any] | None] = {}
 
 
 def _normalize_for_comparison(value: str) -> str:
@@ -33,6 +35,8 @@ def _sanitize_wikipedia_title(title: str) -> str:
         if new_cleaned == cleaned:
             break
         cleaned = new_cleaned
+    # Also strip (film series) or (franchise) if present
+    cleaned = re.sub(r"\s*\((?:film\s+series|franchise)\)\s*$", "", cleaned, flags=re.IGNORECASE).strip()
     return cleaned or title
 
 
@@ -1164,3 +1168,172 @@ async def fetch_season_episode_count_from_wikipedia(
         )
         return count_from_titles
     return None
+
+
+async def fetch_franchise_details(movie_title: str) -> dict[str, Any] | None:
+    """
+    Attempts to find franchise/collection details for a movie.
+    Returns a dict with 'name' and 'movies' (list of dicts with title/year).
+    """
+    cache_key = movie_title.lower().strip()
+    if cache_key in _WIKI_FRANCHISE_CACHE:
+        return _WIKI_FRANCHISE_CACHE[cache_key]
+
+    logger.info(f"[WIKI] Searching for franchise info for '{movie_title}'")
+
+    candidates = [
+        f"{movie_title} (film series)",
+        f"{movie_title} (franchise)",
+        movie_title,
+    ]
+
+    found_info: dict[str, Any] | None = None
+
+    for query in candidates:
+        try:
+            page = await asyncio.to_thread(
+                wikipedia.page, query, auto_suggest=False, redirect=True
+            )
+            html = await _fetch_html_from_page(page)
+            if not html:
+                continue
+
+            soup = BeautifulSoup(html, "lxml")
+            movies: list[dict[str, Any]] = []
+
+            # 1. Look for a dedicated table
+            movies = _parse_franchise_table(soup)
+
+            # 2. If no table, check for "Sequels" section lists if we are on the main page
+            if not movies and query == movie_title:
+                movies = await _parse_sequels_section(soup)
+
+            # 3. Validation: Franchise needs at least 2 movies
+            if movies and len(movies) >= 2:
+                franchise_name = _sanitize_wikipedia_title(page.title)
+                found_info = {"name": franchise_name, "movies": movies}
+                logger.info(
+                    f"[WIKI] Found franchise '{franchise_name}' with {len(movies)} movies."
+                )
+                break
+
+        except (
+            wikipedia.exceptions.PageError,
+            wikipedia.exceptions.DisambiguationError,
+        ):
+            continue
+        except Exception as e:
+            logger.error(f"[WIKI] Error fetching franchise info for '{query}': {e}")
+            continue
+
+    _WIKI_FRANCHISE_CACHE[cache_key] = found_info
+    return found_info
+
+
+def _parse_franchise_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Scans for a table listing films in a series."""
+    movies: list[dict[str, Any]] = []
+
+    # Priority: Table with 'Film' and 'Release date'
+    for table in soup.find_all("table", class_="wikitable"):
+        header_row = table.find("tr")
+        if not isinstance(header_row, Tag):
+            continue
+
+        headers = [th.get_text(strip=True).lower() for th in header_row.find_all("th")]
+
+        title_idx = -1
+        date_idx = -1
+
+        for i, h in enumerate(headers):
+            if "film" in h or "title" in h or "movie" in h:
+                if title_idx == -1: # Take first match
+                    title_idx = i
+            if "release" in h or "date" in h or "year" in h:
+                if date_idx == -1:
+                    date_idx = i
+
+        if title_idx != -1:
+            # We found a potential table. Parse it.
+            # Reset movies for this table to avoid mixing bad tables
+            current_table_movies = []
+
+            for row in table.find_all("tr")[1:]:
+                if not isinstance(row, Tag):
+                    continue
+                cells = row.find_all(["th", "td"])
+
+                # Handling rowspans is hard, assume flat for now
+                if len(cells) <= title_idx:
+                    continue
+
+                # Check if it's a summary row (Total, etc.)
+                if "total" in cells[0].get_text(strip=True).lower():
+                    continue
+
+                try:
+                    title_cell = cells[title_idx]
+                    # Extract title from italics or link
+                    italic = title_cell.find("i")
+                    if italic:
+                        raw_title = italic.get_text(strip=True)
+                    else:
+                        # Fallback: maybe just text
+                        raw_title = title_cell.get_text(strip=True)
+
+                    clean_title = re.sub(r"\[.*?\]", "", raw_title).strip('"').strip()
+
+                    year = None
+                    if date_idx != -1 and len(cells) > date_idx:
+                        date_text = cells[date_idx].get_text(strip=True)
+                        m = re.search(r"\b(19\d{2}|20\d{2})\b", date_text)
+                        if m:
+                            year = int(m.group(1))
+
+                    if clean_title:
+                        current_table_movies.append({"title": clean_title, "year": year})
+                except Exception:
+                    continue
+
+            if len(current_table_movies) >= 2:
+                # If we found a good list, return it.
+                # Prioritize table that has both title and date
+                if date_idx != -1:
+                    return current_table_movies
+                movies = current_table_movies # Fallback if only titles found
+
+    return movies
+
+
+async def _parse_sequels_section(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Parses 'Sequels' section for a list of movies."""
+    movies: list[dict[str, Any]] = []
+
+    # Find a header containing "Sequel"
+    headers = soup.find_all(lambda tag: tag.name in ["h2", "h3"] and ("sequel" in tag.get_text().lower() or "film series" in tag.get_text().lower()))
+
+    for header in headers:
+        # Look for a list <ul> immediately following
+        sibling = header.find_next_sibling()
+        while sibling and sibling.name not in ["h2", "h3", "div"]:
+            if sibling.name == "ul":
+                for li in sibling.find_all("li"):
+                    # Extract title from italics usually
+                    italic = li.find("i")
+                    if italic:
+                        clean_title = italic.get_text(strip=True)
+                        # Try to find year in parentheses
+                        text = li.get_text()
+                        m = re.search(r"\((19\d{2}|20\d{2})\)", text)
+                        year = int(m.group(1)) if m else None
+                        movies.append({"title": clean_title, "year": year})
+            sibling = sibling.find_next_sibling()
+
+    if len(movies) >= 1:
+        # Include the current page title? Usually caller handles that or we merge.
+        # But for franchise list we want all of them.
+        # If we are parsing "Sequels", we might miss the first one.
+        # This is a best-effort fallback.
+        pass
+
+    return movies

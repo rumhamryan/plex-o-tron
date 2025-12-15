@@ -381,6 +381,10 @@ def _get_final_destination_path(
     parsed_info: dict[str, Any], save_paths: dict[str, str]
 ) -> str:
     """Determines the final directory for the downloaded media."""
+    # Check for an explicit override (e.g., from franchise workflow)
+    if "destination_folder" in parsed_info and parsed_info["destination_folder"]:
+        return parsed_info["destination_folder"]
+
     media_type = parsed_info.get("type")
 
     if media_type == "movie":

@@ -11,7 +11,7 @@ from telegram.helpers import escape_markdown
 
 from ..config import logger
 import re
-from typing import Set
+from typing import Set, Any
 
 
 async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -147,3 +147,69 @@ async def get_existing_episodes_for_season(
         logger.warning(f"Filesystem episode check failed: {e}")
 
     return existing
+
+
+async def create_plex_collection(
+    context: ContextTypes.DEFAULT_TYPE,
+    collection_name: str,
+    movie_list: list[dict[str, Any]],
+) -> str:
+    """
+    Creates or updates a Plex collection with the given movies.
+    Movies are looked up by title and optional year.
+    """
+    plex_config = context.bot_data.get("PLEX_CONFIG", {})
+    if not plex_config:
+        return ""
+
+    logger.info(f"Creating Plex collection '{collection_name}' with {len(movie_list)} items.")
+
+    try:
+        plex = await asyncio.to_thread(
+            PlexServer, plex_config["url"], plex_config["token"]
+        )
+        try:
+            movies_section = await asyncio.to_thread(plex.library.section, "Movies")
+        except Exception:
+            logger.warning("Could not find 'Movies' library in Plex.")
+            return ""
+
+        added_count = 0
+        for movie in movie_list:
+            title = movie.get("title")
+            year = movie.get("year")
+            if not title:
+                continue
+
+            # Search requires exact match or we might get wrong items?
+            # Plex search is fuzzy.
+            kwargs = {"title": title}
+            if year:
+                kwargs["year"] = year
+
+            results = await asyncio.to_thread(movies_section.search, **kwargs)
+
+            # If multiple, filter by year strictly if provided
+            target_item = None
+            if results:
+                target_item = results[0]  # Assume best match
+                if year and hasattr(target_item, "year") and target_item.year != year:
+                    # If year doesn't match, look for other results
+                    for res in results:
+                        if hasattr(res, "year") and res.year == year:
+                            target_item = res
+                            break
+
+            if target_item:
+                await asyncio.to_thread(target_item.addCollection, collection_name)
+                added_count += 1
+            else:
+                logger.debug(f"Could not find movie '{title}' ({year}) in Plex to add to collection.")
+
+        msg = f"Created collection '{collection_name}' with {added_count} items."
+        logger.info(msg)
+        return msg
+
+    except Exception as e:
+        logger.error(f"Failed to create Plex collection: {e}")
+        return ""
