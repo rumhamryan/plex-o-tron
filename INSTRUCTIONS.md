@@ -136,7 +136,7 @@ Each milestone should land with targeted unit tests and manual smoke-testing (`/
 
 ### Initiative 7 - Movie Collection Workflow & Storage
 #### Goals
-- Preserve the single-movie experience while adding a "collection" path that clones a seed torrent's quality (resolution, codec, approximate size) across the rest of the franchise.
+- Create a new path for movie collections in search_workflow.
 - Automatically create `<movies_save_path/<Franchise Name>/`, queue every missing movie in that franchise, and register the finished set as a Plex collection.
 
 #### Implementation Steps
