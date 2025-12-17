@@ -10,6 +10,7 @@ CONTEXT_LOST_MESSAGE = "❓ Search context has expired\\. Please start over\\."
 class SearchStep(str, Enum):
     """State machine steps for the search workflow."""
 
+    MOVIE_SCOPE = "movie_scope"
     TITLE = "title"
     YEAR = "year"
     RESOLUTION = "resolution"
@@ -36,9 +37,20 @@ class SearchSession:
 
     step: SearchStep = SearchStep.TITLE
     media_type: Literal["movie", "tv"] | None = None
+    movie_scope: Literal["single", "collection"] | None = None
     title: str | None = None
     resolved_title: str | None = None
     final_title: str | None = None
+    collection_mode: bool = False
+    collection_name: str | None = None
+    collection_fs_name: str | None = None
+    collection_movies: list[dict[str, Any]] = field(default_factory=list)
+    collection_exclusions: list[str] = field(default_factory=list)
+    collection_resolution: str | None = None
+    collection_codec: str | None = None
+    collection_seed_size_gb: float | None = None
+    collection_seed_uploader: str | None = None
+    collection_owned_count: int = 0
     season: int | None = None
     episode: int | None = None
     resolution: str | None = None
@@ -83,9 +95,20 @@ class SearchSession:
         session = cls(
             step=step,
             media_type=payload.get("media_type"),
+            movie_scope=payload.get("movie_scope"),
             title=payload.get("title"),
             resolved_title=payload.get("resolved_title"),
             final_title=payload.get("final_title"),
+            collection_mode=bool(payload.get("collection_mode", False)),
+            collection_name=payload.get("collection_name"),
+            collection_fs_name=payload.get("collection_fs_name"),
+            collection_movies=list(payload.get("collection_movies") or []),
+            collection_exclusions=list(payload.get("collection_exclusions") or []),
+            collection_resolution=payload.get("collection_resolution"),
+            collection_codec=payload.get("collection_codec"),
+            collection_seed_size_gb=payload.get("collection_seed_size_gb"),
+            collection_seed_uploader=payload.get("collection_seed_uploader"),
+            collection_owned_count=int(payload.get("collection_owned_count") or 0),
             season=payload.get("season"),
             episode=payload.get("episode"),
             resolution=payload.get("resolution"),
@@ -165,9 +188,20 @@ class SearchSession:
         return {
             "step": self.step.value,
             "media_type": self.media_type,
+            "movie_scope": self.movie_scope,
             "title": self.title,
             "resolved_title": self.resolved_title,
             "final_title": self.final_title,
+            "collection_mode": self.collection_mode,
+            "collection_name": self.collection_name,
+            "collection_fs_name": self.collection_fs_name,
+            "collection_movies": list(self.collection_movies),
+            "collection_exclusions": list(self.collection_exclusions),
+            "collection_resolution": self.collection_resolution,
+            "collection_codec": self.collection_codec,
+            "collection_seed_size_gb": self.collection_seed_size_gb,
+            "collection_seed_uploader": self.collection_seed_uploader,
+            "collection_owned_count": int(self.collection_owned_count or 0),
             "season": self.season,
             "episode": self.episode,
             "resolution": self.resolution,

@@ -15,6 +15,7 @@ from telegram_bot.workflows.search_workflow import (
     RESULTS_SESSION_TTL_SECONDS,
     EpisodeCandidate,
     _select_consistent_episode_set,
+    _handle_collection_confirm,
 )
 
 
@@ -73,11 +74,20 @@ async def test_search_movie_happy_path(
     await handle_search_buttons(start_update, context)
     session = SearchSession.from_user_data(context.user_data)
     assert session.media_type == "movie"
+    assert session.step == SearchStep.MOVIE_SCOPE
+
+    scope_update = Update(
+        update_id=2,
+        callback_query=make_callback_query("search_movie_scope_single", make_message()),
+    )
+    await handle_search_buttons(scope_update, context)
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.media_type == "movie"
     assert session.step == SearchStep.TITLE
 
     # Step 2: user provides title and triggers combined search
     await handle_search_workflow(
-        Update(update_id=2, message=make_message("Inception")), context
+        Update(update_id=3, message=make_message("Inception")), context
     )
     assert orchestrate_mock.await_count == 2
     first_call = orchestrate_mock.await_args_list[0]
@@ -118,15 +128,18 @@ async def test_movie_search_uses_cached_year_without_config(
         new=AsyncMock(return_value=[]),
     )
 
-    await handle_search_buttons(
-        Update(
-            update_id=1,
-            callback_query=make_callback_query("search_start_movie", make_message()),
-        ),
-        context,
+    start_update = Update(
+        update_id=10,
+        callback_query=make_callback_query("search_start_movie", make_message()),
     )
+    await handle_search_buttons(start_update, context)
+    scope_update = Update(
+        update_id=11,
+        callback_query=make_callback_query("search_movie_scope_single", make_message()),
+    )
+    await handle_search_buttons(scope_update, context)
     await handle_search_workflow(
-        Update(update_id=2, message=make_message("Oblivion")), context
+        Update(update_id=12, message=make_message("Oblivion")), context
     )
     fetch_mock.assert_not_awaited()
     search_mock.assert_awaited_once()
@@ -156,19 +169,162 @@ async def test_movie_search_without_config_sets_notice(
         new=AsyncMock(return_value=[]),
     )
 
+    start_update = Update(
+        update_id=20,
+        callback_query=make_callback_query("search_start_movie", make_message()),
+    )
+    await handle_search_buttons(start_update, context)
+    scope_update = Update(
+        update_id=21,
+        callback_query=make_callback_query("search_movie_scope_single", make_message()),
+    )
+    await handle_search_buttons(scope_update, context)
+    await handle_search_workflow(
+        Update(update_id=22, message=make_message("Interstellar")), context
+    )
+    fetch_mock.assert_not_awaited()
+    process_mock.assert_awaited_once()
+    notice = process_mock.await_args.kwargs.get("notice")
+    assert notice and "Search configuration unavailable" in notice
+
+
+@pytest.mark.asyncio
+async def test_movie_scope_collection_sets_flag(
+    mocker, context, make_callback_query, make_message
+):
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    start_message = make_message()
+    start_callback = make_callback_query("search_start_movie", start_message)
+    await handle_search_buttons(
+        Update(update_id=10, callback_query=start_callback), context
+    )
+
+    scope_message = make_message()
+    scope_callback = make_callback_query("search_movie_scope_collection", scope_message)
+    await handle_search_buttons(
+        Update(update_id=11, callback_query=scope_callback), context
+    )
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.collection_mode is True
+    assert session.step == SearchStep.TITLE
+
+
+@pytest.mark.asyncio
+async def test_collection_lookup_handles_missing_franchise(
+    mocker, context, make_callback_query, make_message
+):
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_movie_franchise_details",
+        new=AsyncMock(return_value=None),
+    )
+    send_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_send_message",
+        new=AsyncMock(return_value=make_message(message_id=99)),
+    )
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+
     await handle_search_buttons(
         Update(
-            update_id=1,
+            update_id=20,
             callback_query=make_callback_query("search_start_movie", make_message()),
         ),
         context,
     )
-    await handle_search_workflow(
-        Update(update_id=2, message=make_message("Interstellar")), context
+    await handle_search_buttons(
+        Update(
+            update_id=21,
+            callback_query=make_callback_query(
+                "search_movie_scope_collection", make_message()
+            ),
+        ),
+        context,
     )
-    fetch_mock.assert_not_awaited()
-    notice = process_mock.await_args.kwargs.get("notice")
-    assert notice and "Search configuration unavailable" in notice
+    await handle_search_workflow(
+        Update(update_id=22, message=make_message("Matrix")), context
+    )
+
+    send_mock.assert_awaited()
+    assert "No franchise" in edit_mock.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_collection_confirm_sets_pending_payload(
+    mocker, context, make_callback_query, make_message
+):
+    session = SearchSession()
+    session.media_type = "movie"
+    session.collection_mode = True
+    session.collection_movies = [
+        {
+            "title": "Movie One",
+            "year": 2001,
+            "identifier": "movie-1",
+            "owned": False,
+            "queued": False,
+        },
+        {
+            "title": "Movie Two",
+            "year": 2002,
+            "identifier": "movie-2",
+            "owned": False,
+            "queued": False,
+        },
+    ]
+    session.collection_resolution = "1080p"
+    session.collection_codec = "x264"
+    session.prompt_message_id = 55
+    session.save(context.user_data)
+
+    pending_payload = {
+        "items": [
+            {
+                "link": "magnet:?xt=1",
+                "parsed_info": {"title": "Movie One"},
+                "movie": {"title": "Movie One", "year": 2001},
+            },
+            {
+                "link": "magnet:?xt=2",
+                "parsed_info": {"title": "Movie Two"},
+                "movie": {"title": "Movie Two", "year": 2002},
+            },
+        ],
+        "franchise": {
+            "name": "Saga",
+            "fs_name": "Saga",
+            "movies": [{"title": "Movie One"}],
+        },
+    }
+
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    collect_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._collect_collection_torrents",
+        new=AsyncMock(return_value=(pending_payload, [])),
+    )
+    present_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._present_collection_download_confirmation",
+        new=AsyncMock(),
+    )
+    clear_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.clear_search_session"
+    )
+
+    callback = make_callback_query("search_collection_confirm", make_message())
+    await _handle_collection_confirm(
+        callback, context, SearchSession.from_user_data(context.user_data)
+    )
+
+    collect_mock.assert_awaited()
+    present_mock.assert_awaited_once()
+    clear_mock.assert_called_once()
+    assert context.user_data["pending_collection_download"] is pending_payload
 
 
 @pytest.mark.asyncio

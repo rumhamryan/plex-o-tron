@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 from telegram import Message, Bot
 from telegram.error import BadRequest, TimedOut, RetryAfter, NetworkError
 
+from .config import logger
+
 # In-memory per-message suppression to respect Telegram flood control without
 # blocking critical workflows for very long durations.
 _edit_suppression_until: dict[tuple[int, int], float] = {}
@@ -131,6 +133,12 @@ async def safe_edit_message(
             # Ignore harmless error
             if "message is not modified" in msg:
                 return
+            if "can't parse" in msg or "can't find end of" in msg:
+                logger.error(
+                    "[UI] Markdown parse error while editing message: %s\nText snippet: %s",
+                    e,
+                    text[:500] if isinstance(text, str) else text,
+                )
 
             # If we can't edit (message missing or not editable), fall back to sending a new message
             recoverable = (
@@ -349,6 +357,15 @@ async def safe_send_message(
     while attempt < max_attempts:
         try:
             return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
+        except BadRequest as e:
+            msg = str(e).lower()
+            if "can't parse" in msg or "can't find end of" in msg:
+                logger.error(
+                    "[UI] Markdown parse error while sending message: %s\nText snippet: %s",
+                    e,
+                    text[:500] if isinstance(text, str) else text,
+                )
+            raise
         except RetryAfter as e:  # Respect server backoff
             ra = getattr(e, "retry_after", None)
             if isinstance(ra, timedelta):

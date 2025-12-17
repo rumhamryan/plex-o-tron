@@ -1,6 +1,7 @@
 import asyncio
 import re
 import warnings
+from typing import Any
 
 import wikipedia
 from bs4 import BeautifulSoup, Tag, GuessedAtParserWarning
@@ -12,6 +13,7 @@ from ...utils import extract_first_int
 _WIKI_TITLES_CACHE: dict[tuple[str, int], tuple[dict[int, str], str | None]] = {}
 _WIKI_SOUP_CACHE: dict[str, BeautifulSoup] = {}
 _WIKI_MOVIE_CACHE: dict[str, tuple[list[int], str | None]] = {}
+_WIKI_FRANCHISE_CACHE: dict[str, tuple[str, list[dict[str, Any]]]] = {}
 
 
 def _normalize_for_comparison(value: str) -> str:
@@ -34,6 +36,57 @@ def _sanitize_wikipedia_title(title: str) -> str:
             break
         cleaned = new_cleaned
     return cleaned or title
+
+
+_FRANCHISE_KEYWORDS = (
+    "film series",
+    "film franchise",
+    "franchise",
+    "cinematic universe",
+    "film universe",
+    "films",
+)
+_YEAR_PATTERN = re.compile(r"(18|19|20|21)\d{2}")
+_TITLE_HEADER_TOKENS = ("title", "film", "movie", "name")
+_YEAR_HEADER_TOKENS = ("year", "release", "released", "date", "premiere", "debut")
+_EPISODE_HEADER_TOKENS = (
+    "episode",
+    "episodes",
+    "no. in season",
+    "no.",
+    "aired",
+    "season",
+)
+
+
+def _clean_movie_label(value: str) -> str:
+    cleaned = re.sub(r"\[\d+\]", "", value or "")
+    cleaned = cleaned.replace("\u2013", "-").replace("\u2014", "-")
+    cleaned = cleaned.replace("\u2019", "'")
+    cleaned = cleaned.replace("\u201c", '"').replace("\u201d", '"')
+    cleaned = cleaned.strip().strip('"')
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def _extract_year_from_text(text: str) -> int | None:
+    match = _YEAR_PATTERN.search(text or "")
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except (ValueError, TypeError):
+        return None
+
+
+def _normalized_header_text(value: str) -> str:
+    lowered = (value or "").casefold()
+    return re.sub(r"[^a-z0-9\s/]", " ", lowered)
+
+
+def _header_contains_one(header: str, tokens: tuple[str, ...]) -> bool:
+    normalized = _normalized_header_text(header)
+    return any(token in normalized for token in tokens)
 
 
 async def _fetch_html_from_page(page: wikipedia.WikipediaPage) -> str | None:
@@ -448,6 +501,225 @@ async def fetch_movie_years_from_wikipedia(
     )
     _WIKI_MOVIE_CACHE[cache_key] = (preferred_years, corrected_for_search)
     return preferred_years, corrected_for_search
+
+
+def _candidate_match_flags(
+    candidate_title: str, normalized_query: str
+) -> tuple[bool, bool]:
+    candidate_norm = _normalize_for_comparison(candidate_title)
+    matches_query = bool(normalized_query) and normalized_query in candidate_norm
+    lowered = candidate_title.casefold()
+    has_keyword = any(keyword in lowered for keyword in _FRANCHISE_KEYWORDS)
+    return matches_query, has_keyword
+
+
+async def _resolve_franchise_candidate(
+    candidate: str,
+) -> wikipedia.WikipediaPage | None:
+    try:
+        return await asyncio.to_thread(
+            wikipedia.page, candidate, auto_suggest=False, redirect=True
+        )
+    except wikipedia.exceptions.DisambiguationError as err:
+        for option in err.options:
+            if any(keyword in option.casefold() for keyword in _FRANCHISE_KEYWORDS):
+                try:
+                    return await asyncio.to_thread(
+                        wikipedia.page, option, auto_suggest=False, redirect=True
+                    )
+                except wikipedia.exceptions.PageError:
+                    continue
+                except Exception:
+                    continue
+    except wikipedia.exceptions.PageError:
+        return None
+    except Exception:
+        return None
+    return None
+
+
+def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
+    headers = [
+        header.get_text(" ", strip=True).casefold() for header in table.find_all("th")
+    ]
+    if not headers:
+        return []
+
+    if any(token in header for header in headers for token in _EPISODE_HEADER_TOKENS):
+        return []
+
+    title_idx: int | None = None
+    for idx, header in enumerate(headers):
+        if _header_contains_one(header, _TITLE_HEADER_TOKENS):
+            title_idx = idx
+            break
+    if title_idx is None:
+        return []
+
+    year_idx: int | None = None
+    for idx, header in enumerate(headers):
+        if _header_contains_one(header, _YEAR_HEADER_TOKENS):
+            year_idx = idx
+            break
+
+    if year_idx is None:
+        return []
+
+    movies: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in table.find_all("tr"):
+        cells = row.find_all(["td", "th"])
+        if len(cells) <= title_idx:
+            continue
+        raw_title = cells[title_idx].get_text(" ", strip=True)
+        cleaned_title = _clean_movie_label(raw_title)
+        if not cleaned_title or cleaned_title.casefold() in {"title", "film"}:
+            continue
+        normalized_key = _normalize_for_comparison(cleaned_title)
+        if not normalized_key or normalized_key in seen:
+            continue
+        seen.add(normalized_key)
+        year_value = None
+        if year_idx is not None and len(cells) > year_idx:
+            raw_year = cells[year_idx].get_text(" ", strip=True)
+            year_value = _extract_year_from_text(raw_year)
+        if year_value is None:
+            year_value = _extract_year_from_text(cleaned_title)
+        movies.append(
+            {
+                "title": cleaned_title,
+                "year": year_value,
+                "identifier": normalized_key,
+            }
+        )
+    return movies if len(movies) >= 2 else []
+
+
+def _extract_movies_from_lists(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    for heading in soup.find_all(["h2", "h3", "h4"]):
+        heading_text = heading.get_text(" ", strip=True).casefold()
+        if not any(token in heading_text for token in _TITLE_HEADER_TOKENS):
+            continue
+        sibling = heading.find_next_sibling()
+        while sibling:
+            if isinstance(sibling, Tag) and sibling.name == "ul":
+                entries: list[dict[str, Any]] = []
+                seen: set[str] = set()
+                for li in sibling.find_all("li", recursive=False):
+                    label = _clean_movie_label(li.get_text(" ", strip=True))
+                    if not label:
+                        continue
+                    if "episode" in label.casefold():
+                        entries = []
+                        break
+                    normalized_key = _normalize_for_comparison(label)
+                    if not normalized_key or normalized_key in seen:
+                        continue
+                    seen.add(normalized_key)
+                    year_value = _extract_year_from_text(label)
+                    if year_value is None and not any(
+                        token in label.casefold() for token in _TITLE_HEADER_TOKENS
+                    ):
+                        continue
+                    entries.append(
+                        {
+                            "title": label,
+                            "year": year_value,
+                            "identifier": normalized_key,
+                        }
+                    )
+                if len(entries) >= 2:
+                    return entries
+            if isinstance(sibling, Tag) and sibling.name in {"h2", "h3", "h4"}:
+                break
+            sibling = sibling.find_next_sibling()
+    return []
+
+
+def _extract_movies_from_franchise_html(html: str) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(html, "lxml")
+    for table in soup.find_all("table", class_="wikitable"):
+        movies = _extract_movies_from_table(table)
+        if len(movies) >= 2:
+            return movies
+    movies = _extract_movies_from_lists(soup)
+    if movies:
+        return movies
+    condensed: list[dict[str, Any]] = []
+    for table in soup.find_all("table"):
+        movies = _extract_movies_from_table(table)
+        if movies:
+            condensed.extend(movies)
+            break
+    return condensed if len(condensed) >= 2 else []
+
+
+async def fetch_movie_franchise_details_from_wikipedia(
+    movie_title: str,
+) -> tuple[str, list[dict[str, Any]]] | None:
+    """Attempts to find a franchise page and enumerate its films."""
+    search_title = movie_title.strip()
+    if not search_title:
+        return None
+
+    cache_key = search_title.casefold()
+    if cache_key in _WIKI_FRANCHISE_CACHE:
+        return _WIKI_FRANCHISE_CACHE[cache_key]
+
+    normalized_query = _normalize_for_comparison(search_title)
+    search_variants = [
+        f"{search_title} film series",
+        f"{search_title} franchise",
+        f"List of {search_title} films",
+        search_title,
+    ]
+    attempted: set[str] = set()
+
+    for term in search_variants:
+        try:
+            search_results = await asyncio.to_thread(wikipedia.search, term, 10)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[WIKI] Franchise search failed for '{term}': {exc}")
+            search_results = []
+        filtered: list[tuple[str, bool]] = []
+        for candidate in search_results or []:
+            if candidate in attempted:
+                continue
+            matches_query, has_keyword = _candidate_match_flags(
+                candidate, normalized_query
+            )
+            if not matches_query:
+                continue
+            filtered.append((candidate, has_keyword))
+
+        if not filtered:
+            continue
+
+        prioritized = [item for item in filtered if item[1]]
+        fallbacks = [item for item in filtered if not item[1]]
+        ordered_candidates = prioritized if prioritized else filtered
+        if prioritized and fallbacks:
+            ordered_candidates = prioritized + fallbacks
+
+        for candidate, _ in ordered_candidates:
+            if candidate in attempted:
+                continue
+            attempted.add(candidate)
+            page = await _resolve_franchise_candidate(candidate)
+            if not page:
+                continue
+            html = await _fetch_html_from_page(page)
+            if not html:
+                continue
+            movies = _extract_movies_from_franchise_html(html)
+            if not movies:
+                continue
+            resolved_name = _sanitize_wikipedia_title(page.title.strip())
+            payload = (resolved_name, movies)
+            _WIKI_FRANCHISE_CACHE[cache_key] = payload
+            return payload
+
+    return None
 
 
 async def fetch_episode_titles_for_season(

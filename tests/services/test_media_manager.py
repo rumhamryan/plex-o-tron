@@ -7,6 +7,7 @@ from telegram_bot.services.media_manager import (
     generate_plex_filename,
     parse_resolution_from_name,
     handle_successful_download,
+    _get_final_destination_path,
 )
 from telegram_bot.ui.messages import format_media_summary
 
@@ -199,3 +200,17 @@ async def test_handle_successful_download_season_pack(mocker):
     assert "Successfully Added to Plex" in result
     assert "📦 Size: 3\\.0 KB" in result
     assert "Processed and moved 2 episodes from the season pack." in result
+
+
+def test_get_final_destination_path_collection():
+    parsed = {
+        "type": "movie",
+        "collection": {
+            "name": "Saga",
+            "fs_name": "Saga",
+            "folder": "Movie One (2001)",
+        },
+    }
+    save_paths = {"movies": "/library/movies", "default": "/library"}
+    result = _get_final_destination_path(parsed, save_paths)
+    assert result == os.path.join("/library/movies", "Saga", "Movie One (2001)")

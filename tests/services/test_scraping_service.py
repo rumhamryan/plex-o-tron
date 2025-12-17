@@ -30,6 +30,10 @@ def _clear_wiki_caches():
     except Exception:
         pass
     try:
+        scraping_service._WIKI_FRANCHISE_CACHE.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    try:
         scraping_service.clear_wiki_cache()
     except Exception:
         pass
@@ -77,6 +81,18 @@ async def test_fetch_movie_years_negative_cache(mocker):
     )
     await scraping_service.fetch_movie_years_from_wikipedia("Made Up Title")
     await scraping_service.fetch_movie_years_from_wikipedia("Made Up Title")
+    assert mock_call.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_caches_results(mocker):
+    mock_call = mocker.patch(
+        "telegram_bot.services.scraping_service._raw_fetch_franchise_details",
+        new=AsyncMock(return_value=("Saga", [{"title": "Movie One", "year": 2001}])),
+    )
+    result = await scraping_service.fetch_movie_franchise_details("Saga")
+    assert result[0] == "Saga"
+    await scraping_service.fetch_movie_franchise_details("Saga")
     assert mock_call.await_count == 1
 
 

@@ -384,7 +384,19 @@ def _get_final_destination_path(
     media_type = parsed_info.get("type")
 
     if media_type == "movie":
-        return save_paths.get("movies", save_paths["default"])
+        collection_meta = parsed_info.get("collection")
+        movies_root = save_paths.get("movies", save_paths["default"])
+        if isinstance(collection_meta, dict):
+            collection_name = _sanitize_directory_component(
+                collection_meta.get("fs_name") or collection_meta.get("name"),
+                "Collection",
+            )
+            movie_folder = _sanitize_directory_component(
+                collection_meta.get("folder"),
+                parsed_info.get("title") or "Movie",
+            )
+            return os.path.join(movies_root, collection_name, movie_folder)
+        return movies_root
 
     if media_type == "tv":
         root_path = save_paths.get("tv_shows", save_paths["default"])
@@ -398,6 +410,13 @@ def _get_final_destination_path(
         return os.path.join(root_path, safe_show_title, f"Season {season_num:02d}")
 
     return save_paths["default"]
+
+
+def _sanitize_directory_component(value: Any, fallback: str) -> str:
+    invalid_chars = '<>:"/\\|?*'
+    base = str(value or "").strip()
+    safe = "".join(c for c in base if c not in invalid_chars).strip()
+    return safe or str(fallback)
 
 
 async def _trigger_plex_scan(

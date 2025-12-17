@@ -3,7 +3,10 @@ from pathlib import Path
 import pytest
 from unittest.mock import Mock
 from plexapi.exceptions import Unauthorized
-from telegram_bot.services.plex_service import get_plex_server_status
+from telegram_bot.services.plex_service import (
+    get_plex_server_status,
+    ensure_collection_contains_movies,
+)
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -48,3 +51,26 @@ async def test_get_plex_server_status_connection_error(mocker):
 
     result = await get_plex_server_status(context)
     assert "Connection Failed" in result
+
+
+@pytest.mark.asyncio
+async def test_ensure_collection_contains_movies_adds_items(mocker):
+    movie = mocker.Mock()
+    movie.title = "Movie One"
+    movie.year = 2021
+    movie.addCollection = mocker.Mock()
+
+    section = mocker.Mock()
+    section.search.side_effect = [[movie]]
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.PlexServer", return_value=plex)
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    movies = [{"title": "Movie One", "year": 2021}]
+    result = await ensure_collection_contains_movies(plex_config, "Saga", movies)
+
+    assert result == ["Movie One (2021)"]
+    movie.addCollection.assert_called_once_with("Saga")

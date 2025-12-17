@@ -1,8 +1,11 @@
 import os
+import shutil
 import sys
+import uuid
+from collections.abc import Generator
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -12,7 +15,54 @@ os.environ.setdefault("PTB_TIMEDELTA", "1")
 from telegram import Update, Message, Chat, User, CallbackQuery, Bot  # noqa: E402
 
 # Ensure root path is available for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+REPO_TMP_ROOT = Path(__file__).resolve().parent / "_tmp"
+
+
+def _ensure_repo_tmp_root() -> Path:
+    REPO_TMP_ROOT.mkdir(exist_ok=True)
+    return REPO_TMP_ROOT
+
+
+class RepoTmpPathFactory:
+    """Replacement for pytest's tmp_path_factory constrained to the repo."""
+
+    def __init__(self, root: Path):
+        self._root = root
+        self._created: list[Path] = []
+
+    def mktemp(self, basename: str, numbered: bool = True) -> Path:
+        suffix = f"_{uuid.uuid4().hex}" if numbered else ""
+        directory = basename if not suffix else f"{basename}{suffix}"
+        path = self._root / directory
+        path.mkdir(parents=True, exist_ok=False)
+        self._created.append(path)
+        return path
+
+    def cleanup(self, path: Path | None = None) -> None:
+        targets = [path] if path is not None else list(self._created)
+        for target in targets:
+            shutil.rmtree(target, ignore_errors=True)
+            if target in self._created:
+                self._created.remove(target)
+
+
+@pytest.fixture(scope="session")
+def tmp_path_factory() -> Generator[RepoTmpPathFactory, None, None]:
+    factory = RepoTmpPathFactory(_ensure_repo_tmp_root())
+    yield factory
+    factory.cleanup()
+
+
+@pytest.fixture
+def tmp_path(tmp_path_factory: RepoTmpPathFactory) -> Generator[Path, None, None]:
+    path = tmp_path_factory.mktemp("tmp")
+    try:
+        yield path
+    finally:
+        tmp_path_factory.cleanup(path)
 
 
 @pytest.fixture

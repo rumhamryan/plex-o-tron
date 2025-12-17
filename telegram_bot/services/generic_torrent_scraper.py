@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-import yaml
+import yaml  # type: ignore[import-untyped]
 from bs4 import BeautifulSoup, Tag
 from collections import Counter
 from thefuzz import fuzz

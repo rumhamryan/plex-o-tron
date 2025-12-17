@@ -12,6 +12,7 @@ from ..config import logger
 from .scrapers import (
     fetch_episode_title_from_wikipedia,
     fetch_movie_years_from_wikipedia as _raw_fetch_movie_years,
+    fetch_movie_franchise_details_from_wikipedia as _raw_fetch_franchise_details,
     fetch_episode_titles_for_season as _raw_fetch_episode_titles_for_season,
     fetch_total_seasons_from_wikipedia as _raw_fetch_total_seasons,
     fetch_season_episode_count_from_wikipedia as _raw_fetch_episode_count,
@@ -117,6 +118,10 @@ def _movie_years_cache_key(title: str) -> tuple[str, str]:
     return ("movie_years", _normalize_cache_key(title))
 
 
+def _franchise_cache_key(title: str) -> tuple[str, str]:
+    return ("movie_franchise", _normalize_cache_key(title))
+
+
 def _season_count_cache_key(title: str) -> tuple[str, str]:
     return ("season_count", _normalize_cache_key(title))
 
@@ -175,6 +180,24 @@ async def fetch_movie_years_from_wikipedia(
     if isinstance(result, tuple) and result:
         years = result[0]
     _store_lookup_value(cache_key, result, success=bool(years))
+    return result
+
+
+async def fetch_movie_franchise_details(
+    movie_title: str,
+) -> tuple[str, list[dict[str, Any]]] | None:
+    """Returns a franchise name and list of movies, when available."""
+    normalized_title = _display_title(movie_title)
+    cache_key = _franchise_cache_key(normalized_title)
+    cached = _WIKI_LOOKUP_CACHE.get(cache_key)
+    if cached is not WikiCache.MISS:
+        _log_cache_event(True, "movie_franchise", normalized_title)
+        return cached
+
+    _log_cache_event(False, "movie_franchise", normalized_title)
+    result = await _raw_fetch_franchise_details(movie_title)
+    success = bool(result and isinstance(result, tuple) and len(result) == 2)
+    _store_lookup_value(cache_key, result, success=success)
     return result
 
 
@@ -241,6 +264,7 @@ __all__ = [
     "get_cached_movie_years",
     "fetch_episode_title_from_wikipedia",
     "fetch_movie_years_from_wikipedia",
+    "fetch_movie_franchise_details",
     "fetch_episode_titles_for_season",
     "fetch_total_seasons_from_wikipedia",
     "fetch_season_episode_count_from_wikipedia",

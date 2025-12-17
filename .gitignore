@@ -13,6 +13,8 @@ __pycache__/
 *.pyd
 *.so
 .python-version
+tests/.pytest_cache/
+tests/_tmp/
 
 # --- Testing & Coverage ---
 .pytest_cache/

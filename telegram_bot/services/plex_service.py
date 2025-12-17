@@ -3,6 +3,7 @@
 import asyncio
 import os
 import subprocess
+from typing import Any, Sequence
 
 from plexapi.exceptions import Unauthorized
 from plexapi.server import PlexServer
@@ -147,3 +148,76 @@ async def get_existing_episodes_for_season(
         logger.warning(f"Filesystem episode check failed: {e}")
 
     return existing
+
+
+async def ensure_collection_contains_movies(
+    plex_config: dict[str, str] | None,
+    collection_name: str,
+    movies: Sequence[dict[str, Any]],
+) -> list[str]:
+    """
+    Adds the provided movies to a Plex collection, returning the matched titles.
+    """
+    if not plex_config or not collection_name or not movies:
+        return []
+
+    try:
+        plex = await asyncio.to_thread(
+            PlexServer, plex_config["url"], plex_config["token"]
+        )
+        movies_section = await asyncio.to_thread(plex.library.section, "Movies")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"[PLEX] Could not prepare collection '{collection_name}': {exc}")
+        return []
+
+    matched_labels: list[str] = []
+
+    for movie in movies:
+        title = str(movie.get("title") or "").strip()
+        if not title:
+            continue
+        year_value = movie.get("year")
+
+        def _search():
+            params: dict[str, Any] = {"title": title}
+            if isinstance(year_value, int):
+                params["year"] = year_value
+            try:
+                results = movies_section.search(**params)
+            except Exception:
+                results = []
+            if not results and "year" in params:
+                params.pop("year", None)
+                try:
+                    results = movies_section.search(**params)
+                except Exception:
+                    results = []
+            return results
+
+        matches = await asyncio.to_thread(_search)
+        if not matches:
+            logger.warning(
+                "[PLEX] Could not locate '%s' (%s) when updating collection '%s'.",
+                title,
+                year_value or "unknown year",
+                collection_name,
+            )
+            continue
+
+        target = matches[0]
+        try:
+            await asyncio.to_thread(target.addCollection, collection_name)
+            label = target.title
+            target_year = getattr(target, "year", None)
+            if target_year:
+                label = f"{label} ({target_year})"
+            matched_labels.append(label)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[PLEX] Failed to tag '%s' for collection '%s': %s",
+                title,
+                collection_name,
+                exc,
+            )
+
+    return matched_labels

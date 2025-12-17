@@ -1,12 +1,14 @@
 from .wikipedia import (
     fetch_episode_title_from_wikipedia,
     fetch_movie_years_from_wikipedia,
+    fetch_movie_franchise_details_from_wikipedia,
     fetch_episode_titles_for_season,
     fetch_total_seasons_from_wikipedia,
     fetch_season_episode_count_from_wikipedia,
     _WIKI_TITLES_CACHE,
     _WIKI_SOUP_CACHE,
     _WIKI_MOVIE_CACHE,
+    _WIKI_FRANCHISE_CACHE,
 )
 from .yts import scrape_yts
 from .one_three_three_seven_x import scrape_1337x
@@ -26,11 +28,13 @@ __all__ = [
     "fetch_episode_title_from_wikipedia",
     "fetch_movie_years_from_wikipedia",
     "fetch_episode_titles_for_season",
+    "fetch_movie_franchise_details_from_wikipedia",
     "fetch_total_seasons_from_wikipedia",
     "fetch_season_episode_count_from_wikipedia",
     "_WIKI_TITLES_CACHE",
     "_WIKI_SOUP_CACHE",
     "_WIKI_MOVIE_CACHE",
+    "_WIKI_FRANCHISE_CACHE",
     "scrape_yts",
     "scrape_1337x",
     "find_magnet_link_on_page",

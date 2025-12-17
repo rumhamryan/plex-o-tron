@@ -45,7 +45,8 @@ dev = [
     "types-beautifulsoup4",
     "pluggy",
     "pygments",
-    "iniconfig"
+    "iniconfig",
+    "types-PyYAML",
 ]
 
 # --- Tool Configurations ---
@@ -71,3 +72,13 @@ filterwarnings = [
     # Suppress BeautifulSoup parser guess warning emitted by the wikipedia lib
     "ignore::bs4.GuessedAtParserWarning",
 ]
+norecursedirs = [
+    "tests/_tmp",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+]
+cache_dir = "tests/.pytest_cache"

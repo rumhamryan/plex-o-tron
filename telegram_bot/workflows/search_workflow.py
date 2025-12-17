@@ -1,10 +1,13 @@
 # telegram_bot/workflows/search_workflow.py
 
+import asyncio
+import os
 import re
+import shutil
 import time
-from dataclasses import dataclass, field
-from typing import Any, Literal
 from collections import Counter
+from dataclasses import dataclass, field
+from typing import Any, Literal, MutableMapping
 
 from telegram import (
     Update,
@@ -18,7 +21,7 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 
-from ..config import logger, MAX_TORRENT_SIZE_GB
+from ..config import logger, MAX_TORRENT_SIZE_GB, ALLOWED_EXTENSIONS
 from ..services import search_logic, torrent_service, scraping_service, plex_service
 from ..services.media_manager import validate_and_enrich_torrent
 from ..utils import safe_edit_message, parse_torrent_name, safe_send_message
@@ -48,6 +51,8 @@ RESOLUTION_SIZE_TARGETS = {
 }
 SIZE_VARIANCE_WEIGHT = 12.0
 SIZE_DEVIATION_WEIGHT = 8.0
+COLLECTION_MOVIE_PREVIEW_LIMIT = 6
+COLLECTION_CODEC_CHOICES: tuple[str, ...] = ("x264", "x265", "any")
 
 
 @dataclass(slots=True)
@@ -92,16 +97,64 @@ class SeasonConsistencySummary:
         return f"{uploader} via {source}"
 
 
-def _get_session(context: ContextTypes.DEFAULT_TYPE) -> SearchSession:
+def _normalize_label(value: Any) -> str:
+    text = ""
+    if isinstance(value, str):
+        text = value
+    elif value is not None:
+        text = str(value)
+    return re.sub(r"[\W_]+", "", text.strip()).casefold()
+
+
+def _sanitize_collection_name(value: str | None) -> str:
+    invalid_chars = '<>:"/\\|?*'
+    safe_value = "".join(c for c in (value or "") if c not in invalid_chars).strip()
+    return safe_value or "Collection"
+
+
+def _format_collection_movie_label(movie: dict[str, Any]) -> str:
+    title = str(movie.get("title") or "Untitled").strip() or "Untitled"
+    year = movie.get("year")
+    if isinstance(year, int):
+        return f"{title} ({year})"
+    return title
+
+
+def _format_collection_folder_name(movie: dict[str, Any]) -> str:
+    label = _format_collection_movie_label(movie)
+    invalid_chars = '<>:"/\\|?*'
+    safe_label = "".join(c for c in label if c not in invalid_chars).strip()
+    return safe_label or "Movie"
+
+
+def _ensure_identifier(movie: dict[str, Any], index: int) -> str:
+    title = str(movie.get("title") or "")
+    year = movie.get("year")
+    base = _normalize_label(title) or f"movie{index}"
+    if isinstance(year, int):
+        base = f"{base}{year}"
+    return f"{base}-{index}"
+
+
+def _get_user_data_store(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> MutableMapping[str, Any]:
     if context.user_data is None:
         context.user_data = {}
-    return SearchSession.from_user_data(context.user_data)
+    return context.user_data
+
+
+def _get_session(context: ContextTypes.DEFAULT_TYPE) -> SearchSession:
+    return SearchSession.from_user_data(_get_user_data_store(context))
 
 
 def _save_session(context: ContextTypes.DEFAULT_TYPE, session: SearchSession) -> None:
-    if context.user_data is None:
-        context.user_data = {}
-    session.save(context.user_data)
+    session.save(_get_user_data_store(context))
+
+
+def _get_callback_data(query: CallbackQuery) -> str:
+    """Returns callback data as a string even when Telegram omits it."""
+    return query.data or ""
 
 
 async def handle_search_workflow(
@@ -161,10 +214,12 @@ async def handle_search_buttons(
 ) -> None:
     """Handles all button presses related to the search workflow."""
     query = update.callback_query
-    if not query or not query.data or not isinstance(query.message, Message):
+    if not query or not isinstance(query.message, Message):
         return
 
-    action = query.data
+    action = _get_callback_data(query)
+    if not action:
+        return
 
     if action.startswith("search_start_"):
         await _handle_start_button(query, context)
@@ -174,6 +229,7 @@ async def handle_search_buttons(
     requires_session = (
         action.startswith(
             (
+                "search_movie_scope_",
                 "search_resolution_",
                 "search_tv_scope_",
                 "search_select_season_",
@@ -185,6 +241,14 @@ async def handle_search_buttons(
         or action.startswith("search_results_page_")
         or action.startswith("search_results_filter_resolution_")
         or action.startswith("search_results_filter_codec_")
+        or action.startswith("search_collection_resolution_")
+        or action.startswith("search_collection_codec_")
+        or action.startswith("search_collection_toggle_")
+        or action
+        in {
+            "search_collection_accept",
+            "search_collection_confirm",
+        }
         or action == "search_tv_change_details"
     )
 
@@ -197,7 +261,19 @@ async def handle_search_buttons(
         return
 
     try:
-        if action.startswith("search_resolution_"):
+        if action.startswith("search_movie_scope_"):
+            await _handle_movie_scope_button(query, context, session)
+        elif action == "search_collection_accept":
+            await _handle_collection_accept(query, context, session)
+        elif action.startswith("search_collection_resolution_"):
+            await _handle_collection_resolution_button(query, context, session)
+        elif action.startswith("search_collection_codec_"):
+            await _handle_collection_codec_button(query, context, session)
+        elif action.startswith("search_collection_toggle_"):
+            await _handle_collection_movie_toggle(query, context, session)
+        elif action == "search_collection_confirm":
+            await _handle_collection_confirm(query, context, session)
+        elif action.startswith("search_resolution_"):
             await _handle_resolution_button(query, context, session)
         elif action.startswith("search_tv_scope_"):
             await _handle_tv_scope_selection(query, context, session)
@@ -253,6 +329,11 @@ async def _handle_movie_title_reply(
 
     session.media_type = "movie"
     session.set_title(title)
+
+    if session.collection_mode:
+        _save_session(context, session)
+        await _start_collection_lookup(chat_id, context, session, title)
+        return
 
     if parsed_query.year:
         full_title = f"{title} ({parsed_query.year})"
@@ -362,6 +443,132 @@ async def _handle_movie_year_reply(
     session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
     await _search_movie_results(chat_id, context, session)
+
+
+async def _start_collection_lookup(
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+    display_title: str,
+) -> None:
+    """Initiates a franchise lookup for collection mode."""
+    status_message = await safe_send_message(
+        context.bot,
+        chat_id,
+        (
+            f"🧩 Searching Wikipedia for franchises that include "
+            f"*{escape_markdown(display_title, version=2)}*…"
+        ),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+    try:
+        result = await scraping_service.fetch_movie_franchise_details(display_title)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Franchise lookup failed for '%s': %s", display_title, exc)
+        result = None
+
+    if not result:
+        await safe_edit_message(
+            status_message,
+            text=(
+                f"⚠️ No franchise information was found for "
+                f"*{escape_markdown(display_title, version=2)}*\\.\n"
+                "Please send another title or cancel the operation\\."
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        session.prompt_message_id = status_message.message_id
+        _save_session(context, session)
+        return
+
+    franchise_name, movies = result
+    normalized_movies: list[dict[str, Any]] = []
+    for idx, raw_movie in enumerate(movies or []):
+        raw_title = raw_movie.get("title") or raw_movie.get("name") or display_title
+        title_str = str(raw_title).strip() or display_title
+        year_value = raw_movie.get("year")
+        parsed_year = _coerce_int(year_value)
+        entry = {
+            "title": title_str,
+            "year": parsed_year,
+            "identifier": _ensure_identifier(
+                {"title": title_str, "year": parsed_year}, idx
+            ),
+            "owned": False,
+            "queued": False,
+        }
+        normalized_movies.append(entry)
+
+    if not normalized_movies:
+        await safe_edit_message(
+            status_message,
+            text=(
+                f"⚠️ The detected franchise for "
+                f"*{escape_markdown(display_title, version=2)}* contains no movies I can queue\\."
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        session.prompt_message_id = status_message.message_id
+        _save_session(context, session)
+        return
+
+    session.collection_name = franchise_name
+    session.collection_fs_name = _sanitize_collection_name(franchise_name)
+    session.collection_movies = normalized_movies
+    session.collection_exclusions = []
+    session.collection_resolution = None
+    session.collection_codec = None
+    session.collection_seed_size_gb = None
+    session.collection_seed_uploader = None
+    session.collection_owned_count = 0
+    session.prompt_message_id = status_message.message_id
+    _save_session(context, session)
+
+    await _prompt_collection_confirmation(status_message, context, session)
+
+
+async def _prompt_collection_confirmation(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    franchise = session.collection_name or "Franchise"
+    movies = session.collection_movies or []
+    preview_lines: list[str] = []
+    limited_movies = movies[:COLLECTION_MOVIE_PREVIEW_LIMIT]
+    for movie in limited_movies:
+        label = escape_markdown(_format_collection_movie_label(movie), version=2)
+        preview_lines.append(f"• {label}")
+    remaining = max(len(movies) - len(limited_movies), 0)
+    if remaining > 0:
+        remaining_label = escape_markdown(f"…and {remaining} more", version=2)
+        preview_lines.append(f"• {remaining_label}")
+
+    summary = "\n".join(preview_lines)
+    text = (
+        f"🎬 *{escape_markdown(franchise, version=2)}* contains "
+        f"*{len(movies)}* film{'s' if len(movies) != 1 else ''}\\.\n"
+        f"{summary}\n\n"
+        "Use this collection?"
+    )
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Use Collection", callback_data="search_collection_accept"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
+    )
+    await safe_edit_message(
+        message,
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
 
 
 async def _handle_tv_title_reply(
@@ -658,7 +865,7 @@ async def _handle_season_selection_button(
         return
 
     try:
-        data = query.data or ""
+        data = _get_callback_data(query)
         season_str = data.split("_")[3]
         season_num = int(season_str)
     except Exception:
@@ -694,7 +901,7 @@ async def _handle_episode_selection_button(
         return
 
     try:
-        data = query.data or ""
+        data = _get_callback_data(query)
         episode_str = data.split("_")[3]
         episode_num = int(episode_str)
     except Exception:
@@ -804,6 +1011,7 @@ async def _handle_tv_scope_selection(
     if not isinstance(query.message, Message):
         return
 
+    action = _get_callback_data(query)
     title = session.effective_title or session.title
     season = session.season
     if not title or season is None:
@@ -815,7 +1023,7 @@ async def _handle_tv_scope_selection(
         clear_search_session(context.user_data)
         return
 
-    if query.data == "search_tv_scope_single":
+    if action == "search_tv_scope_single":
         session.tv_scope = "single"
         session.advance(SearchStep.TV_EPISODE)
         _save_session(context, session)
@@ -870,7 +1078,7 @@ async def _handle_tv_scope_selection(
         )
         return
 
-    if query.data == "search_tv_scope_season":
+    if action == "search_tv_scope_season":
         logger.info(
             f"[WIKI] Verifying season details on Wikipedia for '{title}' S{int(season):02d}."
         )
@@ -958,20 +1166,45 @@ async def _handle_tv_scope_selection(
 
 async def _handle_start_button(query, context):
     """Handles the initial 'Movie' or 'TV Show' button press."""
-    if context.user_data is None:
-        context.user_data = {}
-    context.user_data["active_workflow"] = "search"
-    clear_search_session(context.user_data)
+    store = _get_user_data_store(context)
+    store["active_workflow"] = "search"
+    clear_search_session(store)
     session = SearchSession()
 
-    if query.data == "search_start_movie":
+    action = _get_callback_data(query)
+    if action == "search_start_movie":
         session.media_type = "movie"
-        session.advance(SearchStep.TITLE)
-        prompt_text = "🎬 Please send me the title of the movie to search for \\(you can include the year\\)\\."
+        session.movie_scope = None
+        session.collection_mode = False
+        session.collection_name = None
+        session.collection_movies = []
+        session.collection_exclusions = []
+        session.advance(SearchStep.MOVIE_SCOPE)
+        prompt_text = (
+            "🎬 Are you searching for a single movie or an entire franchise collection?"
+        )
+        reply_markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "Single Movie", callback_data="search_movie_scope_single"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "Collection", callback_data="search_movie_scope_collection"
+                    )
+                ],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+            ]
+        )
     else:
         session.media_type = "tv"
         session.advance(SearchStep.TITLE)
         prompt_text = "📺 Please send me the title of the TV show to search for\\."
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+        )
 
     session.prompt_message_id = query.message.message_id
     _save_session(context, session)
@@ -979,9 +1212,7 @@ async def _handle_start_button(query, context):
     await safe_edit_message(
         query.message,
         text=prompt_text,
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        ),
+        reply_markup=reply_markup,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
@@ -990,7 +1221,11 @@ async def _handle_resolution_button(
     query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ):
     """Handles the resolution selection and triggers the appropriate search."""
-    if any(x in query.data for x in ("2160p", "4k")):
+    if not isinstance(query.message, Message):
+        return
+
+    callback_data = _get_callback_data(query)
+    if any(token in callback_data for token in ("2160p", "4k")):
         resolution = "2160p"
     else:
         resolution = "1080p"
@@ -1076,6 +1311,345 @@ async def _handle_resolution_button(
     clear_search_session(context.user_data)
 
 
+async def _handle_movie_scope_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    """Handles the movie scope selection between single and collection."""
+    if not isinstance(query.message, Message):
+        return
+
+    scope = _get_callback_data(query).split("_")[-1]
+    session.final_title = None
+    session.title = None
+    session.resolution = None
+    session.collection_name = None
+    session.collection_fs_name = None
+    session.collection_movies = []
+    session.collection_exclusions = []
+    session.collection_resolution = None
+    session.collection_codec = None
+    session.collection_seed_size_gb = None
+    session.collection_seed_uploader = None
+    session.collection_owned_count = 0
+
+    if scope == "single":
+        session.movie_scope = "single"
+        session.collection_mode = False
+        session.advance(SearchStep.TITLE)
+        prompt_text = "🎬 Please send me the title of the movie to search for \\(you can include the year\\)\\."
+    else:
+        session.movie_scope = "collection"
+        session.collection_mode = True
+        session.advance(SearchStep.TITLE)
+        prompt_text = (
+            "🎞️ Send the title of a movie within the franchise you want to collect\\."
+        )
+
+    session.prompt_message_id = query.message.message_id
+    _save_session(context, session)
+    await safe_edit_message(
+        query.message,
+        text=prompt_text,
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+        ),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def _handle_collection_accept(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    """Prepares filesystem state and prompts for resolution selection."""
+    if not isinstance(query.message, Message):
+        return
+
+    if not session.collection_movies:
+        await safe_edit_message(
+            query.message,
+            text="⚠️ Collection data expired\\. Please send the franchise title again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        clear_search_session(context.user_data)
+        return
+
+    try:
+        owned_count = await _prepare_collection_directory(context, session)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to prepare collection directory: %s", exc)
+        await safe_edit_message(
+            query.message,
+            text="⚠️ Could not prepare the collection directory\\. Please try again later\\.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    session.collection_owned_count = owned_count
+    session.prompt_message_id = query.message.message_id
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
+    await _prompt_collection_resolution(query.message, context, session)
+
+
+async def _prompt_collection_resolution(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    owned_note = ""
+    if session.collection_owned_count:
+        owned_note = (
+            f"\n📁 {session.collection_owned_count} film{'s' if session.collection_owned_count != 1 else ''} "
+            "already exist in your library and will be skipped\\."
+        )
+    text = (
+        "Choose the target resolution for this collection run\\."
+        f"{owned_note}\n\nThis helps me bias torrent selection toward consistent releases\\."
+    )
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "1080p", callback_data="search_collection_resolution_1080p"
+                ),
+                InlineKeyboardButton(
+                    "2160p / 4K", callback_data="search_collection_resolution_2160p"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Best Available", callback_data="search_collection_resolution_all"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
+    )
+    await safe_edit_message(
+        message,
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def _handle_collection_resolution_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    choice = _get_callback_data(query).split("_")[-1]
+    if choice not in {"1080p", "2160p", "all"}:
+        choice = "1080p"
+    session.collection_resolution = choice
+    _save_session(context, session)
+    await _prompt_collection_codec(query.message, context, session)
+
+
+async def _prompt_collection_codec(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    text = (
+        "Select your preferred codec for this collection\\.\n"
+        'Choosing "Either" allows the best match per movie\\.'
+    )
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "x265 / HEVC", callback_data="search_collection_codec_x265"
+                ),
+                InlineKeyboardButton(
+                    "x264 / AVC", callback_data="search_collection_codec_x264"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Either Codec", callback_data="search_collection_codec_any"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
+    )
+    await safe_edit_message(
+        message,
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def _handle_collection_codec_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    choice = _get_callback_data(query).split("_")[-1].lower()
+    if choice not in COLLECTION_CODEC_CHOICES:
+        choice = "any"
+    session.collection_codec = choice
+    _save_session(context, session)
+    await _render_collection_movie_picker(query.message, context, session)
+
+
+async def _render_collection_movie_picker(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    movies = session.collection_movies or []
+    if not movies:
+        await safe_edit_message(
+            message,
+            text="⚠️ Collection data expired\\. Please restart the workflow\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        clear_search_session(context.user_data)
+        return
+
+    chat_id = message.chat_id
+    _update_collection_movie_status(context, session, chat_id)
+
+    available = [
+        m
+        for m in movies
+        if not m.get("owned")
+        and not m.get("queued")
+        and m["identifier"] not in session.collection_exclusions
+    ]
+    downloadable = [m for m in movies if not m.get("owned") and not m.get("queued")]
+    owned_count = sum(1 for m in movies if m.get("owned"))
+    queued_count = sum(1 for m in movies if m.get("queued"))
+    franchise = session.collection_name or "Franchise"
+
+    text_lines = [
+        f"🎬 Preparing *{escape_markdown(franchise, version=2)}* collection\\.",
+        "Tap a title to remove it from this run\\.",
+        f"Ready to download: *{len(available)}* / {len(downloadable)} remaining movies\\.",
+    ]
+    if owned_count:
+        text_lines.append(f"📁 Owned: {owned_count}")
+    if queued_count:
+        text_lines.append(f"⏳ Already queued: {queued_count}")
+    if not downloadable:
+        text_lines.append("Everything in this franchise already exists or is queued\\.")
+    text = "\n".join(text_lines)
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = []
+    for movie in movies:
+        label = _format_collection_movie_label(movie)
+        identifier = movie["identifier"]
+        prefix = ""
+        if movie.get("owned"):
+            prefix = "📁 "
+        elif movie.get("queued"):
+            prefix = "⏳ "
+        elif identifier in session.collection_exclusions:
+            prefix = "☐ "
+        else:
+            prefix = "✅ "
+        button_text = f"{prefix}{label}"
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    button_text,
+                    callback_data=f"search_collection_toggle_{identifier}",
+                )
+            ]
+        )
+
+    if downloadable:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    "✅ Confirm Selection", callback_data="search_collection_confirm"
+                )
+            ]
+        )
+    keyboard_rows.append(
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]
+    )
+
+    session.prompt_message_id = message.message_id
+    _save_session(context, session)
+    await safe_edit_message(
+        message,
+        text=text,
+        reply_markup=InlineKeyboardMarkup(keyboard_rows),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def _handle_collection_movie_toggle(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    identifier = _get_callback_data(query).split("search_collection_toggle_")[-1]
+    movie_map = {m["identifier"]: m for m in session.collection_movies or []}
+    movie = movie_map.get(identifier)
+    if not movie or movie.get("owned") or movie.get("queued"):
+        try:
+            await query.answer(text="This title is already handled.", show_alert=False)
+        except RuntimeError:
+            pass
+        return
+
+    exclusions = set(session.collection_exclusions or [])
+    if identifier in exclusions:
+        exclusions.remove(identifier)
+    else:
+        exclusions.add(identifier)
+    session.collection_exclusions = list(exclusions)
+    _save_session(context, session)
+    await _render_collection_movie_picker(query.message, context, session)
+
+
+async def _handle_collection_confirm(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    movies = [
+        m
+        for m in session.collection_movies or []
+        if not m.get("owned")
+        and not m.get("queued")
+        and m["identifier"] not in (session.collection_exclusions or [])
+    ]
+    if not movies:
+        await query.answer(
+            text="Select at least one movie to continue.", show_alert=True
+        )
+        return
+
+    await safe_edit_message(
+        query.message,
+        text="🔍 Gathering torrents for the selected movies…",
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+    pending, missing = await _collect_collection_torrents(
+        query.message, context, session, movies
+    )
+    if not pending:
+        await safe_edit_message(
+            query.message,
+            text="⚠️ I couldn't find suitable torrents for the selected movies\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    pending_store = _get_user_data_store(context)
+    pending_store["pending_collection_download"] = pending
+    await _present_collection_download_confirmation(
+        query.message, context, session, pending, missing
+    )
+    clear_search_session(context.user_data)
+
+
 async def _handle_result_selection_button(
     query: CallbackQuery,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1096,8 +1670,9 @@ async def _handle_result_selection_button(
         )
         return
 
+    data = _get_callback_data(query)
     try:
-        choice_index = int(query.data.split("_")[2])
+        choice_index = int(data.split("_")[2])
     except (ValueError, IndexError):
         await safe_edit_message(
             query.message,
@@ -1155,8 +1730,9 @@ async def _handle_results_page_button(
 
     _ensure_results_available(session)
 
+    payload = _get_callback_data(query)
     try:
-        target_page = int(query.data.split("_")[-1])
+        target_page = int(payload.split("_")[-1])
     except (ValueError, IndexError):
         await safe_edit_message(
             query.message,
@@ -1179,7 +1755,7 @@ async def _handle_results_filter_button(
         return
     _ensure_results_available(session)
     allowed_filters = _get_allowed_resolution_filters(session)
-    requested = query.data.split("_")[-1]
+    requested = _get_callback_data(query).split("_")[-1]
     normalized = _normalize_resolution_filter(requested)
     if normalized not in allowed_filters:
         try:
@@ -1206,7 +1782,7 @@ async def _handle_results_codec_filter_button(
         return
 
     _ensure_results_available(session)
-    requested = query.data.split("_")[-1].lower()
+    requested = _get_callback_data(query).split("_")[-1].lower()
     if requested not in {"all", "x264", "x265"}:
         try:
             await query.answer(
@@ -1229,7 +1805,11 @@ async def _handle_year_selection_button(
     query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
     """Handles the user selecting a specific year from the presented options."""
-    if not query or not query.data:
+    if not query:
+        return
+
+    payload = _get_callback_data(query)
+    if not payload:
         logger.warning("Callback query received without data. Ignoring.")
         await query.answer()
         return
@@ -1256,12 +1836,11 @@ async def _handle_year_selection_button(
         return
 
     try:
-        data = query.data or ""
-        selected_year = data.split("_")[3]
+        selected_year = payload.split("_")[3]
         full_title = f"{title} ({selected_year})"
         logger.info(f"User selected year {selected_year} for title '{title}'.")
     except IndexError:
-        logger.error(f"Could not parse year from callback data: {query.data}")
+        logger.error(f"Could not parse year from callback data: {payload!r}")
         await safe_edit_message(
             query.message,
             text="❌ An error occurred with your selection\\. Please try again\\.",
@@ -1423,8 +2002,8 @@ async def _present_season_download_confirmation(
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
-    context.user_data.setdefault("pending_season_download", list())
-    context.user_data["pending_season_download"] = found_torrents
+    store = _get_user_data_store(context)
+    store["pending_season_download"] = found_torrents
 
 
 def _normalize_release_field(value: Any, default: str) -> str:
@@ -2062,6 +2641,338 @@ async def handle_reject_season_pack(
         int(season),
         force_individual_episodes=True,
         session=session,
+    )
+
+
+# --- Collection utilities ---
+
+
+async def _prepare_collection_directory(
+    context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> int:
+    """Creates the franchise directory and moves any existing movies into place."""
+    bot_data = context.bot_data or {}
+    save_paths = bot_data.get("SAVE_PATHS", {})
+    movies_root = save_paths.get("movies") or save_paths.get("default")
+    if not movies_root:
+        raise RuntimeError("Movies path is not configured.")
+
+    collection_name = (
+        session.collection_fs_name or session.collection_name or "Collection"
+    )
+    safe_name = _sanitize_collection_name(collection_name)
+    franchise_dir = os.path.join(movies_root, safe_name)
+    await asyncio.to_thread(os.makedirs, franchise_dir, exist_ok=True)
+
+    owned = 0
+    for idx, movie in enumerate(session.collection_movies or []):
+        folder_name = _format_collection_folder_name(movie)
+        movie["folder"] = folder_name
+        entry_exists = await _ensure_existing_movie_in_collection(
+            movies_root, franchise_dir, folder_name
+        )
+        movie["owned"] = bool(entry_exists)
+        if entry_exists:
+            owned += 1
+    _save_session(context, session)
+    return owned
+
+
+async def _ensure_existing_movie_in_collection(
+    root_path: str, franchise_dir: str, folder_name: str
+) -> bool:
+    """Moves an existing movie folder/file into the collection directory if present."""
+    target_dir = os.path.join(franchise_dir, folder_name)
+    if os.path.isdir(target_dir):
+        return True
+
+    existing = await asyncio.to_thread(
+        _locate_existing_movie_entry, root_path, folder_name
+    )
+    if not existing:
+        return False
+
+    os.makedirs(target_dir, exist_ok=True)
+    try:
+        await asyncio.to_thread(
+            shutil.move,
+            existing,
+            target_dir
+            if os.path.isdir(existing)
+            else os.path.join(target_dir, os.path.basename(existing)),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed moving '%s' into collection folder: %s", existing, exc)
+        return False
+    return True
+
+
+def _locate_existing_movie_entry(root_path: str, folder_name: str) -> str | None:
+    """Finds a directory or file in the movies root that matches the target folder."""
+    normalized = folder_name.casefold()
+    try:
+        for entry in os.listdir(root_path):
+            entry_path = os.path.join(root_path, entry)
+            entry_key = entry.casefold()
+            if entry_key == normalized:
+                return entry_path
+            base, ext = os.path.splitext(entry)
+            if base.casefold() == normalized and ext.lower() in ALLOWED_EXTENSIONS:
+                return entry_path
+    except FileNotFoundError:
+        return None
+    return None
+
+
+def _update_collection_movie_status(
+    context: ContextTypes.DEFAULT_TYPE, session: SearchSession, chat_id: int
+) -> None:
+    """Marks movies as queued if they already exist in the active queue."""
+    bot_data = context.bot_data or {}
+    active_downloads = bot_data.get("active_downloads", {})
+    download_queues = bot_data.get("download_queues", {})
+    chat_id_str = str(chat_id)
+
+    parsed_entries: list[dict[str, Any]] = []
+    active_entry = active_downloads.get(chat_id_str)
+    if isinstance(active_entry, dict):
+        parsed = (active_entry.get("source_dict", {}) or {}).get("parsed_info")
+        if isinstance(parsed, dict):
+            parsed_entries.append(parsed)
+
+    for queued in download_queues.get(chat_id_str, []):
+        parsed = (queued.get("source_dict", {}) or {}).get("parsed_info")
+        if isinstance(parsed, dict):
+            parsed_entries.append(parsed)
+
+    franchise_name = session.collection_name
+    for movie in session.collection_movies or []:
+        title_norm = _normalize_label(movie.get("title"))
+        year_value = movie.get("year")
+        movie["queued"] = any(
+            _movie_matches(parsed, title_norm, year_value, franchise_name)
+            for parsed in parsed_entries
+        )
+
+
+def _movie_matches(
+    parsed_info: dict[str, Any],
+    title_norm: str,
+    year_value: int | None,
+    franchise_name: str | None,
+) -> bool:
+    if parsed_info.get("type") != "movie":
+        return False
+    parsed_title = _normalize_label(parsed_info.get("title"))
+    if parsed_title != title_norm:
+        return False
+    parsed_year = parsed_info.get("year")
+    try:
+        parsed_year_int = int(parsed_year) if parsed_year is not None else None
+    except (TypeError, ValueError):
+        parsed_year_int = None
+    if isinstance(year_value, int) and parsed_year_int is not None:
+        if parsed_year_int != year_value:
+            return False
+    collection_meta = parsed_info.get("collection") or {}
+    if franchise_name and collection_meta.get("name") == franchise_name:
+        return True
+    return True
+
+
+async def _collect_collection_torrents(
+    message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+    movies: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[str]]:
+    """Searches and selects torrent entries for the chosen movies."""
+    pending_items: list[dict[str, Any]] = []
+    missing: list[str] = []
+    total = len(movies)
+
+    for idx, movie in enumerate(movies, 1):
+        label = _format_collection_movie_label(movie)
+        await safe_edit_message(
+            message,
+            text=(
+                f"🔍 Searching for *{escape_markdown(label, version=2)}* "
+                f"({idx}/{total})…"
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+        year_value = movie.get("year")
+        year_kw = str(year_value) if isinstance(year_value, int) else None
+        results = await search_logic.orchestrate_searches(
+            label, "movie", context, year=year_kw
+        )
+        candidate = _pick_collection_candidate(
+            results,
+            session.collection_resolution,
+            session.collection_codec,
+            session.collection_seed_size_gb,
+            session.collection_seed_uploader,
+        )
+        if not candidate:
+            missing.append(label)
+            continue
+        link = candidate.get("page_url")
+        if not link:
+            missing.append(label)
+            continue
+
+        size_value = _coerce_float(candidate.get("size_gb"))
+        if session.collection_seed_size_gb is None and size_value is not None:
+            session.collection_seed_size_gb = size_value
+        uploader_value = _normalize_release_field(
+            candidate.get("uploader"), "Anonymous"
+        )
+        if (
+            session.collection_seed_uploader is None
+            and uploader_value
+            and uploader_value != "Anonymous"
+        ):
+            session.collection_seed_uploader = uploader_value
+
+        parsed_info = parse_torrent_name(candidate.get("title", ""))
+        parsed_info["type"] = "movie"
+        parsed_info["title"] = movie.get("title")
+        if year_value is not None:
+            parsed_info["year"] = year_value
+        parsed_info["collection"] = {
+            "name": session.collection_name,
+            "fs_name": session.collection_fs_name,
+            "folder": movie.get("folder") or _format_collection_folder_name(movie),
+            "resolution": session.collection_resolution,
+            "codec": session.collection_codec,
+        }
+
+        pending_items.append(
+            {
+                "link": link,
+                "parsed_info": parsed_info,
+                "source": candidate.get("source"),
+                "uploader": candidate.get("uploader"),
+                "size_gb": candidate.get("size_gb"),
+                "resolution": session.collection_resolution,
+                "movie": {
+                    "title": movie.get("title"),
+                    "year": movie.get("year"),
+                },
+            }
+        )
+
+    pending_payload = {
+        "items": pending_items,
+        "franchise": {
+            "name": session.collection_name,
+            "fs_name": session.collection_fs_name,
+            "resolution": session.collection_resolution,
+            "codec": session.collection_codec,
+            "movies": [entry.get("movie") for entry in pending_items],
+        },
+    }
+    _save_session(context, session)
+    return pending_payload, missing
+
+
+def _pick_collection_candidate(
+    results: list[dict[str, Any]],
+    preferred_resolution: str | None,
+    preferred_codec: str | None,
+    template_size: float | None,
+    template_uploader: str | None,
+) -> dict[str, Any] | None:
+    working = list(results or [])
+    resolution_value = _normalize_resolution_filter(preferred_resolution or "all")
+    if resolution_value != "all":
+        working = _filter_results_by_resolution(working, resolution_value)
+
+    codec_target = (preferred_codec or "any").lower()
+    if codec_target != "any":
+        filtered = []
+        for item in working:
+            codec_value = (item.get("codec") or "").lower()
+            if codec_value == codec_target:
+                filtered.append(item)
+        if filtered:
+            working = filtered
+
+    if not working:
+        working = list(results or [])
+    if not working:
+        return None
+
+    def _score(item: dict[str, Any]) -> float:
+        score = float(item.get("score") or 0)
+        codec_value = (item.get("codec") or "").lower()
+        if codec_target != "any" and codec_value == codec_target:
+            score += 5
+        uploader_value = _normalize_release_field(item.get("uploader"), "Anonymous")
+        if template_uploader and uploader_value == template_uploader:
+            score += 8
+        size_value = _coerce_float(item.get("size_gb"))
+        if template_size and size_value:
+            try:
+                deviation = abs(size_value - template_size) / template_size
+            except ZeroDivisionError:
+                deviation = 1.0
+            if deviation <= 0.1:
+                score += 10
+            else:
+                score -= deviation * 10
+        seeders = _coerce_int(item.get("seeders")) or 0
+        score += min(seeders, 50) * 0.1
+        return score
+
+    return max(working, key=_score)
+
+
+async def _present_collection_download_confirmation(
+    message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+    pending: dict[str, Any],
+    missing: list[str],
+) -> None:
+    items = pending.get("items", [])
+    franchise = pending.get("franchise", {}) or {}
+    franchise_name = franchise.get("name") or session.collection_name or "Collection"
+    resolution = session.collection_resolution or "best"
+    codec = (session.collection_codec or "any").upper()
+    selected_lines = [
+        f"• {escape_markdown(_format_collection_movie_label(entry.get('movie', {})), version=2)}"
+        for entry in items
+    ]
+    movies_text = "\n".join(selected_lines)
+    text = (
+        f"✅ Ready to queue *{len(items)}* movie{'s' if len(items) != 1 else ''} "
+        f"for *{escape_markdown(franchise_name, version=2)}*\\.\n"
+        f"Template: *{escape_markdown(resolution.upper(), version=2)}* / *{escape_markdown(codec, version=2)}*\\.\n"
+        f"Movies in this run:\n{movies_text}"
+    )
+    if missing:
+        skipped = "\n".join(
+            f"• {escape_markdown(label, version=2)}" for label in missing
+        )
+        text += f"\n\n⚠️ No suitable torrent was found for:\n{skipped}"
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✅ Confirm Collection", callback_data="confirm_collection_download"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
+    )
+    await safe_edit_message(
+        message,
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.MARKDOWN_V2,
     )
 
 

@@ -9,6 +9,7 @@ from ..services.auth_service import is_user_authorized
 from ..services.download_manager import (
     add_download_to_queue,
     add_season_to_queue,
+    add_collection_to_queue,
     handle_cancel_request,
     handle_pause_resume,
     handle_cancel_all,
@@ -45,6 +46,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await add_download_to_queue(update, context)
     elif action == "confirm_season_download":
         await add_season_to_queue(update, context)
+    elif action == "confirm_collection_download":
+        await add_collection_to_queue(update, context)
     elif action == "reject_season_pack":
         await handle_reject_season_pack(update, context)
 

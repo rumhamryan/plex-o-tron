@@ -18,6 +18,7 @@ from ..config import logger, PERSISTENCE_FILE
 from ..state import save_state
 from ..utils import safe_edit_message
 from .media_manager import handle_successful_download, _trigger_plex_scan
+from .plex_service import ensure_collection_contains_movies
 
 
 class ProgressReporter:
@@ -384,19 +385,41 @@ async def _update_batch_and_maybe_scan(
         # Mark scanned before awaiting network, to avoid double-scans if re-entered
         batch["scanned"] = True
 
-        # Compose a compact, MarkdownV2-safe batch completion line
-        title = str(parsed_info.get("title", "This Show"))
-        season = int(parsed_info.get("season", 0) or 0)
-        title_md = escape_markdown(title, version=2)
-        info_line = (
-            "\n\n*Batch Complete*\n"
-            f"Season {season:02d} of *{title_md}* finalized: {total}/{total} episodes\\.\n"
-            "Starting Plex scan…"
-        )
+        media_type = batch.get("media_type", "tv")
+        plex_config = application.bot_data.get("PLEX_CONFIG")
 
-        scan_msg = await _trigger_plex_scan(
-            batch.get("media_type", "tv"), application.bot_data.get("PLEX_CONFIG")
-        )
+        if media_type == "tv":
+            title = str(parsed_info.get("title", "This Show"))
+            season = int(parsed_info.get("season", 0) or 0)
+            title_md = escape_markdown(title, version=2)
+            info_line = (
+                "\n\n*Batch Complete*\n"
+                f"Season {season:02d} of *{title_md}* finalized: {total}/{total} episodes\\.\n"
+                "Starting Plex scan…"
+            )
+        else:
+            collection_meta = batch.get("collection") or {}
+            collection_name = collection_meta.get("name") or "this collection"
+            collection_md = escape_markdown(str(collection_name), version=2)
+            info_line = (
+                "\n\n*Collection Complete*\n"
+                f"Queued {total}/{total} movies for *{collection_md}*\\.\n"
+                "Starting Plex scan…"
+            )
+
+        scan_msg = await _trigger_plex_scan(media_type, plex_config)
+
+        if media_type == "movie":
+            collection_meta = batch.get("collection") or {}
+            collection_name = str(collection_meta.get("name") or "").strip()
+            added = await ensure_collection_contains_movies(
+                plex_config,
+                collection_name,
+                collection_meta.get("movies") or [],
+            )
+            if added:
+                info_line += f"\nAdded {len(added)} film{'s' if len(added) != 1 else ''} to the Plex collection\\."
+
         return f"{message_text}{info_line}{scan_msg}"
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Batch tracking error: {e}")
@@ -684,6 +707,99 @@ async def add_season_to_queue(update, context):
     await safe_edit_message(
         query.message,
         text=f"✅ Success\\! Added {added} episodes to your download queue\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=None,
+    )
+    save_state(PERSISTENCE_FILE, active_downloads, download_queues)
+    await process_queue_for_user(chat_id, context.application)
+
+
+async def add_collection_to_queue(update, context):
+    """Queues all pending collection downloads."""
+    query = update.callback_query
+    chat_id = query.message.chat_id
+
+    pending_payload = context.user_data.pop("pending_collection_download", None)
+    if not isinstance(pending_payload, dict):
+        await safe_edit_message(
+            query.message,
+            text="This action has expired\\. Please restart the collection workflow\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    items = pending_payload.get("items") or []
+    franchise_meta = pending_payload.get("franchise") or {}
+    if not items:
+        await safe_edit_message(
+            query.message,
+            text="No movies were selected for download\\. Please try again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    active_downloads = context.bot_data["active_downloads"]
+    download_queues = context.bot_data["download_queues"]
+    chat_id_str = str(chat_id)
+
+    if chat_id_str in active_downloads and active_downloads[chat_id_str].get(
+        "is_paused"
+    ):
+        active_data = active_downloads[chat_id_str]
+        active_data["requeued"] = True
+        if "task" in active_data and not active_data["task"].done():
+            active_data["task"].cancel()
+
+    save_paths = context.bot_data["SAVE_PATHS"]
+    if chat_id_str not in download_queues:
+        download_queues[chat_id_str] = []
+
+    batch_id = f"collection-{int(time.time())}-{chat_id}"
+    batches: dict[str, Any] = context.bot_data.setdefault("DOWNLOAD_BATCHES", {})
+    batches[batch_id] = {
+        "total": len(items),
+        "done": 0,
+        "media_type": "movie",
+        "scanned": False,
+        "collection": franchise_meta,
+    }
+
+    for entry in items:
+        link = entry.get("link")
+        if not link:
+            continue
+        parsed_info = entry.get("parsed_info", {})
+        movie_meta = entry.get("movie") or {}
+        movie_title = str(
+            movie_meta.get("title") or parsed_info.get("title") or "Movie"
+        )
+        movie_year = movie_meta.get("year") or parsed_info.get("year")
+        if movie_year:
+            clean_name = f"{movie_title} ({movie_year})"
+        else:
+            clean_name = movie_title
+
+        source_dict = {
+            "value": link,
+            "type": "magnet" if link.startswith("magnet:") else "url",
+            "parsed_info": parsed_info,
+            "clean_name": clean_name,
+            "batch_id": batch_id,
+            "original_message_id": query.message.message_id,
+        }
+        download_data = {
+            "source_dict": source_dict,
+            "chat_id": chat_id,
+            "message_id": query.message.message_id,
+            "save_path": save_paths["default"],
+        }
+        download_queues[chat_id_str].append(download_data)
+
+    await safe_edit_message(
+        query.message,
+        text=(
+            f"✅ Added {len(items)} movie{'s' if len(items) != 1 else ''} from this collection to your queue\\."
+        ),
         parse_mode=ParseMode.MARKDOWN_V2,
         reply_markup=None,
     )

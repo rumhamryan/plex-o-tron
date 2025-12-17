@@ -148,6 +148,8 @@ If you prefer a custom commit message (e.g., `git commit -m "Hotfix"`), the hook
     search - Initiates an interactive workflow to find media.
         Prompts for "Movie" or "TV Show".
         For movies, it asks for a title and year.
+        A dedicated "Collection" path lets you download an entire franchise in one run.
+        Collection runs auto-detect the franchise via Wikipedia, let you deselect titles, and queue matching torrents into `<movies>/<Franchise>/<Movie Title (Year)>/`.
         For TV shows, it asks for a title, season number, and episode number.
         Presents the best matching torrents for you to download.
     plexstatus - Checks the connection to your Plex server.

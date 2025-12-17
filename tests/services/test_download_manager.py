@@ -12,6 +12,7 @@ from telegram_bot.services.download_manager import (
     download_task_wrapper,
     add_download_to_queue,
     add_season_to_queue,
+    add_collection_to_queue,
     process_queue_for_user,
     handle_pause_resume,
     handle_cancel_request,
@@ -446,6 +447,77 @@ async def test_add_season_to_queue(
     assert q[0]["source_dict"]["parsed_info"]["episode"] == 1
     assert q[0]["source_dict"]["clean_name"] == "Example Show S05"
     assert q[1]["source_dict"]["clean_name"] == "Example Show S05"
+    process_mock.assert_awaited_once_with(message.chat.id, context.application)
+
+
+@pytest.mark.asyncio
+async def test_add_collection_to_queue(
+    mocker, make_update, make_callback_query, make_message, context
+) -> None:
+    message = make_message(message_id=30)
+    callback = make_callback_query("confirm_collection_download", message)
+    update = make_update(callback_query=callback)
+    context.user_data["pending_collection_download"] = {
+        "items": [
+            {
+                "link": "magnet:?xt=1",
+                "parsed_info": {
+                    "title": "Movie One",
+                    "collection": {
+                        "name": "Saga",
+                        "fs_name": "Saga",
+                        "folder": "Movie One (2001)",
+                    },
+                },
+                "movie": {"title": "Movie One", "year": 2001},
+            },
+            {
+                "link": "magnet:?xt=2",
+                "parsed_info": {
+                    "title": "Movie Two",
+                    "collection": {
+                        "name": "Saga",
+                        "fs_name": "Saga",
+                        "folder": "Movie Two (2002)",
+                    },
+                },
+                "movie": {"title": "Movie Two", "year": 2002},
+            },
+        ],
+        "franchise": {
+            "name": "Saga",
+            "fs_name": "Saga",
+            "movies": [
+                {"title": "Movie One", "year": 2001},
+                {"title": "Movie Two", "year": 2002},
+            ],
+        },
+    }
+    context.bot_data["active_downloads"] = {}
+    context.bot_data["download_queues"] = {}
+    context.bot_data["SAVE_PATHS"] = {"default": "/tmp"}
+    context.application = SimpleNamespace(bot=context.bot, bot_data=context.bot_data)
+
+    mocker.patch("telegram_bot.services.download_manager.save_state")
+    process_mock = mocker.patch(
+        "telegram_bot.services.download_manager.process_queue_for_user",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message",
+        AsyncMock(),
+    )
+
+    await add_collection_to_queue(update, context)
+
+    q = context.bot_data["download_queues"][str(message.chat.id)]
+    assert len(q) == 2
+    batches = context.bot_data["DOWNLOAD_BATCHES"]
+    assert len(batches) == 1
+    batch_id = next(iter(batches))
+    for entry in q:
+        assert entry["source_dict"]["batch_id"] == batch_id
+    assert batches[batch_id]["media_type"] == "movie"
     process_mock.assert_awaited_once_with(message.chat.id, context.application)
 
 
