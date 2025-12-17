@@ -1,6 +1,7 @@
 import asyncio
 import re
 import warnings
+from datetime import datetime
 from typing import Any
 
 import wikipedia
@@ -57,6 +58,21 @@ _EPISODE_HEADER_TOKENS = (
     "aired",
     "season",
 )
+_MONTH_PATTERN = (
+    "January|February|March|April|May|June|July|August|September|October|November|December|"
+    "Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
+)
+_RELEASE_DATE_PATTERN = re.compile(
+    rf"((?:{_MONTH_PATTERN})\s+\d{{1,2}},\s+\d{{4}}|\d{{1,2}}\s+(?:{_MONTH_PATTERN})\s+\d{{4}}|\d{{4}}-\d{{2}}-\d{{2}})",
+    re.IGNORECASE,
+)
+_RELEASE_DATE_FORMATS = [
+    "%B %d, %Y",
+    "%b %d, %Y",
+    "%d %B %Y",
+    "%d %b %Y",
+    "%Y-%m-%d",
+]
 
 
 def _clean_movie_label(value: str) -> str:
@@ -77,6 +93,27 @@ def _extract_year_from_text(text: str) -> int | None:
         return int(match.group(0))
     except (ValueError, TypeError):
         return None
+
+
+def _extract_release_date_iso(text: str) -> str | None:
+    cleaned = re.sub(r"\[[^\]]+\]", "", text or "")
+    cleaned = cleaned.replace("\xa0", " ").replace("\u2013", "-").replace("\u2014", "-")
+    match = _RELEASE_DATE_PATTERN.search(cleaned)
+    if not match:
+        return None
+    candidate = match.group(0)
+    candidate = re.sub(r"\([^)]*\)", "", candidate).strip()
+    candidate = re.sub(r"\s+", " ", candidate).strip(",; ")
+    if not candidate:
+        return None
+    normalized = candidate.replace("Sept ", "Sep ").replace("Sept.", "Sep.")
+    for fmt in _RELEASE_DATE_FORMATS:
+        try:
+            parsed = datetime.strptime(normalized, fmt)
+            return parsed.date().isoformat()
+        except ValueError:
+            continue
+    return None
 
 
 def _normalized_header_text(value: str) -> str:
@@ -580,16 +617,21 @@ def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
             continue
         seen.add(normalized_key)
         year_value = None
+        release_text = ""
         if year_idx is not None and len(cells) > year_idx:
             raw_year = cells[year_idx].get_text(" ", strip=True)
+            release_text = raw_year
             year_value = _extract_year_from_text(raw_year)
         if year_value is None:
             year_value = _extract_year_from_text(cleaned_title)
+        release_iso = _extract_release_date_iso(release_text)
         movies.append(
             {
                 "title": cleaned_title,
                 "year": year_value,
                 "identifier": normalized_key,
+                "release_text": release_text,
+                "release_date": release_iso,
             }
         )
     return movies if len(movies) >= 2 else []
@@ -621,11 +663,14 @@ def _extract_movies_from_lists(soup: BeautifulSoup) -> list[dict[str, Any]]:
                         token in label.casefold() for token in _TITLE_HEADER_TOKENS
                     ):
                         continue
+                    release_iso = _extract_release_date_iso(label)
                     entries.append(
                         {
                             "title": label,
                             "year": year_value,
                             "identifier": normalized_key,
+                            "release_text": label,
+                            "release_date": release_iso,
                         }
                     )
                 if len(entries) >= 2:

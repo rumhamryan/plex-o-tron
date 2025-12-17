@@ -7,6 +7,7 @@ import shutil
 import time
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any, Literal, MutableMapping
 
 from telegram import (
@@ -134,6 +135,15 @@ def _ensure_identifier(movie: dict[str, Any], index: int) -> str:
     if isinstance(year, int):
         base = f"{base}{year}"
     return f"{base}-{index}"
+
+
+def _parse_release_iso(value: Any) -> date | None:
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value).date()
+        except ValueError:
+            return None
+    return None
 
 
 def _get_user_data_store(
@@ -487,11 +497,17 @@ async def _start_collection_lookup(
 
     franchise_name, movies = result
     normalized_movies: list[dict[str, Any]] = []
+    today = date.today()
+    unreleased_count = 0
     for idx, raw_movie in enumerate(movies or []):
         raw_title = raw_movie.get("title") or raw_movie.get("name") or display_title
         title_str = str(raw_title).strip() or display_title
         year_value = raw_movie.get("year")
         parsed_year = _coerce_int(year_value)
+        release_date = _parse_release_iso(raw_movie.get("release_date"))
+        if release_date is None or release_date > today:
+            unreleased_count += 1
+            continue
         entry = {
             "title": title_str,
             "year": parsed_year,
@@ -500,16 +516,25 @@ async def _start_collection_lookup(
             ),
             "owned": False,
             "queued": False,
+            "release_date": release_date.isoformat(),
         }
         normalized_movies.append(entry)
 
     if not normalized_movies:
-        await safe_edit_message(
-            status_message,
-            text=(
+        if unreleased_count:
+            message_text = (
+                f"⚠️ The detected franchise for "
+                f"*{escape_markdown(display_title, version=2)}* has no released titles available yet\\.\n"
+                "Please try again once those movies premiere or pick another franchise\\."
+            )
+        else:
+            message_text = (
                 f"⚠️ The detected franchise for "
                 f"*{escape_markdown(display_title, version=2)}* contains no movies I can queue\\."
-            ),
+            )
+        await safe_edit_message(
+            status_message,
+            text=message_text,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         session.prompt_message_id = status_message.message_id
