@@ -8,6 +8,7 @@ from unittest.mock import Mock, AsyncMock
 import wikipedia
 from bs4 import BeautifulSoup
 from telegram_bot.services import scraping_service
+from telegram_bot.services.scrapers import wikipedia as wiki_module
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -208,6 +209,24 @@ DEDICATED_WITH_OVERVIEW_ONGOING_HTML = """
 <tr><td>27</td><td>10</td><td>present</td></tr>
 </table>
 """
+
+
+def test_extract_movies_from_table_allows_duplicate_titles():
+    html = """
+    <table class="wikitable">
+        <tr><th>Title</th><th>Release date</th></tr>
+        <tr><td>Dune</td><td>December 14, 1984</td></tr>
+        <tr><td>Dune</td><td>October 22, 2021</td></tr>
+        <tr><td>Dune: Part Two</td><td>March 1, 2024</td></tr>
+    </table>
+    """
+    soup = BeautifulSoup(html, "lxml")
+    movies = wiki_module._extract_movies_from_table(soup.find("table"))
+    assert len(movies) == 3
+    dune_titles = [entry["title"] for entry in movies if "Dune" == entry["title"]]
+    assert len(dune_titles) == 2
+    assert all(entry.get("release_date") for entry in movies)
+
 
 OVERVIEW_ONGOING_ONLY_HTML = """
 <h2>Series overview</h2>

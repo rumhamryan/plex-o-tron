@@ -2822,7 +2822,7 @@ async def _collect_collection_torrents(
             message,
             text=(
                 f"🔍 Searching for *{escape_markdown(label, version=2)}* "
-                f"({idx}/{total})…"
+                f"\\({idx}/{total}\\)…"
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )

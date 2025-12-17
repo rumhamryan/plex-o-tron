@@ -15,6 +15,7 @@ __pycache__/
 .python-version
 tests/.pytest_cache/
 tests/_tmp/
+.pre-commit-cache/
 
 # --- Testing & Coverage ---
 .pytest_cache/

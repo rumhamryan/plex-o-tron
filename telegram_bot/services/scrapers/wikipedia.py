@@ -75,6 +75,17 @@ _RELEASE_DATE_FORMATS = [
 ]
 
 
+def _compose_movie_key(
+    normalized_title: str, year: int | None, release_iso: str | None, fallback_idx: int
+) -> str:
+    base = normalized_title or f"title{fallback_idx}"
+    if release_iso:
+        return f"{base}-{release_iso}"
+    if year is not None:
+        return f"{base}-{year}"
+    return f"{base}-{fallback_idx}"
+
+
 def _clean_movie_label(value: str) -> str:
     cleaned = re.sub(r"\[\d+\]", "", value or "")
     cleaned = cleaned.replace("\u2013", "-").replace("\u2014", "-")
@@ -604,7 +615,7 @@ def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
 
     movies: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for row in table.find_all("tr"):
+    for row_idx, row in enumerate(table.find_all("tr")):
         cells = row.find_all(["td", "th"])
         if len(cells) <= title_idx:
             continue
@@ -613,9 +624,8 @@ def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
         if not cleaned_title or cleaned_title.casefold() in {"title", "film"}:
             continue
         normalized_key = _normalize_for_comparison(cleaned_title)
-        if not normalized_key or normalized_key in seen:
+        if not normalized_key:
             continue
-        seen.add(normalized_key)
         year_value = None
         release_text = ""
         if year_idx is not None and len(cells) > year_idx:
@@ -625,11 +635,15 @@ def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
         if year_value is None:
             year_value = _extract_year_from_text(cleaned_title)
         release_iso = _extract_release_date_iso(release_text)
+        dedup_key = _compose_movie_key(normalized_key, year_value, release_iso, row_idx)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
         movies.append(
             {
                 "title": cleaned_title,
                 "year": year_value,
-                "identifier": normalized_key,
+                "identifier": dedup_key,
                 "release_text": release_text,
                 "release_date": release_iso,
             }
@@ -647,7 +661,7 @@ def _extract_movies_from_lists(soup: BeautifulSoup) -> list[dict[str, Any]]:
             if isinstance(sibling, Tag) and sibling.name == "ul":
                 entries: list[dict[str, Any]] = []
                 seen: set[str] = set()
-                for li in sibling.find_all("li", recursive=False):
+                for idx, li in enumerate(sibling.find_all("li", recursive=False)):
                     label = _clean_movie_label(li.get_text(" ", strip=True))
                     if not label:
                         continue
@@ -655,20 +669,25 @@ def _extract_movies_from_lists(soup: BeautifulSoup) -> list[dict[str, Any]]:
                         entries = []
                         break
                     normalized_key = _normalize_for_comparison(label)
-                    if not normalized_key or normalized_key in seen:
+                    if not normalized_key:
                         continue
-                    seen.add(normalized_key)
                     year_value = _extract_year_from_text(label)
                     if year_value is None and not any(
                         token in label.casefold() for token in _TITLE_HEADER_TOKENS
                     ):
                         continue
                     release_iso = _extract_release_date_iso(label)
+                    dedup_key = _compose_movie_key(
+                        normalized_key, year_value, release_iso, idx
+                    )
+                    if dedup_key in seen:
+                        continue
+                    seen.add(dedup_key)
                     entries.append(
                         {
                             "title": label,
                             "year": year_value,
-                            "identifier": normalized_key,
+                            "identifier": dedup_key,
                             "release_text": label,
                             "release_date": release_iso,
                         }
