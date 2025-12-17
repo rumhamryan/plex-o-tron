@@ -391,11 +391,7 @@ def _get_final_destination_path(
                 collection_meta.get("fs_name") or collection_meta.get("name"),
                 "Collection",
             )
-            movie_folder = _sanitize_directory_component(
-                collection_meta.get("folder"),
-                parsed_info.get("title") or "Movie",
-            )
-            return os.path.join(movies_root, collection_name, movie_folder)
+            return os.path.join(movies_root, collection_name)
         return movies_root
 
     if media_type == "tv":
@@ -424,6 +420,11 @@ async def _trigger_plex_scan(
 ) -> str:
     """Triggers a Plex library scan for the relevant library."""
     if not plex_config:
+        return ""
+
+    token_value = str(plex_config.get("token") or "").strip()
+    if not token_value or token_value.upper() == "PLEX_TOKEN":
+        logger.debug("Skipping Plex scan because Plex token is not configured.")
         return ""
 
     # --- Refactored Guard Clause: Ensure media_type is a valid string before use ---

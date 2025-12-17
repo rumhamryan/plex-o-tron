@@ -8,6 +8,7 @@ from telegram_bot.services.media_manager import (
     parse_resolution_from_name,
     handle_successful_download,
     _get_final_destination_path,
+    _trigger_plex_scan,
 )
 from telegram_bot.ui.messages import format_media_summary
 
@@ -208,9 +209,17 @@ def test_get_final_destination_path_collection():
         "collection": {
             "name": "Saga",
             "fs_name": "Saga",
-            "folder": "Movie One (2001)",
         },
     }
     save_paths = {"movies": "/library/movies", "default": "/library"}
     result = _get_final_destination_path(parsed, save_paths)
-    assert result == os.path.join("/library/movies", "Saga", "Movie One (2001)")
+    assert result == os.path.join("/library/movies", "Saga")
+
+
+@pytest.mark.asyncio
+async def test_trigger_plex_scan_skips_placeholder_token():
+    result = await _trigger_plex_scan(
+        "movie",
+        {"url": "http://plex", "token": "PLEX_TOKEN"},
+    )
+    assert result == ""

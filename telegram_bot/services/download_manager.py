@@ -377,6 +377,9 @@ async def _update_batch_and_maybe_scan(
         if not isinstance(batch, dict):
             return message_text
 
+        summaries = batch.setdefault("summaries", [])
+        summaries.append(message_text)
+
         batch["done"] = int(batch.get("done", 0)) + 1
         total = int(batch.get("total", 0))
         if batch["done"] < total or batch.get("scanned"):
@@ -397,6 +400,7 @@ async def _update_batch_and_maybe_scan(
                 f"Season {season:02d} of *{title_md}* finalized: {total}/{total} episodes\\.\n"
                 "Starting Plex scan…"
             )
+            combined_message = message_text
         else:
             collection_meta = batch.get("collection") or {}
             collection_name = collection_meta.get("name") or "this collection"
@@ -406,6 +410,7 @@ async def _update_batch_and_maybe_scan(
                 f"Queued {total}/{total} movies for *{collection_md}*\\.\n"
                 "Starting Plex scan…"
             )
+            combined_message = "\n\n".join(summaries) if summaries else message_text
 
         scan_msg = await _trigger_plex_scan(media_type, plex_config)
 
@@ -420,7 +425,8 @@ async def _update_batch_and_maybe_scan(
             if added:
                 info_line += f"\nAdded {len(added)} film{'s' if len(added) != 1 else ''} to the Plex collection\\."
 
-        return f"{message_text}{info_line}{scan_msg}"
+        batch.pop("summaries", None)
+        return f"{combined_message}{info_line}{scan_msg}"
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Batch tracking error: {e}")
         return message_text
@@ -665,6 +671,7 @@ async def add_season_to_queue(update, context):
         "done": 0,
         "media_type": "tv",
         "scanned": False,
+        "summaries": [],
     }
 
     for torrent_data in pending_list:
@@ -730,7 +737,8 @@ async def add_collection_to_queue(update, context):
 
     items = pending_payload.get("items") or []
     franchise_meta = pending_payload.get("franchise") or {}
-    if not items:
+    owned_summaries = list(pending_payload.get("owned_summaries") or [])
+    if not items and not owned_summaries:
         await safe_edit_message(
             query.message,
             text="No movies were selected for download\\. Please try again\\.",
@@ -756,13 +764,21 @@ async def add_collection_to_queue(update, context):
 
     batch_id = f"collection-{int(time.time())}-{chat_id}"
     batches: dict[str, Any] = context.bot_data.setdefault("DOWNLOAD_BATCHES", {})
+    initial_summaries = list(owned_summaries)
     batches[batch_id] = {
         "total": len(items),
         "done": 0,
         "media_type": "movie",
         "scanned": False,
         "collection": franchise_meta,
+        "summaries": initial_summaries,
     }
+
+    if not items:
+        await _finalize_owned_collection_batch(
+            query, context, batch_id, franchise_meta, initial_summaries
+        )
+        return
 
     for entry in items:
         link = entry.get("link")
@@ -805,6 +821,46 @@ async def add_collection_to_queue(update, context):
     )
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
     await process_queue_for_user(chat_id, context.application)
+
+
+async def _finalize_owned_collection_batch(
+    query,
+    context,
+    batch_id: str,
+    franchise_meta: dict[str, Any] | None,
+    summaries: list[str],
+) -> None:
+    """Completes a collection run that only reorganized owned titles."""
+    batches: dict[str, Any] = context.bot_data.setdefault("DOWNLOAD_BATCHES", {})
+    batches.pop(batch_id, None)
+
+    collection_meta = franchise_meta or {}
+    collection_name = str(collection_meta.get("name") or "this collection")
+    collection_md = escape_markdown(collection_name, version=2)
+    combined = "\n\n".join(summaries) if summaries else "✅ *Already Organized*"
+    info_line = (
+        "\n\n*Collection Complete*\n"
+        f"All titles for *{collection_md}* were already available\\.\n"
+        "Organized your library and starting Plex scan…"
+    )
+
+    plex_config = context.bot_data.get("PLEX_CONFIG")
+    scan_msg = await _trigger_plex_scan("movie", plex_config)
+    added = await ensure_collection_contains_movies(
+        plex_config,
+        collection_name,
+        collection_meta.get("movies") or [],
+    )
+    if added:
+        info_line += f"\nAdded {len(added)} film{'s' if len(added) != 1 else ''} to the Plex collection\\."
+
+    final_text = f"{combined}{info_line}{scan_msg}"
+    await safe_edit_message(
+        query.message,
+        text=final_text,
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=None,
+    )
 
 
 async def handle_pause_resume(update, context):

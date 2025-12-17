@@ -22,11 +22,17 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 
-from ..config import logger, MAX_TORRENT_SIZE_GB, ALLOWED_EXTENSIONS
+from ..config import logger, MAX_TORRENT_SIZE_GB
 from ..services import search_logic, torrent_service, scraping_service, plex_service
-from ..services.media_manager import validate_and_enrich_torrent
-from ..utils import safe_edit_message, parse_torrent_name, safe_send_message
+from ..services.media_manager import validate_and_enrich_torrent, _get_path_size_bytes
+from ..ui.messages import format_media_summary
 from ..ui.views import send_confirmation_prompt
+from ..utils import (
+    safe_edit_message,
+    parse_torrent_name,
+    safe_send_message,
+    format_bytes,
+)
 from .search_session import (
     CONTEXT_LOST_MESSAGE,
     SearchSession,
@@ -107,9 +113,31 @@ def _normalize_label(value: Any) -> str:
     return re.sub(r"[\W_]+", "", text.strip()).casefold()
 
 
+_COLLECTION_SUFFIX_KEYWORDS = (
+    "franchise",
+    "film series",
+    "films",
+    "collection",
+    "cinematic universe",
+    "universe",
+)
+
+
 def _sanitize_collection_name(value: str | None) -> str:
     invalid_chars = '<>:"/\\|?*'
     safe_value = "".join(c for c in (value or "") if c not in invalid_chars).strip()
+    if not safe_value:
+        return "Collection"
+    suffix_pattern = re.compile(
+        r"\((?:[^)]*\b(?:franchise|collection|film series|films|cinematic universe|universe)\b[^)]*)\)",
+        re.IGNORECASE,
+    )
+    safe_value = suffix_pattern.sub("", safe_value).strip()
+    for keyword in _COLLECTION_SUFFIX_KEYWORDS:
+        keyword_pattern = re.compile(rf"\b{keyword}\b\.?$", re.IGNORECASE)
+        new_value = keyword_pattern.sub("", safe_value).strip()
+        safe_value = new_value or safe_value
+    safe_value = safe_value.strip("-_ ,")
     return safe_value or "Collection"
 
 
@@ -119,13 +147,6 @@ def _format_collection_movie_label(movie: dict[str, Any]) -> str:
     if isinstance(year, int):
         return f"{title} ({year})"
     return title
-
-
-def _format_collection_folder_name(movie: dict[str, Any]) -> str:
-    label = _format_collection_movie_label(movie)
-    invalid_chars = '<>:"/\\|?*'
-    safe_label = "".join(c for c in label if c not in invalid_chars).strip()
-    return safe_label or "Movie"
 
 
 def _ensure_identifier(movie: dict[str, Any], index: int) -> str:
@@ -1367,7 +1388,7 @@ async def _handle_movie_scope_button(
         session.collection_mode = True
         session.advance(SearchStep.TITLE)
         prompt_text = (
-            "🎞️ Send the title of a movie within the franchise you want to collect\\."
+            "🎬 Send the title of a movie within the franchise you want to collect\\."
         )
 
     session.prompt_message_id = query.message.message_id
@@ -1483,10 +1504,10 @@ async def _prompt_collection_codec(
         [
             [
                 InlineKeyboardButton(
-                    "x265 / HEVC", callback_data="search_collection_codec_x265"
+                    "x264 / AVC", callback_data="search_collection_codec_x264"
                 ),
                 InlineKeyboardButton(
-                    "x264 / AVC", callback_data="search_collection_codec_x264"
+                    "x265 / HEVC", callback_data="search_collection_codec_x265"
                 ),
             ],
             [
@@ -1570,9 +1591,9 @@ async def _render_collection_movie_picker(
         elif movie.get("queued"):
             prefix = "⏳ "
         elif identifier in session.collection_exclusions:
-            prefix = "☐ "
+            prefix = "🔴 "
         else:
-            prefix = "✅ "
+            prefix = "🟢 "
         button_text = f"{prefix}{label}"
         keyboard_rows.append(
             [
@@ -1644,7 +1665,8 @@ async def _handle_collection_confirm(
         and not m.get("queued")
         and m["identifier"] not in (session.collection_exclusions or [])
     ]
-    if not movies:
+    owned_summaries = await _collect_owned_collection_summaries(context, session)
+    if not movies and not owned_summaries:
         await query.answer(
             text="Select at least one movie to continue.", show_alert=True
         )
@@ -1656,16 +1678,23 @@ async def _handle_collection_confirm(
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-    pending, missing = await _collect_collection_torrents(
-        query.message, context, session, movies
-    )
-    if not pending:
-        await safe_edit_message(
-            query.message,
-            text="⚠️ I couldn't find suitable torrents for the selected movies\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
+    if movies:
+        pending, missing = await _collect_collection_torrents(
+            query.message, context, session, movies
         )
-        return
+        if not pending:
+            await safe_edit_message(
+                query.message,
+                text="⚠️ I couldn't find suitable torrents for the selected movies\\.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+    else:
+        pending = {"items": [], "franchise": _build_franchise_metadata(session)}
+        missing = []
+
+    if owned_summaries:
+        pending["owned_summaries"] = owned_summaries
 
     pending_store = _get_user_data_store(context)
     pending_store["pending_collection_download"] = pending
@@ -2676,6 +2705,42 @@ async def _prepare_collection_directory(
     context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> int:
     """Creates the franchise directory and moves any existing movies into place."""
+    movies_root, franchise_dir = _resolve_collection_paths(context, session)
+    await asyncio.to_thread(os.makedirs, franchise_dir, exist_ok=True)
+
+    owned = 0
+    for movie in session.collection_movies or []:
+        label = _format_collection_movie_label(movie)
+        entry_exists = await _ensure_existing_movie_in_collection(
+            movies_root, franchise_dir, label
+        )
+        movie["owned"] = bool(entry_exists)
+        if entry_exists:
+            owned += 1
+    _save_session(context, session)
+    return owned
+
+
+async def _ensure_existing_movie_in_collection(
+    root_path: str, franchise_dir: str, label: str
+) -> bool:
+    """Moves an existing movie file/folder into the collection directory if present."""
+    existing = await asyncio.to_thread(
+        _locate_existing_movie_entry, franchise_dir, label
+    )
+    if existing:
+        return await _flatten_movie_entry(existing, franchise_dir)
+
+    existing = await asyncio.to_thread(_locate_existing_movie_entry, root_path, label)
+    if not existing:
+        return False
+
+    return await _flatten_movie_entry(existing, franchise_dir)
+
+
+def _resolve_collection_paths(
+    context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> tuple[str, str]:
     bot_data = context.bot_data or {}
     save_paths = bot_data.get("SAVE_PATHS", {})
     movies_root = save_paths.get("movies") or save_paths.get("default")
@@ -2687,66 +2752,120 @@ async def _prepare_collection_directory(
     )
     safe_name = _sanitize_collection_name(collection_name)
     franchise_dir = os.path.join(movies_root, safe_name)
-    await asyncio.to_thread(os.makedirs, franchise_dir, exist_ok=True)
-
-    owned = 0
-    for idx, movie in enumerate(session.collection_movies or []):
-        folder_name = _format_collection_folder_name(movie)
-        movie["folder"] = folder_name
-        entry_exists = await _ensure_existing_movie_in_collection(
-            movies_root, franchise_dir, folder_name
-        )
-        movie["owned"] = bool(entry_exists)
-        if entry_exists:
-            owned += 1
-    _save_session(context, session)
-    return owned
+    return movies_root, franchise_dir
 
 
-async def _ensure_existing_movie_in_collection(
-    root_path: str, franchise_dir: str, folder_name: str
-) -> bool:
-    """Moves an existing movie folder/file into the collection directory if present."""
-    target_dir = os.path.join(franchise_dir, folder_name)
-    if os.path.isdir(target_dir):
-        return True
+async def _collect_owned_collection_summaries(
+    context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> list[str]:
+    owned_movies = [m for m in session.collection_movies or [] if m.get("owned")]
+    if not owned_movies:
+        return []
 
-    existing = await asyncio.to_thread(
-        _locate_existing_movie_entry, root_path, folder_name
-    )
-    if not existing:
-        return False
-
-    os.makedirs(target_dir, exist_ok=True)
     try:
-        await asyncio.to_thread(
-            shutil.move,
-            existing,
-            target_dir
-            if os.path.isdir(existing)
-            else os.path.join(target_dir, os.path.basename(existing)),
+        movies_root, franchise_dir = _resolve_collection_paths(context, session)
+    except RuntimeError:
+        return []
+
+    summaries: list[str] = []
+    plex_entries: list[dict[str, Any]] = []
+
+    for movie in owned_movies:
+        label = _format_collection_movie_label(movie)
+        try:
+            await _ensure_existing_movie_in_collection(
+                movies_root, franchise_dir, label
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed moving owned title '%s' into collection: %s",
+                label,
+                exc,
+            )
+
+        entry_path = await asyncio.to_thread(
+            _locate_existing_movie_entry, franchise_dir, label
         )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed moving '%s' into collection folder: %s", existing, exc)
-        return False
-    return True
+        destination_label = franchise_dir
+        size_label: str | None = None
+        if entry_path:
+            destination_label = entry_path.replace("\\", "/")
+            size_bytes = _get_path_size_bytes(entry_path)
+            if size_bytes:
+                size_label = format_bytes(size_bytes)
+
+        summaries.append(
+            format_media_summary(
+                prefix="✅ *Already Available*",
+                title=label,
+                size_label=size_label,
+                destination_label=destination_label,
+                title_icon="🎬",
+                size_icon="📦",
+                destination_icon="📁",
+            )
+        )
+        plex_entries.append({"title": movie.get("title"), "year": movie.get("year")})
+
+    plex_config = None
+    if context.application:
+        plex_config = context.application.bot_data.get("PLEX_CONFIG")
+    collection_name = session.collection_name or ""
+    if collection_name:
+        await plex_service.ensure_collection_contains_movies(
+            plex_config,
+            collection_name,
+            plex_entries,
+        )
+    return summaries
 
 
-def _locate_existing_movie_entry(root_path: str, folder_name: str) -> str | None:
+def _locate_existing_movie_entry(root_path: str, label: str) -> str | None:
     """Finds a directory or file in the movies root that matches the target folder."""
-    normalized = folder_name.casefold()
+    if not root_path or not os.path.isdir(root_path):
+        return None
+    normalized = _normalize_label(label)
+    if not normalized:
+        return None
     try:
         for entry in os.listdir(root_path):
             entry_path = os.path.join(root_path, entry)
-            entry_key = entry.casefold()
+            entry_key = _normalize_label(entry)
             if entry_key == normalized:
                 return entry_path
-            base, ext = os.path.splitext(entry)
-            if base.casefold() == normalized and ext.lower() in ALLOWED_EXTENSIONS:
+            stem, _ = os.path.splitext(entry)
+            if stem and _normalize_label(stem) == normalized:
                 return entry_path
     except FileNotFoundError:
         return None
     return None
+
+
+async def _flatten_movie_entry(existing: str, franchise_dir: str) -> bool:
+    """Moves/normalizes a movie entry so it lives directly under the franchise folder."""
+    try:
+        if os.path.isdir(existing):
+            entries = os.listdir(existing)
+            for entry in entries:
+                source_path = os.path.join(existing, entry)
+                target_path = os.path.join(franchise_dir, entry)
+                if os.path.abspath(source_path) == os.path.abspath(target_path):
+                    continue
+                await asyncio.to_thread(shutil.move, source_path, target_path)
+            if entries:
+                await asyncio.to_thread(shutil.rmtree, existing, ignore_errors=True)
+            return True
+
+        parent_dir = os.path.dirname(existing)
+        if os.path.abspath(parent_dir) == os.path.abspath(franchise_dir):
+            return True
+
+        target_path = os.path.join(franchise_dir, os.path.basename(existing))
+        await asyncio.to_thread(shutil.move, existing, target_path)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed moving '%s' into collection folder: %s", existing, exc)
+        return False
 
 
 def _update_collection_movie_status(
@@ -2868,7 +2987,6 @@ async def _collect_collection_torrents(
         parsed_info["collection"] = {
             "name": session.collection_name,
             "fs_name": session.collection_fs_name,
-            "folder": movie.get("folder") or _format_collection_folder_name(movie),
             "resolution": session.collection_resolution,
             "codec": session.collection_codec,
         }
@@ -2890,16 +3008,23 @@ async def _collect_collection_torrents(
 
     pending_payload = {
         "items": pending_items,
-        "franchise": {
-            "name": session.collection_name,
-            "fs_name": session.collection_fs_name,
-            "resolution": session.collection_resolution,
-            "codec": session.collection_codec,
-            "movies": [entry.get("movie") for entry in pending_items],
-        },
+        "franchise": _build_franchise_metadata(session),
     }
     _save_session(context, session)
     return pending_payload, missing
+
+
+def _build_franchise_metadata(session: SearchSession) -> dict[str, Any]:
+    return {
+        "name": session.collection_name,
+        "fs_name": session.collection_fs_name,
+        "resolution": session.collection_resolution,
+        "codec": session.collection_codec,
+        "movies": [
+            {"title": movie.get("title"), "year": movie.get("year")}
+            for movie in session.collection_movies or []
+        ],
+    }
 
 
 def _pick_collection_candidate(
@@ -2970,13 +3095,22 @@ async def _present_collection_download_confirmation(
         f"• {escape_markdown(_format_collection_movie_label(entry.get('movie', {})), version=2)}"
         for entry in items
     ]
-    movies_text = "\n".join(selected_lines)
+    if selected_lines:
+        movies_text = "\n".join(selected_lines)
+    else:
+        movies_text = "_No downloads needed_"
     text = (
         f"✅ Ready to queue *{len(items)}* movie{'s' if len(items) != 1 else ''} "
         f"for *{escape_markdown(franchise_name, version=2)}*\\.\n"
         f"Template: *{escape_markdown(resolution.upper(), version=2)}* / *{escape_markdown(codec, version=2)}*\\.\n"
-        f"Movies in this run:\n{movies_text}"
+        f"Movies in this run\\:\n{movies_text}"
     )
+    owned_summaries = pending.get("owned_summaries") or []
+    if owned_summaries:
+        text += (
+            f"\n\nAlready owned: *{len(owned_summaries)}* title"
+            f"{'s' if len(owned_summaries) != 1 else ''} will be organized and added to Plex\\."
+        )
     if missing:
         skipped = "\n".join(
             f"• {escape_markdown(label, version=2)}" for label in missing

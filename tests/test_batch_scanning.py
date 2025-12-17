@@ -20,6 +20,7 @@ async def test_update_batch_triggers_single_scan(monkeypatch):
         "done": 1,
         "media_type": "tv",
         "scanned": False,
+        "summaries": [],
     }
 
     # Monkeypatch scan to observe invocation
@@ -55,6 +56,7 @@ async def test_update_batch_no_scan_before_completion(monkeypatch):
         "done": 1,
         "media_type": "tv",
         "scanned": False,
+        "summaries": [],
     }
 
     async def fake_scan(media_type, cfg):  # Should not be called
@@ -83,7 +85,48 @@ async def test_update_batch_skip_duplicate_scan(monkeypatch):
         "done": 1,
         "media_type": "tv",
         "scanned": True,
+        "summaries": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_update_batch_collection_includes_all_summaries(monkeypatch):
+    app = DummyApp()
+    batch_id = "collection-999"
+    app.bot_data["DOWNLOAD_BATCHES"][batch_id] = {
+        "total": 2,
+        "done": 0,
+        "media_type": "movie",
+        "scanned": False,
+        "collection": {"name": "Saga", "movies": []},
+        "summaries": [],
+    }
+
+    async def fake_scan(media_type, cfg):
+        return ""
+
+    async def fake_ensure(plex_config, name, movies):
+        return []
+
+    monkeypatch.setattr(download_manager, "_trigger_plex_scan", fake_scan)
+    monkeypatch.setattr(
+        download_manager, "ensure_collection_contains_movies", fake_ensure
+    )
+
+    source_dict = {"batch_id": batch_id}
+    parsed_info = {"title": "Movie One"}
+
+    interim = await download_manager._update_batch_and_maybe_scan(
+        app, source_dict, "First summary", parsed_info
+    )
+    assert interim == "First summary"
+
+    final = await download_manager._update_batch_and_maybe_scan(
+        app, source_dict, "Second summary", parsed_info
+    )
+    assert "First summary" in final
+    assert "Second summary" in final
+    assert "Collection Complete" in final
 
     async def fake_scan(media_type, cfg):  # Should not be called
         raise AssertionError("Duplicate scan should be skipped")

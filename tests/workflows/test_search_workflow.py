@@ -16,6 +16,7 @@ from telegram_bot.workflows.search_workflow import (
     EpisodeCandidate,
     _select_consistent_episode_set,
     _handle_collection_confirm,
+    _ensure_existing_movie_in_collection,
 )
 
 
@@ -423,6 +424,10 @@ async def test_collection_confirm_sets_pending_payload(
         "telegram_bot.workflows.search_workflow._collect_collection_torrents",
         new=AsyncMock(return_value=(pending_payload, [])),
     )
+    owned_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._collect_owned_collection_summaries",
+        new=AsyncMock(return_value=["summary block"]),
+    )
     present_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow._present_collection_download_confirmation",
         new=AsyncMock(),
@@ -437,9 +442,49 @@ async def test_collection_confirm_sets_pending_payload(
     )
 
     collect_mock.assert_awaited()
+    owned_mock.assert_awaited_once()
     present_mock.assert_awaited_once()
     clear_mock.assert_called_once()
     assert context.user_data["pending_collection_download"] is pending_payload
+    assert pending_payload["owned_summaries"] == ["summary block"]
+
+
+@pytest.mark.asyncio
+async def test_existing_movie_folder_flattened(tmp_path):
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Saga"
+    nested_dir = franchise_dir / "Movie One (2020)"
+    nested_dir.mkdir(parents=True)
+    movie_path = nested_dir / "Movie One (2020).mkv"
+    movie_path.write_bytes(b"data")
+
+    result = await _ensure_existing_movie_in_collection(
+        str(movies_root), str(franchise_dir), "Movie One (2020)"
+    )
+
+    assert result is True
+    flattened = franchise_dir / "Movie One (2020).mkv"
+    assert flattened.exists()
+    assert not nested_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_existing_movie_file_moves_into_collection(tmp_path):
+    movies_root = tmp_path / "movies"
+    movies_root.mkdir()
+    franchise_dir = movies_root / "Saga"
+    franchise_dir.mkdir()
+    movie_path = movies_root / "Movie Two (2021).mkv"
+    movie_path.write_bytes(b"data")
+
+    result = await _ensure_existing_movie_in_collection(
+        str(movies_root), str(franchise_dir), "Movie Two (2021)"
+    )
+
+    assert result is True
+    moved = franchise_dir / "Movie Two (2021).mkv"
+    assert moved.exists()
+    assert not movie_path.exists()
 
 
 @pytest.mark.asyncio

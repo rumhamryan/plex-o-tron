@@ -3,16 +3,38 @@
 import asyncio
 import os
 import subprocess
-from typing import Any, Sequence
+from typing import Any, Sequence, Set
 
 from plexapi.exceptions import Unauthorized
 from plexapi.server import PlexServer
+from requests import exceptions as requests_exceptions
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
 from ..config import logger
 import re
-from typing import Set
+
+
+def _should_suppress_plex_error(exc: Exception) -> bool:
+    """Return True when the exception stems from transient Plex connectivity issues."""
+    suppressible = (
+        requests_exceptions.RequestException,
+        TimeoutError,
+        ConnectionError,
+        OSError,
+    )
+    if isinstance(exc, suppressible):
+        return True
+    message = str(exc).lower()
+    return "max retries exceeded" in message or "timed out" in message
+
+
+def _has_valid_plex_token(plex_config: dict[str, Any] | None) -> bool:
+    """Indicates whether the Plex token looks configured."""
+    if not plex_config:
+        return False
+    token = str(plex_config.get("token") or "").strip()
+    return bool(token) and token.upper() != "PLEX_TOKEN"
 
 
 async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -21,7 +43,7 @@ async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
     """
     plex_config = context.bot_data.get("PLEX_CONFIG", {})
 
-    if not plex_config:
+    if not plex_config or not _has_valid_plex_token(plex_config):
         return "Plex Status: ⚪️ Not configured. Please add your Plex details to `config.ini`."
 
     try:
@@ -158,7 +180,12 @@ async def ensure_collection_contains_movies(
     """
     Adds the provided movies to a Plex collection, returning the matched titles.
     """
-    if not plex_config or not collection_name or not movies:
+    if (
+        not plex_config
+        or not _has_valid_plex_token(plex_config)
+        or not collection_name
+        or not movies
+    ):
         return []
 
     try:

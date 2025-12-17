@@ -466,7 +466,6 @@ async def test_add_collection_to_queue(
                     "collection": {
                         "name": "Saga",
                         "fs_name": "Saga",
-                        "folder": "Movie One (2001)",
                     },
                 },
                 "movie": {"title": "Movie One", "year": 2001},
@@ -478,7 +477,6 @@ async def test_add_collection_to_queue(
                     "collection": {
                         "name": "Saga",
                         "fs_name": "Saga",
-                        "folder": "Movie Two (2002)",
                     },
                 },
                 "movie": {"title": "Movie Two", "year": 2002},
@@ -492,6 +490,7 @@ async def test_add_collection_to_queue(
                 {"title": "Movie Two", "year": 2002},
             ],
         },
+        "owned_summaries": ["✅ *Already Available*"],
     }
     context.bot_data["active_downloads"] = {}
     context.bot_data["download_queues"] = {}
@@ -518,7 +517,56 @@ async def test_add_collection_to_queue(
     for entry in q:
         assert entry["source_dict"]["batch_id"] == batch_id
     assert batches[batch_id]["media_type"] == "movie"
+    assert batches[batch_id]["summaries"] == ["✅ *Already Available*"]
     process_mock.assert_awaited_once_with(message.chat.id, context.application)
+
+
+@pytest.mark.asyncio
+async def test_add_collection_to_queue_owned_only(
+    mocker, make_update, make_callback_query, make_message, context
+) -> None:
+    message = make_message(message_id=40)
+    callback = make_callback_query("confirm_collection_download", message)
+    update = make_update(callback_query=callback)
+    context.user_data["pending_collection_download"] = {
+        "items": [],
+        "owned_summaries": ["✅ *Already Available*"],
+        "franchise": {
+            "name": "Saga",
+            "movies": [{"title": "Movie One", "year": 2001}],
+        },
+    }
+    context.bot_data["active_downloads"] = {}
+    context.bot_data["download_queues"] = {}
+    context.bot_data["SAVE_PATHS"] = {"default": "/tmp"}
+    context.application = SimpleNamespace(bot=context.bot, bot_data=context.bot_data)
+
+    mocker.patch("telegram_bot.services.download_manager.save_state")
+    process_mock = mocker.patch(
+        "telegram_bot.services.download_manager.process_queue_for_user",
+        AsyncMock(),
+    )
+    edit_mock = mocker.patch(
+        "telegram_bot.services.download_manager.safe_edit_message",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.download_manager._trigger_plex_scan",
+        AsyncMock(return_value="\nScan started"),
+    )
+    mocker.patch(
+        "telegram_bot.services.download_manager.ensure_collection_contains_movies",
+        AsyncMock(return_value=[]),
+    )
+
+    await add_collection_to_queue(update, context)
+
+    process_mock.assert_not_awaited()
+    kwargs = edit_mock.await_args.kwargs
+    assert "Collection Complete" in kwargs["text"]
+    assert "Already Available" in kwargs["text"]
+    assert kwargs["reply_markup"] is None
+    assert not context.bot_data.get("DOWNLOAD_BATCHES")
 
 
 @pytest.mark.asyncio
