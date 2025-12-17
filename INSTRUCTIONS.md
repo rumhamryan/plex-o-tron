@@ -134,7 +134,7 @@ Each milestone should land with targeted unit tests and manual smoke-testing (`/
 - Keep a timeout/escape hatch so we still deliver results if no cluster meets the threshold; in that case, fall back to the current "best available" behavior but log the inconsistency.
 - Ensure we still respect `season_missing_episode_numbers` so owned episodes are skipped during scoring.
 
-### Initiative 7 - Movie Collection Workflow & Storage
+### Initiative 7 - Movie Collection Workflow & Storage (✅ Complete – 2025‑12‑16)
 #### Goals
 - Create a new path for movie collections in search_workflow.
 - Automatically create `<movies_save_path/<Franchise Name>/`, queue every missing movie in that franchise, and register the finished set as a Plex collection.
@@ -171,3 +171,45 @@ Each milestone should land with targeted unit tests and manual smoke-testing (`/
 - Franchise detection should fail gracefully; never leave the user stuck in collection mode.
 - Respect existing download limits and avoid duplicate queue entries.
 - Provide a cancel/reset path so collection runs can be aborted safely.
+
+## Initiative 8 - Leecher Telemetry Standardization (? Pending - 2025-12-16)
+### Goals
+- Require every scraper result (YTS, 1337x, EZTV/YAML sites, TPB, and the generic magnet finder) to emit an explicit integer `leechers` field so orchestration, scoring, and UI layers can rely on swarm health metrics without defensive fallbacks.
+- Introduce guard rails that make the absence of leecher data fail fast during development/tests rather than silently logging `None`.
+- Maintain or improve scrape latency by preferring selectors already present on the results page and only calling additional endpoints when necessary.
+
+### Implementation Steps
+1. **Result schema + guard rails.**
+   - In `telegram_bot/services/scraping_service.py`, add a `ScraperResult` `TypedDict` (or dataclass) that documents `leechers: int` alongside the existing fields. Provide a `_coerce_swarm_counts(result: dict[str, Any]) -> dict[str, Any]` helper that ensures both `seeders` and `leechers` are integers ≥ 0.
+   - Update `orchestrate_searches` to call the helper on each scraper response and raise/log a descriptive error if `leechers` is missing so we catch gaps during development instead of downstream.
+   - Extend `_log_scraper_results` in `telegram_bot/services/search_logic.py` to assert/log when a scraper omits `leechers`, and sanitize values with `int()` before logging to keep observability consistent.
+2. **YTS scraper (API-driven).**
+   - For the Stage 4 API parsing path (`telegram_bot/services/scrapers/yts.py`), read the `peers` value exposed by the YTS API (`torrent.get("peers")`). Compute leechers as `max(peers - seeders_count, 0)` because the API reports seeds + peers.
+   - Apply the same computation inside the `_api_fallback()` builder so both the browse+details path and the API-only path emit identical swarm payloads.
+   - Add warning logs when the API omits `peers` so operators know we defaulted to zero, and include the leecher count in the dict that `score_torrent_result` uses.
+3. **GenericTorrentScraper + YAML-backed sites.**
+   - In `telegram_bot/services/generic_torrent_scraper.py`, keep storing `leechers` on `TorrentData`, but add a fallback: when the results page selector is `None`, allow configs to define `details_page_selectors.leechers` or a new `advanced_features.swarm_stats_selector`. Fetch the detail page (the scraper already does this for magnets) and parse the leecher column so even EZTV-like sites can provide the data.
+   - Extend `GenericTorrentScraper._resolve_magnets` to piggyback the detail-page HTML when leecher selectors live there so we do not double-fetch.
+   - Update `telegram_bot/services/scrapers/one_three_three_seven_x.py` and `telegram_bot/services/scrapers/yaml.py` to require `item.leechers` (after the helper) and surface a warning/log if the generic scraper returned `0` because selectors were missing.
+   - Refresh `telegram_bot/scrapers/configs/1337x.yaml` (verify the current `td.leeches` selector still matches), and add the proper selector for EZTV (`td:nth-last-of-type(2)` today) so EZTV inherits the leecher parsing without custom code.
+4. **The Pirate Bay scraper.**
+   - `telegram_bot/services/scrapers/tpb.py` already extracts `entry.get("leechers")`, but tighten it by routing through `_safe_int` and ensuring `_transform_results` always includes the field. Update the structured log to display `(seeders/leechers)` pairs so regressions are obvious.
+   - While in this module, unit-test that negative numbers or missing keys become `0` and that the result dict always has both swarm counts.
+5. **Generic magnet finder.**
+   - The fallback `scrape_generic_page` path currently returns only a `page_url`. Extend it to inspect nearby table columns for numeric text labeled "Leechers/Peers" and populate `seeders`/`leechers` when present; otherwise set `leechers = 0` and log that the data could not be scraped.
+   - If the HTML offers only a consolidated "Peers" number, reuse the `peers - seeders` heuristic before returning the single-result list so even the generic fallback stays compliant with the schema.
+6. **Tests + fixtures.**
+   - Update `tests/services/test_scraping_service.py` YTS fixtures so mocked API payloads include `peers`, and assert the returned dict carries `leechers`.
+   - Extend `tests/services/test_dry_run_integration.py` and `tests/services/test_search_orchestration.py` to include leecher numbers in their fake scraper returns; this both guards the schema and documents expected downstream usage.
+   - Add unit tests for `GenericTorrentScraper` exercising (a) rows where `leechers` is parsed from the main table and (b) rows that require the new detail-page selector so we do not regress EZTV.
+   - Include at least one regression test for `scrape_generic_page` verifying that when no leechers are found we return `0` but still obey the schema.
+
+### Tests & Validation
+- Run `uv run pytest -q` after touching individual scrapers; prioritize `tests/services/test_scraping_service.py`, `tests/services/test_generic_torrent_scraper.py` (if present), and any new tests covering EZTV detail parsing.
+- Exercise `/search` manually against a config pointing at YTS + TPB + EZTV and confirm the `/search` inline result formatting (where we surface swarm numbers) displays both seeders and leechers without raising.
+- Add type-check coverage (`uv run pyright`) once the new `TypedDict` lands so missing fields are caught pre-runtime.
+
+### Considerations
+- Scrapers lacking leecher data today will incur extra HTTP requests (detail pages or APIs); keep concurrency limits and timeouts aligned with the existing magnet-resolution logic to avoid stretching the polling loop.
+- When APIs only expose a combined “peers” count, document the subtraction heuristic in code comments so future maintainers know why we compute `max(peers - seeders, 0)`.
+- Ensure leecher counts never block a result from being returned—if a site truly does not expose them, fall back to `0` but emit a single warning per scraper run to avoid log spam.
