@@ -204,6 +204,7 @@ async def scrape_yts(
                                     "YTS",
                                     preferences,
                                     seeders=seeders_count,
+                                    leechers=leechers_count,
                                 )
                                 out.append(
                                     {
@@ -490,7 +491,11 @@ async def scrape_yts(
                             parse_codec(full_title) or "x264"  # Default YTS to x264
                         )
                         score = score_torrent_result(
-                            full_title, "YTS", preferences, seeders=seeders_count
+                            full_title,
+                            "YTS",
+                            preferences,
+                            seeders=seeders_count,
+                            leechers=leechers_count,
                         )
 
                         results.append(

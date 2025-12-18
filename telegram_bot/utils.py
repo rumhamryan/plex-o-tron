@@ -410,12 +410,41 @@ def parse_codec(title: str) -> str | None:
     return None
 
 
+def calculate_torrent_health(seeders: int, leechers: int) -> float:
+    """
+    Calculates a health score (0-10) based on availability and contention.
+
+    Formula:
+    1. Availability: 10 * (1 - exp(-seeders / 25))
+       - 1 seed: ~0.4
+       - 10 seeds: ~3.3
+       - 25 seeds: ~6.3
+       - 50 seeds: ~8.6
+    2. Contention Penalty: If Leechers > Seeders, multiply by (Seeders/Leechers).
+    """
+    if seeders <= 0:
+        return 0.0
+
+    # Availability Score (0-10)
+    availability = 10 * (1 - math.exp(-seeders / 25))
+
+    # Contention Penalty
+    penalty = 1.0
+    if leechers > seeders and leechers > 0:
+        penalty = seeders / leechers
+
+    return availability * penalty
+
+
 def score_torrent_result(
-    title: str, uploader: str, preferences: dict[str, Any], seeders: int = 0
+    title: str,
+    uploader: str,
+    preferences: dict[str, Any],
+    seeders: int = 0,
+    leechers: int = 0,
 ) -> int:
     """
-    Scores a torrent result based on user preferences (codecs, uploaders, etc.).
-    This version correctly handles a dictionary of preferences with weighted scores.
+    Scores a torrent result based on user preferences and swarm health.
     """
     score = 0
     title_lower = title.lower()
@@ -435,7 +464,8 @@ def score_torrent_result(
         if trusted_uploader.lower() == uploader.lower():
             score += value
 
-    # Cap seed influence so preference weights still matter even on huge swarms.
-    score += min(seeders, 100)
+    # Add health score (max 10 points)
+    health = calculate_torrent_health(seeders, leechers)
+    score += int(round(health))
 
     return score

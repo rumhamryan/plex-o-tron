@@ -3206,6 +3206,9 @@ async def _present_search_results(
     if session is None:
         session = _get_session(context)
 
+    # Sort results by score (descending) to ensure aggregation hasn't broken ordering
+    results.sort(key=lambda x: x.get("score", 0), reverse=True)
+
     escaped_query = escape_markdown(query_str, version=2)
 
     if not results:

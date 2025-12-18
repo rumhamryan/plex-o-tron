@@ -197,7 +197,9 @@ def _transform_results(
         seeders = _safe_int(entry.get("seeders"))
         leechers = _safe_int(entry.get("leechers"))
         uploader = entry.get("username") or "Anonymous"
-        score = score_torrent_result(raw_title, uploader, preferences, seeders=seeders)
+        score = score_torrent_result(
+            raw_title, uploader, preferences, seeders=seeders, leechers=leechers
+        )
         if score <= 0:
             continue
 
