@@ -69,6 +69,7 @@ class EpisodeCandidate:
     title: str
     source: str
     uploader: str
+    info_url: str | None = None
     size_gb: float | None = None
     seeders: int | None = None
     resolution: str | None = None
@@ -1746,6 +1747,10 @@ async def _handle_result_selection_button(
 
     selected_result = filtered_results[choice_index]
     url_to_process = selected_result.get("page_url")
+    info_url = selected_result.get("info_url")
+
+    logger.debug(f"[SEARCH] Selecting result with info_url: {info_url}")
+
     if not url_to_process:
         await safe_edit_message(
             query.message,
@@ -1762,7 +1767,7 @@ async def _handle_result_selection_button(
     clear_search_session(context.user_data)
 
     ti = await torrent_service.process_user_input(
-        url_to_process, context, query.message
+        url_to_process, context, query.message, info_url=info_url
     )
     if not ti:
         return
@@ -2587,6 +2592,7 @@ async def _perform_tv_season_search(
                     title=str(raw.get("title", "")),
                     source=_normalize_release_field(raw.get("source"), "Unknown"),
                     uploader=_normalize_release_field(raw.get("uploader"), "Anonymous"),
+                    info_url=raw.get("info_url"),
                     size_gb=_coerce_float(raw.get("size_gb")),
                     seeders=_coerce_int(raw.get("seeders")),
                     resolution=_infer_resolution_from_title(raw.get("title")),
@@ -2633,6 +2639,7 @@ async def _perform_tv_season_search(
             {
                 "link": candidate.link,
                 "parsed_info": parsed_info,
+                "info_url": candidate.info_url,
                 "source": candidate.source,
                 "uploader": candidate.uploader,
                 "size_gb": candidate.size_gb,
@@ -2995,6 +3002,7 @@ async def _collect_collection_torrents(
             {
                 "link": link,
                 "parsed_info": parsed_info,
+                "info_url": candidate.get("info_url"),
                 "source": candidate.get("source"),
                 "uploader": candidate.get("uploader"),
                 "size_gb": candidate.get("size_gb"),
@@ -3170,6 +3178,7 @@ def _log_aggregated_results(query_str: str, results: list[dict[str, Any]]) -> No
 
     ordered_fields = [
         "title",
+        "info_url",
         "score",
         "source",
         "uploader",

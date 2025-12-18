@@ -212,6 +212,7 @@ async def scrape_yts(
                                     {
                                         "title": title_full,
                                         "page_url": magnet_link,
+                                        "info_url": mv.get("url"),
                                         "score": score,
                                         "source": "yts.lt",
                                         "uploader": "YTS",
@@ -346,12 +347,14 @@ async def scrape_yts(
                     return []
 
             # The URL is the third element (the key from the choices dict).
-            best_page_url = best_match[2]
-            if not isinstance(best_page_url, str):
+            best_page_url_raw = best_match[2]
+            if not isinstance(best_page_url_raw, str):
                 logger.error(
-                    f"[SCRAPER ERROR] YTS Stage 1: Matched item key was not a string URL. Got: {best_page_url}"
+                    f"[SCRAPER ERROR] YTS Stage 1: Matched item key was not a string URL. Got: {best_page_url_raw}"
                 )
                 return []
+
+            best_page_url = urllib.parse.urljoin(base_search_url, best_page_url_raw)
 
             # Stage 2: Scrape the movie's page to get its API ID
             response = await client.get(best_page_url, headers=headers)
@@ -504,6 +507,7 @@ async def scrape_yts(
                             {
                                 "title": full_title,
                                 "page_url": magnet_link,
+                                "info_url": best_page_url,
                                 "score": score,
                                 "source": "yts.lt",
                                 "uploader": "YTS",

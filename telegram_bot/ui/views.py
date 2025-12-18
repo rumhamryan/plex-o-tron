@@ -83,6 +83,8 @@ async def send_confirmation_prompt(
         "pending_magnet_link", None
     ) or context.user_data.get("torrent_file_path")
 
+    info_url = context.user_data.get("pending_info_url")
+
     if not source_value:
         logger.error(
             "Could not determine source for pending torrent. Aborting confirmation."
@@ -98,6 +100,7 @@ async def send_confirmation_prompt(
         "value": source_value,
         "clean_name": raw_display_name,
         "parsed_info": parsed_info,
+        "info_url": info_url,
         "original_message_id": progress_message.message_id,
     }
 

@@ -184,6 +184,14 @@ async def orchestrate_searches(
         coerced_results = [
             scraping_service._coerce_swarm_counts(r) for r in site_results
         ]
+
+        # Log check for info_url
+        if coerced_results:
+            sample = coerced_results[0]
+            logger.debug(
+                f"[SEARCH] {site_label} sample info_url: {sample.get('info_url')}"
+            )
+
         _log_scraper_results(site_label, coerced_results)
         all_results.extend(coerced_results)
 
@@ -214,6 +222,7 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
 
     ordered_fields = [
         "title",
+        "info_url",
         # "page_url",
         "score",
         "source",

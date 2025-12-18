@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any
+import urllib.parse
 import yaml  # type: ignore[import-untyped]
 from telegram.ext import ContextTypes
 
@@ -82,10 +83,16 @@ async def scrape_yaml_site(
         if score <= 0:
             continue
         parsed_name = parse_torrent_name(item.name)
+
+        info_url = None
+        if item.details_link:
+            info_url = urllib.parse.urljoin(scraper.base_url, item.details_link)
+
         results.append(
             {
                 "title": item.name,
                 "page_url": item.magnet_url,
+                "info_url": info_url,
                 "score": score,
                 "source": item.source_site,
                 "uploader": item.uploader or "Anonymous",
@@ -98,9 +105,10 @@ async def scrape_yaml_site(
         )
 
     logger.info(
-        "[SCRAPER] %s: Found %d torrents for query '%s'.",
+        "[SCRAPER] %s: Found %d torrents for query '%s' from %s.",
         site_name,
         len(results),
         query,
+        scraper.base_url,
     )
     return results

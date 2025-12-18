@@ -215,6 +215,7 @@ async def scrape_generic_page(
             {
                 "title": title,
                 "page_url": best_link,
+                "info_url": search_url,
                 "score": 100,  # Generic scraper implies we found something relevant manually
                 "source": "generic",
                 "uploader": None,
@@ -225,6 +226,7 @@ async def scrape_generic_page(
                 "year": None,
             }
         ]
+
     return []
 
 

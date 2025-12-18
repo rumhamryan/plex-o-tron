@@ -28,7 +28,10 @@ from telegram_bot.services.scraping_service import find_magnet_link_on_page
 
 
 async def process_user_input(
-    text: str, context: ContextTypes.DEFAULT_TYPE, progress_message: Message
+    text: str,
+    context: ContextTypes.DEFAULT_TYPE,
+    progress_message: Message,
+    info_url: str | None = None,
 ) -> lt.torrent_info | None:  # type: ignore
     """
     Analyzes user input text to acquire a torrent_info object. It handles
@@ -40,6 +43,14 @@ async def process_user_input(
             "process_user_input: context.user_data is None. Cannot store state."
         )
         return None
+
+    logger.debug(f"[TORRENT] process_user_input called with info_url: {info_url}")
+
+    if info_url:
+        context.user_data["pending_info_url"] = info_url
+    else:
+        # Clear any previous value if not provided
+        context.user_data.pop("pending_info_url", None)
 
     if text.startswith("magnet:?xt=urn:btih:"):
         context.user_data["pending_magnet_link"] = text

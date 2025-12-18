@@ -150,11 +150,17 @@ async def download_with_progress(
     status_callback: Callable[[lt.torrent_status], Coroutine[Any, Any, None]],  # type: ignore
     bot_data: dict,
     download_data: dict,
+    info_url: str | None = None,
 ) -> tuple[bool, lt.torrent_info | None]:  # type: ignore
     """
     Core libtorrent download logic. Handles magnet links, torrent URLs, and local files.
     Returns (success_status, torrent_info_object).
     """
+    if info_url:
+        logger.info(f"[DOWNLOAD] Torrent info page: {info_url}")
+    else:
+        logger.info("[DOWNLOAD] Torrent info page: Not available")
+
     ses = bot_data["TORRENT_SESSION"]
     params: dict[str, Any] = {}
 
@@ -272,6 +278,7 @@ async def download_task_wrapper(download_data: dict, application: Application):
             status_callback=reporter.report,
             bot_data=application.bot_data,
             download_data=download_data,
+            info_url=source_dict.get("info_url"),
         )
 
         if success and ti:
@@ -600,7 +607,8 @@ async def add_download_to_queue(update, context):
     download_data = {
         "source_dict": pending_torrent,
         "chat_id": chat_id,
-        "message_id": pending_torrent["original_message_id"],
+        "message_id": pending_torrent.get("message_id")
+        or pending_torrent.get("original_message_id"),
         "save_path": save_paths["default"],
     }
 
@@ -698,6 +706,7 @@ async def add_season_to_queue(update, context):
             "value": link,
             "type": "magnet" if link.startswith("magnet:") else "url",
             "parsed_info": parsed_info,
+            "info_url": torrent_data.get("info_url"),
             "clean_name": clean_name,
             "batch_id": batch_id,
             "original_message_id": query.message.message_id,
@@ -799,6 +808,7 @@ async def add_collection_to_queue(update, context):
             "value": link,
             "type": "magnet" if link.startswith("magnet:") else "url",
             "parsed_info": parsed_info,
+            "info_url": entry.get("info_url"),
             "clean_name": clean_name,
             "batch_id": batch_id,
             "original_message_id": query.message.message_id,

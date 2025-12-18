@@ -48,6 +48,7 @@ class ScraperResult(TypedDict):
 
     title: str
     page_url: str  # Usually a magnet link or .torrent URL
+    info_url: str | None  # URL to the torrent's detail/info page for auditing
     score: int
     source: str
     uploader: str | None

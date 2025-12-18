@@ -210,10 +210,18 @@ def _transform_results(
             continue
 
         magnet = _build_magnet(info_hash, raw_title)
+        entry_id = entry.get("id")
+        info_url = (
+            f"https://thepiratebay.org/description.php?id={entry_id}"
+            if entry_id
+            else None
+        )
+
         filtered.append(
             {
                 "title": raw_title,
                 "page_url": magnet,
+                "info_url": info_url,
                 "score": score,
                 "source": "tpb",
                 "uploader": uploader,
