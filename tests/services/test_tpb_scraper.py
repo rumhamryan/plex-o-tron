@@ -7,9 +7,15 @@ from telegram_bot.services.scrapers.tpb import scrape_tpb
 
 
 class FakeResponse:
-    def __init__(self, data: list[dict], status_code: int = 200) -> None:
+    def __init__(
+        self,
+        data: list[dict],
+        status_code: int = 200,
+        url: str = "https://apibay.org/q.php",
+    ) -> None:
         self._data = data
         self.status_code = status_code
+        self.url = url
 
     def json(self):
         return self._data

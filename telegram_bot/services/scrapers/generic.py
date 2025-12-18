@@ -193,6 +193,8 @@ async def scrape_generic_page(
     if not query.strip() or not search_url.strip():
         return []
 
+    logger.info(f"[SCRAPER] Generic: Fetching search results from {search_url}")
+
     html = await _get_page_html(search_url)
     if not html:
         return []

@@ -125,7 +125,13 @@ async def scrape_tpb(
         preferences=preferences,
         limit=limit_value,
     )
-    logger.info("[SCRAPER] TPB: Found %d torrents for query '%s'.", len(results), query)
+    logger.info(
+        "[SCRAPER] TPB: Found %d torrents for query '%s' from %s.",
+        len(results),
+        query,
+        response.url,
+    )
+
     return results
 
 

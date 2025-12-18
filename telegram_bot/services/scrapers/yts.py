@@ -26,9 +26,6 @@ async def scrape_yts(
     year_str = str(year).strip() if year is not None else None
     if year_str == "":
         year_str = None
-    logger.info(
-        f"[SCRAPER] YTS: Initiating API-based scrape for '{query}' (Year: {year}, Res: {resolution})."
-    )
 
     preferences = (
         context.bot_data.get("SEARCH_CONFIG", {})
@@ -94,6 +91,11 @@ async def scrape_yts(
                 for placeholder, value in replacements.items():
                     url_template = url_template.replace(placeholder, value)
                 return url_template
+
+            base_search_url = _substitute_template(search_url_template)
+            logger.info(
+                f"[SCRAPER] YTS: Initiating API-based scrape for '{query}' (Year: {year}, Res: {resolution}) at {base_search_url}."
+            )
 
             async def _fetch_browse_page(url: str) -> BeautifulSoup | None:
                 try:
