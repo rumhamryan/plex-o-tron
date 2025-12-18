@@ -114,10 +114,9 @@ async def test_orchestrate_searches_respects_enabled_flag(mocker):
     m_1337 = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_1337x",
         new=AsyncMock(
-            return_value=[{"title": "Alien.1979.1080p", "score": 5, "source": "1337x"}]
+            return_value=[{"title": "Alien.1979.1080p", "score": 10, "source": "1337x"}]
         ),
     )
-
     results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
     assert results and results[0]["source"] == "1337x"
     # YTS disabled, so not called
@@ -170,10 +169,9 @@ async def test_orchestrate_searches_handles_yts_name_variants(mocker):
     m_yts = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_yts",
         new=AsyncMock(
-            return_value=[{"title": "Alien", "score": 5, "source": "yts.lt"}]
+            return_value=[{"title": "Alien", "score": 10, "source": "yts.lt"}]
         ),
     )
-
     results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
     assert results and results[0]["source"] == "yts.lt"
     assert m_yts.await_count == 1
@@ -196,10 +194,10 @@ async def test_orchestrate_searches_normalizes_eztv_domains(mocker):
 
     m_yaml = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_yaml_site",
-        new=AsyncMock(return_value=[{"title": "Show", "score": 5, "source": "eztv"}]),
+        new=AsyncMock(return_value=[{"title": "Show", "score": 10, "source": "eztv"}]),
     )
-
     results = await orchestrate_searches("Example Show S01E01", "tv", ctx)
+
     assert results and results[0]["source"] == "eztv"
     assert m_yaml.await_count == 1
     call = m_yaml.await_args

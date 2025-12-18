@@ -85,6 +85,8 @@ async def scrape_tpb(
     except Exception:
         limit_value = _DEFAULT_LIMIT
 
+    max_size_gb = kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GB)
+
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             response = await client.get(_API_URL, params=params)
@@ -124,6 +126,7 @@ async def scrape_tpb(
         media_type_key=media_type_key,
         preferences=preferences,
         limit=limit_value,
+        max_size_gb=max_size_gb,
     )
     logger.info(
         "[SCRAPER] TPB: Found %d torrents for query '%s' from %s.",
@@ -143,6 +146,7 @@ def _transform_results(
     media_type_key: str,
     preferences: dict[str, Any],
     limit: int,
+    max_size_gb: float,
 ) -> list[dict[str, Any]]:
     target_info = parse_torrent_name(base_filter or query)
     target_title = target_info.get("title") or base_filter or query
@@ -197,7 +201,7 @@ def _transform_results(
         if size_bytes <= 0:
             continue
         size_gb = size_bytes / (1024**3)
-        if size_gb > MAX_TORRENT_SIZE_GB:
+        if size_gb > max_size_gb:
             continue
 
         seeders = _safe_int(entry.get("seeders"))
@@ -206,7 +210,7 @@ def _transform_results(
         score = score_torrent_result(
             raw_title, uploader, preferences, seeders=seeders, leechers=leechers
         )
-        if score <= 0:
+        if score < 6:
             continue
 
         magnet = _build_magnet(info_hash, raw_title)

@@ -4,7 +4,7 @@ import urllib.parse
 import yaml  # type: ignore[import-untyped]
 from telegram.ext import ContextTypes
 
-from ...config import logger
+from ...config import logger, MAX_TORRENT_SIZE_GB
 from ...utils import parse_codec, score_torrent_result, parse_torrent_name
 from ..generic_torrent_scraper import GenericTorrentScraper, load_site_config
 
@@ -38,6 +38,7 @@ async def scrape_yaml_site(
     site_name: str,
     limit: int = 15,
     base_query_for_filter: str | None = None,
+    **kwargs: Any,
 ) -> list[dict[str, Any]]:
     """Generic path that uses a YAML config (GenericTorrentScraper).
 
@@ -71,6 +72,8 @@ async def scrape_yaml_site(
         query, media_type, base_query_for_filter=base_query_for_filter, limit=limit
     )
 
+    max_size_gb = kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GB)
+
     results: list[dict[str, Any]] = []
     for item in raw_results:
         score = score_torrent_result(
@@ -80,8 +83,13 @@ async def scrape_yaml_site(
             seeders=item.seeders,
             leechers=item.leechers,
         )
-        if score <= 0:
+        if score < 6:
             continue
+
+        size_gb = item.size_bytes / (1024**3)
+        if size_gb > max_size_gb:
+            continue
+
         parsed_name = parse_torrent_name(item.name)
 
         info_url = None

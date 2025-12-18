@@ -1301,8 +1301,19 @@ async def _handle_resolution_button(
         year_match = re.search(r"\((\d{4})\)", final_title)
         year = year_match.group(1) if year_match else None
         search_title = final_title.split("(")[0].strip()
+
+        # Allow size override for 4K
+        max_size: float = float(MAX_TORRENT_SIZE_GB)
+        if resolution == "2160p":
+            max_size *= FOUR_K_SIZE_MULTIPLIER
+
         results = await search_logic.orchestrate_searches(
-            search_title, "movie", context, year=year, resolution=resolution
+            search_title,
+            "movie",
+            context,
+            year=year,
+            resolution=resolution,
+            max_size_gb=max_size,
         )
         await _present_search_results(
             query.message,
@@ -2368,12 +2379,18 @@ async def _search_movie_results(
     combined_results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     for resolution in ("1080p", "2160p"):
+        # Allow size override for 4K
+        max_size: float = float(MAX_TORRENT_SIZE_GB)
+        if resolution == "2160p":
+            max_size *= FOUR_K_SIZE_MULTIPLIER
+
         results = await search_logic.orchestrate_searches(
             search_title,
             "movie",
             context,
             year=year,
             resolution=resolution,
+            max_size_gb=max_size,
         )
         for item in results or []:
             key = item.get("page_url") or item.get("magnet") or item.get("title")
@@ -2580,6 +2597,10 @@ async def _perform_tv_season_search(
         ep_results = await search_logic.orchestrate_searches(
             search_term, "tv", context, base_query_for_filter=title
         )
+
+        if LOG_SCRAPER_STATS:
+            _log_aggregated_results(search_term, ep_results)
+
         normalized_candidates: list[EpisodeCandidate] = []
         if ep_results:
             for raw in ep_results:
@@ -2955,9 +2976,19 @@ async def _collect_collection_torrents(
 
         year_value = movie.get("year")
         year_kw = str(year_value) if isinstance(year_value, int) else None
+
+        # Allow size override for 4K
+        max_size: float = float(MAX_TORRENT_SIZE_GB)
+        if session.collection_resolution == "2160p":
+            max_size *= FOUR_K_SIZE_MULTIPLIER
+
         results = await search_logic.orchestrate_searches(
-            label, "movie", context, year=year_kw
+            label, "movie", context, year=year_kw, max_size_gb=max_size
         )
+
+        if LOG_SCRAPER_STATS:
+            _log_aggregated_results(label, results)
+
         candidate = _pick_collection_candidate(
             results,
             session.collection_resolution,

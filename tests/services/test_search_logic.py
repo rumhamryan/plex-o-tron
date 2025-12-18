@@ -45,11 +45,11 @@ def test_score_torrent_result():
         "resolutions": {"1080p": 5},
         "uploaders": {"trusted": 20},
     }
-    # seeders=7, leechers=0 -> availability = 10 * (1 - exp(-7/25)) = 2.44 -> round to 2
-    # 10 (x265) + 5 (1080p) + 20 (trusted) + 2 (health) = 37
-    score = score_torrent_result("Great Movie 1080p x265", "trusted", prefs, seeders=7)
-    assert score == 37
+    # seeders=25, leechers=0 -> availability = 10 * (1 - exp(-25/25)) = 6.32 -> round to 6
+    # 10 (x265) + 5 (1080p) + 20 (trusted) + 6 (health) = 41
+    score = score_torrent_result("Great Movie 1080p x265", "trusted", prefs, seeders=25)
+    assert score == 41
 
-    # seeders=3, leechers=0 -> 10 * (1 - exp(-3/25)) = 1.13 -> round to 1
+    # seeders=3, leechers=0 -> 1 rounding to 1.
     no_match = score_torrent_result("Another 720p x264", "unknown", prefs, seeders=3)
     assert no_match == 1

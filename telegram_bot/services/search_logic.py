@@ -185,15 +185,11 @@ async def orchestrate_searches(
             scraping_service._coerce_swarm_counts(r) for r in site_results
         ]
 
-        # Log check for info_url
-        if coerced_results:
-            sample = coerced_results[0]
-            logger.debug(
-                f"[SEARCH] {site_label} sample info_url: {sample.get('info_url')}"
-            )
+        # Filter by score: remove non-viable results (score < 6)
+        viable_results = [r for r in coerced_results if r.get("score", 0) >= 6]
 
-        _log_scraper_results(site_label, coerced_results)
-        all_results.extend(coerced_results)
+        _log_scraper_results(site_label, viable_results)
+        all_results.extend(viable_results)
 
     all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
 

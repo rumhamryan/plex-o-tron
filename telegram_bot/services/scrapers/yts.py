@@ -27,6 +27,8 @@ async def scrape_yts(
     if year_str == "":
         year_str = None
 
+    max_size_gb = kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GB)
+
     preferences = (
         context.bot_data.get("SEARCH_CONFIG", {})
         .get("preferences", {})
@@ -178,7 +180,7 @@ async def scrape_yts(
                                 ):
                                     continue
                                 size_gb = (tor.get("size_bytes", 0) or 0) / (1024**3)
-                                if size_gb > MAX_TORRENT_SIZE_GB:
+                                if size_gb > max_size_gb:
                                     continue
                                 info_hash = tor.get("hash")
                                 if not info_hash:
@@ -470,7 +472,7 @@ async def scrape_yts(
                     and resolution.lower() in quality
                 ):
                     size_gb = torrent.get("size_bytes", 0) / (1024**3)
-                    if size_gb > MAX_TORRENT_SIZE_GB:
+                    if size_gb > max_size_gb:
                         continue
 
                     full_title = f"{movie_title} [{torrent.get('quality')}.{torrent.get('type')}] [YTS.MX]"
