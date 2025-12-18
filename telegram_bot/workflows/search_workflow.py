@@ -22,7 +22,7 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.helpers import escape_markdown
 
-from ..config import logger, MAX_TORRENT_SIZE_GB
+from ..config import logger, MAX_TORRENT_SIZE_GB, LOG_SCRAPER_STATS
 from ..services import search_logic, torrent_service, scraping_service, plex_service
 from ..services.media_manager import validate_and_enrich_torrent, _get_path_size_bytes
 from ..ui.messages import format_media_summary
@@ -3151,6 +3151,47 @@ def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[
     ]
 
 
+def _log_aggregated_results(query_str: str, results: list[dict[str, Any]]) -> None:
+    """Logs aggregated search stats and a detailed breakdown of results."""
+    count = len(results)
+    if count == 0:
+        return
+
+    avg_seeds = sum(_safe_int(r.get("seeders")) for r in results) / count
+    avg_leeches = sum(_safe_int(r.get("leechers")) for r in results) / count
+
+    header = f"--- Aggregated Results for '{query_str}' ---"
+    lines = [
+        header,
+        f"Total Results: {count}",
+        f"Avg Seeders: {avg_seeds:.1f}, Avg Leechers: {avg_leeches:.1f}",
+        "-" * 20,
+    ]
+
+    ordered_fields = [
+        "title",
+        "score",
+        "source",
+        "uploader",
+        "size_gb",
+        "codec",
+        "seeders",
+        "leechers",
+        "year",
+    ]
+
+    for idx, result in enumerate(results, start=1):
+        lines.append(f"Result {idx}:")
+        for key in ordered_fields:
+            val = result.get(key)
+            if key in ("seeders", "leechers"):
+                val = _safe_int(val)
+            lines.append(f"  {key}: {val}")
+        lines.append("-" * 20)
+
+    logger.info("\n".join(lines))
+
+
 async def _present_search_results(
     message,
     context,
@@ -3174,6 +3215,9 @@ async def _present_search_results(
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
+
+    if LOG_SCRAPER_STATS:
+        _log_aggregated_results(query_str, results)
 
     resolution_filter = _normalize_resolution_filter(initial_resolution)
     allowed_filters = _get_allowed_resolution_filters(session)

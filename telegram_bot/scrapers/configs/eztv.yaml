@@ -29,6 +29,9 @@ results_page_selectors:
 details_page_selectors:
   # Use a robust selector that targets any link beginning with 'magnet:'
   magnet_url: "a[href^='magnet:']"
+  # EZTV detail pages usually list seeds/peers in a table.
+  # This selector targets the 2nd to last cell in the relevant row/table often holding leecher count.
+  leechers: "td:nth-last-of-type(2)"
 
 # Matching configuration to fine-tune fuzzy filtering
 matching:

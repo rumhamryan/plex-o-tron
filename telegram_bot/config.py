@@ -13,6 +13,7 @@ MAX_TORRENT_SIZE_BYTES = MAX_TORRENT_SIZE_GB * (1024**3)
 ALLOWED_EXTENSIONS = [".mkv", ".mp4"]
 DELETION_ENABLED = True
 PERSISTENCE_FILE = "persistence.json"
+LOG_SCRAPER_STATS = True
 
 # Setup basic logging
 logging.basicConfig(

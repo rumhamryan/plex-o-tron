@@ -206,5 +206,87 @@ async def scrape_generic_page(
     best_link = _score_candidate_links(all_candidates, query, table_links_scored, soup)
 
     if best_link:
-        return [{"page_url": best_link, "source": "generic"}]
+        # Attempt to extract metadata (title, seeders, leechers) from the best link's context
+        title, seeders, leechers = _extract_metadata(soup, best_link, query)
+
+        return [
+            {
+                "title": title,
+                "page_url": best_link,
+                "score": 100,  # Generic scraper implies we found something relevant manually
+                "source": "generic",
+                "uploader": None,
+                "size_gb": 0.0,
+                "codec": None,
+                "seeders": seeders,
+                "leechers": leechers,
+                "year": None,
+            }
+        ]
     return []
+
+
+def _extract_metadata(
+    soup: BeautifulSoup, link: str, query: str
+) -> tuple[str, int, int]:
+    """
+    Best-effort extraction of title and swarm stats from the link's context.
+    """
+    seeders = 0
+    leechers = 0
+    title = query  # Default to query if no text found
+
+    anchor = soup.find("a", href=link)
+    if isinstance(anchor, Tag):
+        text = anchor.get_text(strip=True)
+        if text:
+            title = text
+
+        # Try to find stats in parent row if it's a table
+        row = anchor.find_parent("tr")
+        if isinstance(row, Tag):
+            # Simple heuristic: look for numbers in other cells
+            # This is very fragile but fits "generic" requirements
+            cells = row.find_all("td")
+            numbers = []
+            for cell in cells:
+                # Skip the cell containing the title/link
+                if anchor in cell.descendants:
+                    continue
+
+                # Check for numeric content
+                cell_text = cell.get_text(strip=True)
+                # Remove common separators
+                clean_text = re.sub(r"[,.]", "", cell_text)
+                if clean_text.isdigit():
+                    numbers.append(int(clean_text))
+
+            # Heuristic: if we found 2+ numbers, assume the first two are Seeders/Leechers
+            # or Size/Seeders/Leechers. This is a wild guess.
+            # A safer guess for generic scraping: if headers exist, use them?
+            # For now, if we found numbers, take the ones that look like swarm counts (usually integers)
+            # Many sites: Size, Files, Added, Seed, Leech.
+            # If we match "Seed" or "Leech" in header, that's better.
+
+            # Try to map by headers
+            table = row.find_parent("table")
+            if isinstance(table, Tag):
+                headers = [
+                    th.get_text(strip=True).lower() for th in table.find_all("th")
+                ]
+                if headers and len(headers) == len(cells):
+                    for h, cell in zip(headers, cells):
+                        val_text = re.sub(r"[^\d]", "", cell.get_text(strip=True))
+                        if not val_text:
+                            continue
+                        val = int(val_text)
+
+                        if "seed" in h:
+                            seeders = val
+                        elif "leech" in h or "peer" in h:
+                            leechers = val
+
+            # If header mapping failed but we have numbers, default to 0 to avoid false positives
+            # unless we are sure.
+
+    return title, seeders, leechers

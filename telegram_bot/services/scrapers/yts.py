@@ -190,6 +190,14 @@ async def scrape_yts(
                                 )
                                 magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(str(mv_title))}{trackers}"
                                 seeders_count = int(tor.get("seeds", 0) or 0)
+                                peers_count = int(tor.get("peers", 0) or 0)
+                                leechers_count = max(peers_count - seeders_count, 0)
+
+                                if "peers" not in tor:
+                                    logger.warning(
+                                        "[SCRAPER] YTS API result missing 'peers' field; defaulting leechers to 0"
+                                    )
+
                                 parsed_codec = parse_codec(title_full) or "x264"
                                 score = score_torrent_result(
                                     title_full,
@@ -207,6 +215,7 @@ async def scrape_yts(
                                         "size_gb": size_gb,
                                         "codec": parsed_codec,
                                         "seeders": seeders_count,
+                                        "leechers": leechers_count,
                                         "year": mv_year,
                                     }
                                 )
@@ -469,6 +478,14 @@ async def scrape_yts(
                         magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(movie_title)}{trackers}"
 
                         seeders_count = torrent.get("seeds", 0)
+                        peers_count = torrent.get("peers", 0)
+                        leechers_count = max(peers_count - seeders_count, 0)
+
+                        if "peers" not in torrent:
+                            logger.warning(
+                                "[SCRAPER] YTS API (Stage 4) missing 'peers' field; defaulting leechers to 0"
+                            )
+
                         parsed_codec = (
                             parse_codec(full_title) or "x264"  # Default YTS to x264
                         )
@@ -486,6 +503,7 @@ async def scrape_yts(
                                 "size_gb": size_gb,
                                 "codec": parsed_codec,
                                 "seeders": seeders_count,
+                                "leechers": leechers_count,
                                 "year": (
                                     movie_data.get("year")
                                     if isinstance(movie_data, dict)

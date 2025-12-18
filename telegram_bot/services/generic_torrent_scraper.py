@@ -516,13 +516,25 @@ class GenericTorrentScraper:
         return selected
 
     async def _resolve_magnets(self, items: list[TorrentData]) -> None:
-        """Fetch magnet links for items missing them in parallel."""
+        """
+        Fetch details pages in parallel to populate missing magnets or swarm stats.
+
+        If a site (like EZTV) does not list leechers on the index but does on the
+        detail page, we fetch it here to ensure swarm telemetry is complete.
+        """
         tasks: list[tuple[TorrentData, asyncio.Task[str | None]]] = []
+
+        # Check if we have a selector to parse leechers from the details page
+        details_leecher_selector = self.details_selectors.get("leechers")
+
         for item in items:
-            if item.magnet_url or not item.details_link:
-                continue
-            detail_url = urllib.parse.urljoin(self.base_url, item.details_link)
-            tasks.append((item, asyncio.create_task(self._fetch_page(detail_url))))
+            needs_magnet = not item.magnet_url
+            # If we have 0 leechers (likely missing from index) and a selector exists, try fetching
+            needs_leechers = item.leechers == 0 and details_leecher_selector
+
+            if (needs_magnet or needs_leechers) and item.details_link:
+                detail_url = urllib.parse.urljoin(self.base_url, item.details_link)
+                tasks.append((item, asyncio.create_task(self._fetch_page(detail_url))))
 
         if not tasks:
             return
@@ -532,11 +544,21 @@ class GenericTorrentScraper:
             if not html:
                 continue
             detail_soup = BeautifulSoup(html, "lxml")
-            magnet_link = self._extract_href(
-                detail_soup, self.details_selectors.get("magnet_url")
-            )
-            if magnet_link:
-                item.magnet_url = magnet_link
+
+            # 1. Resolve Magnet
+            if not item.magnet_url:
+                magnet_link = self._extract_href(
+                    detail_soup, self.details_selectors.get("magnet_url")
+                )
+                if magnet_link:
+                    item.magnet_url = magnet_link
+
+            # 2. Resolve Leechers (if needed and configured)
+            if item.leechers == 0 and details_leecher_selector:
+                # Use the existing integer extraction helper
+                val = self._extract_int(detail_soup, details_leecher_selector)
+                if val > 0:
+                    item.leechers = val
 
     def _log_candidate_filter_metrics(
         self,

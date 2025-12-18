@@ -177,9 +177,16 @@ async def orchestrate_searches(
         *(entry_task for _, entry_task in task_entries)
     )
 
+    # Flatten, coerce, and sort results
+    all_results: list[dict[str, Any]] = []
     for (site_label, _), site_results in zip(task_entries, results_from_all_sites):
-        _log_scraper_results(site_label, site_results)
-    all_results = [result for sublist in results_from_all_sites for result in sublist]
+        # Enforce schema constraints (e.g. valid integers for swarm counts)
+        coerced_results = [
+            scraping_service._coerce_swarm_counts(r) for r in site_results
+        ]
+        _log_scraper_results(site_label, coerced_results)
+        all_results.extend(coerced_results)
+
     all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     logger.info(
@@ -219,9 +226,22 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
     ]
 
     for idx, result in enumerate(results, start=1):
+        # Guard rail: warn if leechers is somehow missing even after coercion
+        if "leechers" not in result:
+            logger.warning(
+                f"[SEARCH] Result {idx} from {site_label} is missing 'leechers'"
+            )
+
         lines.append(f"Result {idx}:")
         for field in ordered_fields:
-            lines.append(f"  {field}: {result.get(field)}")
+            val = result.get(field)
+            # Sanitize swarm counts for display
+            if field in ("seeders", "leechers") and val is not None:
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    val = 0
+            lines.append(f"  {field}: {val}")
         lines.append("--------------------")
     # logger.info("\n".join(lines))
 
