@@ -34,3 +34,13 @@ def test_parse_query_detects_trailing_year():
     result = parse_search_query("Dune 2021")
     assert result.title == "Dune"
     assert result.year == "2021"
+
+
+def test_parse_query_handles_apostrophes_and_special_chars():
+    result = parse_search_query("Bob's Burgers S16E04")
+    assert result.title == "Bobs Burgers"
+    assert result.season == 16
+    assert result.episode == 4
+
+    result = parse_search_query("Face/Off")
+    assert result.title == "FaceOff"

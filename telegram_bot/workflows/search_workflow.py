@@ -1191,8 +1191,7 @@ async def _handle_tv_scope_selection(
             await safe_edit_message(
                 query.message,
                 text=(
-                    f"No existing episodes found in your library for *{escape_markdown(str(title), version=2)}* S{int(season):02d}\\.\n"
-                    "Searching for a season pack or matching episodes in 720p/1080p\\."
+                    f"🔍 Searching for a season pack or matching episodes for *{escape_markdown(str(title), version=2)}* S{int(season):02d} in 720p/1080p\\.\n"
                 ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )

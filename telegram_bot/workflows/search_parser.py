@@ -101,7 +101,7 @@ def parse_search_query(query: str) -> ParsedSearchQuery:
         prioritized_source = prefix or suffix or None
 
     target_title = prioritized_source or cleaned_title
-    target_title = SANITIZE_PATTERN.sub(" ", target_title)
+    target_title = SANITIZE_PATTERN.sub("", target_title)
     target_title = re.sub(r"\s+", " ", target_title).strip(" _.-")
 
     return ParsedSearchQuery(
