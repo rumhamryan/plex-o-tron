@@ -2732,18 +2732,20 @@ async def handle_reject_season_pack(
 async def _prepare_collection_directory(
     context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> int:
-    """Creates the franchise directory and moves any existing movies into place."""
-    movies_root, franchise_dir = _resolve_collection_paths(context, session)
-    await asyncio.to_thread(os.makedirs, franchise_dir, exist_ok=True)
+    """Checks for existing movies in the library to mark them as owned."""
+    movies_root, _ = _resolve_collection_paths(
+        context, session.collection_name, session.collection_fs_name
+    )
 
     owned = 0
     for movie in session.collection_movies or []:
         label = _format_collection_movie_label(movie)
-        entry_exists = await _ensure_existing_movie_in_collection(
-            movies_root, franchise_dir, label
+        # Check if the movie already exists in the main movies directory
+        existing = await asyncio.to_thread(
+            _locate_existing_movie_entry, movies_root, label
         )
-        movie["owned"] = bool(entry_exists)
-        if entry_exists:
+        movie["owned"] = bool(existing)
+        if existing:
             owned += 1
     _save_session(context, session)
     return owned
@@ -2767,7 +2769,9 @@ async def _ensure_existing_movie_in_collection(
 
 
 def _resolve_collection_paths(
-    context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+    context: ContextTypes.DEFAULT_TYPE,
+    collection_name: str | None,
+    collection_fs_name: str | None,
 ) -> tuple[str, str]:
     bot_data = context.bot_data or {}
     save_paths = bot_data.get("SAVE_PATHS", {})
@@ -2775,12 +2779,55 @@ def _resolve_collection_paths(
     if not movies_root:
         raise RuntimeError("Movies path is not configured.")
 
-    collection_name = (
-        session.collection_fs_name or session.collection_name or "Collection"
-    )
-    safe_name = _sanitize_collection_name(collection_name)
+    final_name = collection_fs_name or collection_name or "Collection"
+    safe_name = _sanitize_collection_name(final_name)
     franchise_dir = os.path.join(movies_root, safe_name)
     return movies_root, franchise_dir
+
+
+async def finalize_movie_collection(
+    context: ContextTypes.DEFAULT_TYPE, collection_meta: dict[str, Any]
+) -> None:
+    """
+    Finalizes a movie collection run by creating the franchise directory
+    and moving all associated movies (new and existing) into it.
+    """
+    try:
+        collection_name = collection_meta.get("name")
+        collection_fs_name = collection_meta.get("fs_name")
+        movies = collection_meta.get("movies") or []
+
+        movies_root, franchise_dir = _resolve_collection_paths(
+            context, collection_name, collection_fs_name
+        )
+
+        # 1. Create the directory only now
+        await asyncio.to_thread(os.makedirs, franchise_dir, exist_ok=True)
+
+        # 2. Find and move every movie in the collection
+        for movie in movies:
+            label = _format_collection_movie_label(movie)
+            # Check root first
+            existing = await asyncio.to_thread(
+                _locate_existing_movie_entry, movies_root, label
+            )
+            if existing:
+                await _flatten_movie_entry(existing, franchise_dir)
+            else:
+                # Check if it's already there (shouldn't hurt)
+                existing = await asyncio.to_thread(
+                    _locate_existing_movie_entry, franchise_dir, label
+                )
+                if existing:
+                    await _flatten_movie_entry(existing, franchise_dir)
+
+        logger.info(
+            "[COLLECTION] Finalized reorganization for '%s' into %s",
+            collection_name,
+            franchise_dir,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[COLLECTION] Reorganization failed: %s", exc)
 
 
 async def _collect_owned_collection_summaries(
@@ -2791,33 +2838,30 @@ async def _collect_owned_collection_summaries(
         return []
 
     try:
-        movies_root, franchise_dir = _resolve_collection_paths(context, session)
+        movies_root, franchise_dir = _resolve_collection_paths(
+            context, session.collection_name, session.collection_fs_name
+        )
     except RuntimeError:
         return []
 
     summaries: list[str] = []
-    plex_entries: list[dict[str, Any]] = []
-
+    # plex_entries will be handled during finalization once files are actually moved
     for movie in owned_movies:
         label = _format_collection_movie_label(movie)
-        try:
-            await _ensure_existing_movie_in_collection(
-                movies_root, franchise_dir, label
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Failed moving owned title '%s' into collection: %s",
-                label,
-                exc,
+
+        # Locate where it is currently
+        entry_path = await asyncio.to_thread(
+            _locate_existing_movie_entry, movies_root, label
+        )
+
+        if not entry_path:
+            # Fallback: maybe it's already in the franchise dir (manual or previous run)
+            entry_path = await asyncio.to_thread(
+                _locate_existing_movie_entry, franchise_dir, label
             )
 
-        entry_path = await asyncio.to_thread(
-            _locate_existing_movie_entry, franchise_dir, label
-        )
-        destination_label = franchise_dir
         size_label: str | None = None
         if entry_path:
-            destination_label = entry_path.replace("\\", "/")
             size_bytes = _get_path_size_bytes(entry_path)
             if size_bytes:
                 size_label = format_bytes(size_bytes)
@@ -2827,23 +2871,11 @@ async def _collect_owned_collection_summaries(
                 prefix="✅ *Already Available*",
                 title=label,
                 size_label=size_label,
-                destination_label=destination_label,
+                destination_label=franchise_dir,
                 title_icon="🎬",
                 size_icon="📦",
                 destination_icon="📁",
             )
-        )
-        plex_entries.append({"title": movie.get("title"), "year": movie.get("year")})
-
-    plex_config = None
-    if context.application:
-        plex_config = context.application.bot_data.get("PLEX_CONFIG")
-    collection_name = session.collection_name or ""
-    if collection_name:
-        await plex_service.ensure_collection_contains_movies(
-            plex_config,
-            collection_name,
-            plex_entries,
         )
     return summaries
 

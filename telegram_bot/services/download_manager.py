@@ -19,6 +19,7 @@ from ..state import save_state
 from ..utils import safe_edit_message
 from .media_manager import handle_successful_download, _trigger_plex_scan
 from .plex_service import ensure_collection_contains_movies
+from ..workflows import finalize_movie_collection
 
 
 class ProgressReporter:
@@ -418,6 +419,10 @@ async def _update_batch_and_maybe_scan(
                 "Starting Plex scan…"
             )
             combined_message = "\n\n".join(summaries) if summaries else message_text
+
+        if media_type == "movie":
+            collection_meta = batch.get("collection") or {}
+            await finalize_movie_collection(application, collection_meta)
 
         scan_msg = await _trigger_plex_scan(media_type, plex_config)
 
@@ -848,6 +853,9 @@ async def _finalize_owned_collection_batch(
     collection_name = str(collection_meta.get("name") or "this collection")
     collection_md = escape_markdown(collection_name, version=2)
     combined = "\n\n".join(summaries) if summaries else "✅ *Already Organized*"
+
+    await finalize_movie_collection(context, collection_meta)
+
     info_line = (
         "\n\n*Collection Complete*\n"
         f"All titles for *{collection_md}* were already available\\.\n"

@@ -213,7 +213,8 @@ def test_get_final_destination_path_collection():
     }
     save_paths = {"movies": "/library/movies", "default": "/library"}
     result = _get_final_destination_path(parsed, save_paths)
-    assert result == os.path.join("/library/movies", "Saga")
+    # Deferring directory creation: expect root movies path
+    assert result == "/library/movies"
 
 
 @pytest.mark.asyncio
