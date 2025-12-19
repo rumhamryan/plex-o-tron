@@ -926,56 +926,42 @@ async def test_handle_tv_scope_selection_single(
     assert session.step == SearchStep.TV_EPISODE
     send_prompt.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_handle_tv_scope_selection_season(
+        mocker, context, make_callback_query, make_message
+    ):
+        mocker.patch(
+            "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+            new=AsyncMock(return_value=({}, None)),
+        )
+        mocker.patch(
+            "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
+            new=AsyncMock(return_value=set()),
+        )
+        mocker.patch(
+            "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+        )
+        mocker.patch(
+            "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+            new=AsyncMock(return_value=2),
+        )
+        prompt_mock = mocker.patch(
+            "telegram_bot.workflows.search_workflow._prompt_tv_season_resolution",
+            new=AsyncMock(),
+        )
+        session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
+        session.set_title("Show")
+        session.save(context.user_data)
+        # Select season scope
+        update = Update(
+            update_id=1,
+            callback_query=make_callback_query(
+                "search_tv_scope_season", make_message()
+            ),
+        )
+        await handle_search_buttons(update, context)
 
-@pytest.mark.asyncio
-async def test_handle_tv_scope_selection_season(
-    mocker, context, make_callback_query, make_message
-):
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-        new=AsyncMock(return_value=({}, None)),
-    )
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
-        new=AsyncMock(return_value=set()),
-    )
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
-    )
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
-        new=AsyncMock(return_value=2),
-    )
-    orch_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
-        new=AsyncMock(
-            side_effect=[
-                [{"title": "Show Season 1 Complete", "page_url": "pack", "score": 10}],
-                [],
-            ]
-        ),
-    )
-    present_results_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow._present_search_results",
-        new=AsyncMock(),
-    )
-    session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
-    session.set_title("Show")
-    session.save(context.user_data)
-    # Select season scope
-    update = Update(
-        update_id=1,
-        callback_query=make_callback_query("search_tv_scope_season", make_message()),
-    )
-    await handle_search_buttons(update, context)
-
-    assert orch_mock.call_count == 2
-    present_results_mock.assert_awaited_once()
-    # Ensure we presented pack candidates as normal results
-    args, _ = present_results_mock.await_args
-    results_passed = args[2]
-    assert isinstance(results_passed, list) and results_passed
-    assert results_passed[0]["page_url"] == "pack"
+        prompt_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -993,17 +979,11 @@ async def test_handle_tv_scope_selection_season_fallback(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
         new=AsyncMock(return_value=2),
     )
-
-    orch_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.search_logic.orchestrate_searches",
-        new=AsyncMock(
-            side_effect=[[], [], [{"title": "Show S01E01", "page_url": "e1"}], []]
-        ),
-    )
-    present_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow._present_season_download_confirmation",
+    prompt_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._prompt_tv_season_resolution",
         new=AsyncMock(),
     )
+
     session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
     session.set_title("Show")
     session.save(context.user_data)
@@ -1014,14 +994,7 @@ async def test_handle_tv_scope_selection_season_fallback(
     )
     await handle_search_buttons(update, context)
 
-    assert orch_mock.call_count == 4
-
-    # Episode searches should use the plain title for fuzzy filtering
-    assert orch_mock.await_args_list[2].kwargs["base_query_for_filter"] == "Show"
-    assert orch_mock.await_args_list[3].kwargs["base_query_for_filter"] == "Show"
-    passed = present_mock.await_args.args[2]
-    assert passed[0]["link"] == "e1"
-    assert passed[0]["parsed_info"]["episode"] == 1
+    prompt_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1172,10 +1145,33 @@ async def test_entire_season_skips_pack_and_targets_missing(
         context,
     )
 
+    # 2) User chooses 1080p
     session = SearchSession.from_user_data(context.user_data)
+    # The session should have the missing episodes calculated
     assert session.season_episode_count == 5
     assert session.existing_episodes == [2, 4]
     assert session.missing_episode_numbers == [1, 3, 5]
+
+    await handle_search_buttons(
+        Update(
+            update_id=2,
+            callback_query=make_callback_query(
+                "search_tv_season_resolution_1080p", make_message()
+            ),
+        ),
+        context,
+    )
+
+    # 3) User chooses Any Codec (Triggers search)
+    await handle_search_buttons(
+        Update(
+            update_id=3,
+            callback_query=make_callback_query(
+                "search_tv_season_codec_any", make_message()
+            ),
+        ),
+        context,
+    )
 
     # Should have invoked episode searches only for missing [1,3,5]
     searched_eps = []

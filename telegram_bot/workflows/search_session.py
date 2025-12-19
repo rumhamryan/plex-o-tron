@@ -54,6 +54,7 @@ class SearchSession:
     season: int | None = None
     episode: int | None = None
     resolution: str | None = None
+    tv_codec: str | None = None
     tv_scope: Literal["single", "season"] | None = None
     prompt_message_id: int | None = None
     season_episode_count: int | None = None
@@ -112,6 +113,7 @@ class SearchSession:
             season=payload.get("season"),
             episode=payload.get("episode"),
             resolution=payload.get("resolution"),
+            tv_codec=payload.get("tv_codec"),
             tv_scope=payload.get("tv_scope"),
             prompt_message_id=payload.get("prompt_message_id"),
             season_episode_count=payload.get("season_episode_count"),
@@ -205,6 +207,7 @@ class SearchSession:
             "season": self.season,
             "episode": self.episode,
             "resolution": self.resolution,
+            "tv_codec": self.tv_codec,
             "tv_scope": self.tv_scope,
             "prompt_message_id": self.prompt_message_id,
             "season_episode_count": self.season_episode_count,

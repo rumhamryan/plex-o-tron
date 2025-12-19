@@ -264,6 +264,8 @@ async def handle_search_buttons(
                 "search_movie_scope_",
                 "search_resolution_",
                 "search_tv_scope_",
+                "search_tv_season_resolution_",
+                "search_tv_season_codec_",
                 "search_select_season_",
                 "search_select_episode_",
                 "search_select_year_",
@@ -309,6 +311,10 @@ async def handle_search_buttons(
             await _handle_resolution_button(query, context, session)
         elif action.startswith("search_tv_scope_"):
             await _handle_tv_scope_selection(query, context, session)
+        elif action.startswith("search_tv_season_resolution_"):
+            await _handle_tv_season_resolution_button(query, context, session)
+        elif action.startswith("search_tv_season_codec_"):
+            await _handle_tv_season_codec_button(query, context, session)
         elif action.startswith("search_select_season_"):
             await _handle_season_selection_button(query, context, session)
         elif action.startswith("search_select_episode_"):
@@ -1198,13 +1204,111 @@ async def _handle_tv_scope_selection(
 
         session.allow_detail_change = False
         _save_session(context, session)
-        await _perform_tv_season_search(
-            query.message,
-            context,
-            str(title),
-            int(season),
-            session=session,
-        )
+        await _prompt_tv_season_resolution(query.message, context, session)
+
+
+async def _prompt_tv_season_resolution(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    text = (
+        "Choose the target resolution for this season pack or episode batch\\.\n"
+        "This helps me bias torrent selection toward consistent releases\\."
+    )
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "1080p", callback_data="search_tv_season_resolution_1080p"
+                ),
+                InlineKeyboardButton(
+                    "2160p / 4K", callback_data="search_tv_season_resolution_2160p"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Best Available", callback_data="search_tv_season_resolution_all"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
+    )
+    await safe_edit_message(
+        message,
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def _handle_tv_season_resolution_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    choice = _get_callback_data(query).split("_")[-1]
+    if choice not in {"1080p", "2160p", "all"}:
+        choice = "1080p"
+    session.resolution = choice
+    _save_session(context, session)
+    await _prompt_tv_season_codec(query.message, context, session)
+
+
+async def _prompt_tv_season_codec(
+    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    text = (
+        "Select your preferred codec for this season\\.\n"
+        'Choosing "Either" allows the best match per episode/pack\\.'
+    )
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "x264 / AVC", callback_data="search_tv_season_codec_x264"
+                ),
+                InlineKeyboardButton(
+                    "x265 / HEVC", callback_data="search_tv_season_codec_x265"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Either Codec", callback_data="search_tv_season_codec_any"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+        ]
+    )
+    await safe_edit_message(
+        message,
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def _handle_tv_season_codec_button(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    choice = _get_callback_data(query).split("_")[-1].lower()
+    if choice not in COLLECTION_CODEC_CHOICES:
+        choice = "any"
+    session.tv_codec = choice
+    _save_session(context, session)
+
+    title = session.require_title()
+    season = session.require_season()
+
+    await _perform_tv_season_search(
+        query.message,
+        context,
+        str(title),
+        int(season),
+        session=session,
+    )
 
 
 # --- Button Press Handlers ---
@@ -2489,22 +2593,37 @@ async def _perform_tv_season_search(
     session: SearchSession | None = None,
 ) -> None:
     """
-    Searches for a TV season pack or individual episodes without prompting for resolution.
+    Searches for a TV season pack or individual episodes, respecting session resolution/codec.
     On success, presents a confirmation summary to queue the season download.
     """
+    if session is None:
+        session = _get_session(context)
+
+    target_res = session.resolution or "all"
+    target_codec = session.tv_codec or "all"
+
+    # Propagate filters to session state for _present_search_results usage
+    session.results_resolution_filter = target_res
+    session.results_codec_filter = SearchSession.normalize_results_codec_filter(
+        target_codec
+    )
+    _save_session(context, session)
+
     season_queries = [f"{title} S{season:02d}", f"{title} Season {season}"]
     found_results: list[dict[str, Any]] = []
+
+    # Add resolution hints to query if specific
+    if target_res in ("1080p", "2160p"):
+        season_queries = [f"{q} {target_res}" for q in season_queries] + season_queries
+
     for q in season_queries:
         res = await search_logic.orchestrate_searches(
             q, "tv", context, base_query_for_filter=title
         )
         if res:
             found_results.extend(res)
-        if len(found_results) >= 3:
+        if len(found_results) >= 5:
             break
-
-    if session is None:
-        session = _get_session(context)
 
     existing_owned = set(session.existing_episodes or [])
     must_individual = bool(force_individual_episodes or existing_owned)
@@ -2521,9 +2640,21 @@ async def _perform_tv_season_search(
             ) and not re.search(r"s\d{1,2}e\d{1,2}", title_lower):
                 pack_candidates.append(item)
 
+        # Filter pack candidates by resolution/codec if possible
+        filtered_packs = _filter_results_by_resolution(pack_candidates, target_res)
+        if target_codec != "all":
+            filtered_packs = [
+                p
+                for p in filtered_packs
+                if (p.get("codec") or "").lower() == target_codec.lower()
+            ]
+
+        # Fallback to unfiltered if strict filtering yields nothing
+        candidates_to_use = filtered_packs if filtered_packs else pack_candidates
+
         season_pack_torrent = (
-            max(pack_candidates, key=lambda x: x.get("score", 0))
-            if pack_candidates
+            max(candidates_to_use, key=lambda x: x.get("score", 0))
+            if candidates_to_use
             else None
         )
 
@@ -2531,10 +2662,10 @@ async def _perform_tv_season_search(
         await _present_search_results(
             message,
             context,
-            pack_candidates,
+            pack_candidates,  # Pass all candidates, the UI will filter via session settings
             f"{title} S{int(season):02d} [All]",
             session=session,
-            initial_resolution="all",
+            initial_resolution=target_res,
         )
         return
 
@@ -2558,22 +2689,10 @@ async def _perform_tv_season_search(
     titles_map: dict[int, str] = {}
     corrected_title: str | None = None
     try:
-        logger.info(
-            f"[WIKI] Fetching episode titles from Wikipedia for '{title}' S{season:02d}."
-        )
         (
             titles_map,
             corrected_title,
         ) = await scraping_service.fetch_episode_titles_for_season(title, season)
-        logger.info(
-            f"[WIKI] Retrieved {len(titles_map)} episode titles for '{title}' S{season:02d}."
-        )
-        if corrected_title and corrected_title != title:
-            logger.info(
-                f"[WIKI] Title corrected by Wikipedia: '{title}' -> '{corrected_title}'."
-            )
-        else:
-            logger.debug(f"[WIKI] No title correction for '{title}'. Using original.")
     except Exception:
         titles_map, corrected_title = {}, None
 
@@ -2584,7 +2703,7 @@ async def _perform_tv_season_search(
     def _progress_text(last_ep: int | None) -> str:
         base = (
             f"🔎 Searching for Season {escape_markdown(str(season), version=2)} "
-            f"of *{escape_markdown(title, version=2)}* in 720p and 1080p\\.\\.\\."
+            f"of *{escape_markdown(title, version=2)}* in {escape_markdown(target_res, version=2)}\\.\\.\\."
         )
         total_targets = len(targets) if targets else episode_count
         if total_targets:
@@ -2593,6 +2712,10 @@ async def _perform_tv_season_search(
 
     for ep in targets:
         search_term = f"{title} S{season:02d}E{ep:02d}"
+        # Hint resolution in query
+        if target_res in ("1080p", "2160p"):
+            search_term += f" {target_res}"
+
         ep_results = await search_logic.orchestrate_searches(
             search_term, "tv", context, base_query_for_filter=title
         )
@@ -2600,9 +2723,22 @@ async def _perform_tv_season_search(
         if LOG_SCRAPER_STATS:
             _log_aggregated_results(search_term, ep_results)
 
+        # Apply Filters
+        filtered_eps = _filter_results_by_resolution(ep_results, target_res)
+        if target_codec != "all":
+            filtered_eps = [
+                r
+                for r in filtered_eps
+                if (r.get("codec") or "").lower() == target_codec.lower()
+            ]
+
+        # If strict filtering yields nothing, fallback to relaxed
+        if not filtered_eps:
+            filtered_eps = ep_results
+
         normalized_candidates: list[EpisodeCandidate] = []
-        if ep_results:
-            for raw in ep_results:
+        if filtered_eps:
+            for raw in filtered_eps:
                 link = raw.get("page_url")
                 if not link:
                     continue
