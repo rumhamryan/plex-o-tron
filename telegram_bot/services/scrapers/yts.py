@@ -194,6 +194,8 @@ async def scrape_yts(
                                 )
                                 magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(str(mv_title))}{trackers}"
                                 seeders_count = int(tor.get("seeds", 0) or 0)
+                                if seeders_count < 20:
+                                    continue
                                 peers_count = int(tor.get("peers", 0) or 0)
                                 leechers_count = max(peers_count - seeders_count, 0)
 
@@ -486,6 +488,8 @@ async def scrape_yts(
                         magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(movie_title)}{trackers}"
 
                         seeders_count = torrent.get("seeds", 0)
+                        if seeders_count < 20:
+                            continue
                         peers_count = torrent.get("peers", 0)
                         leechers_count = max(peers_count - seeders_count, 0)
 

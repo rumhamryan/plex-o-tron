@@ -76,6 +76,8 @@ async def scrape_yaml_site(
 
     results: list[dict[str, Any]] = []
     for item in raw_results:
+        if item.seeders < 20:
+            continue
         score = score_torrent_result(
             item.name,
             item.uploader or "",

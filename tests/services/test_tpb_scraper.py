@@ -86,7 +86,7 @@ async def test_scrape_tpb_returns_filtered_results(mocker):
             "id": "2",
             "name": "Completely Different Documentary",
             "info_hash": "FFF123ABC123ABC123ABC123ABC123ABC123AAAA",
-            "seeders": "5",
+            "seeders": "25",
             "leechers": "1",
             "size": str(1 * 1024**3),
             "username": "SomeoneElse",

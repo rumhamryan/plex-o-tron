@@ -375,7 +375,7 @@ async def test_scrape_1337x_parses_results(mocker):
         <a href="/cat">Movies</a>
         <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
       </td>
-      <td class="seeds">10</td>
+      <td class="seeds">25</td>
       <td class="leeches">0</td>
       <td class="size">1.5 GB</td>
       <td class="uploader"><a>Anonymous</a></td>
@@ -462,7 +462,7 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
         <a href="/cat">Movies</a>
         <a href="/torrent/1/Sample.Movie.2023.1080p.x265/">Sample.Movie.2023.1080p.x265</a>
       </td>
-      <td class="seeds">10</td>
+      <td class="seeds">25</td>
       <td class="leeches">0</td>
       <td class="size">1.5 GB</td>
       <td class="uploader"><a>Anonymous</a></td>
@@ -472,7 +472,7 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
         <a href="/cat">Movies</a>
         <a href="/torrent/2/Unrelated.File.2023.1080p.x265/">Unrelated.File.2023.1080p.x265</a>
       </td>
-      <td class="seeds">5</td>
+      <td class="seeds">20</td>
       <td class="leeches">0</td>
       <td class="size">1.0 GB</td>
       <td class="uploader"><a>Anonymous</a></td>
@@ -621,7 +621,7 @@ async def test_scrape_yts_parses_results(mocker):
                         "type": "WEB",
                         "size_bytes": 1024**3,
                         "hash": "abcdef",
-                        "seeds": 10,
+                        "seeds": 25,
                     }
                 ],
             }
@@ -655,10 +655,9 @@ async def test_scrape_yts_parses_results(mocker):
         year="2023",
         resolution="1080p",
     )
-
     assert len(results) == 1
     assert results[0]["source"] == "yts.lt"
-    assert results[0]["seeders"] == 10
+    assert results[0]["seeders"] == 25
 
 
 @pytest.mark.asyncio
@@ -693,7 +692,7 @@ async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
                         "type": "WEB",
                         "size_bytes": 1024**3,
                         "hash": "abcdef",
-                        "seeds": 10,
+                        "seeds": 25,
                     }
                 ],
             }
@@ -766,7 +765,7 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
                         "type": "WEB",
                         "size_bytes": 1024**3,
                         "hash": "abcdef",
-                        "seeds": 10,
+                        "seeds": 25,
                     }
                 ],
             }
@@ -805,7 +804,7 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
 
     assert len(results) == 1
     assert results[0]["source"] == "yts.lt"
-    assert results[0]["seeders"] == 10
+    assert results[0]["seeders"] == 25
 
 
 @pytest.mark.asyncio
@@ -831,7 +830,7 @@ async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
                             "type": "WEB",
                             "size_bytes": 1024**3,
                             "hash": "abcdef",
-                            "seeds": 7,
+                            "seeds": 25,
                         }
                     ],
                 }
@@ -873,7 +872,7 @@ async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
     )
 
     assert len(results) == 1
-    assert results[0]["seeders"] == 7
+    assert results[0]["seeders"] == 25
     assert results[0]["source"] == "yts.lt"
 
 
@@ -897,7 +896,7 @@ async def test_scrape_yts_api_fallback_relaxes_year(mocker):
                             "type": "WEB",
                             "size_bytes": 1024**3,
                             "hash": "abcd11",
-                            "seeds": 5,
+                            "seeds": 25,
                         }
                     ],
                 },
@@ -910,7 +909,7 @@ async def test_scrape_yts_api_fallback_relaxes_year(mocker):
                             "type": "WEB",
                             "size_bytes": 1024**3,
                             "hash": "efgh22",
-                            "seeds": 9,
+                            "seeds": 20,
                         }
                     ],
                 },
@@ -986,7 +985,7 @@ async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
                             "type": "WEB",
                             "size_bytes": 1024**3,
                             "hash": "aaaaaa",
-                            "seeds": 3,
+                            "seeds": 25,
                         }
                     ],
                 }

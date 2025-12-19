@@ -74,12 +74,28 @@ async def test_dry_run_flow_uses_wiki_year_and_filters_resolution(mocker):
 
     # Mock scrapers
     yts_results = [
-        {"title": "Alien (1979) 1080p WEB x265 [YTS]", "score": 21, "source": "yts.lt"},
-        {"title": "Alien (1979) 720p WEB x264 [YTS]", "score": 11, "source": "yts.lt"},
+        {
+            "title": "Alien (1979) 1080p WEB x265 [YTS]",
+            "score": 21,
+            "source": "yts.lt",
+            "seeders": 100,
+        },
+        {
+            "title": "Alien (1979) 720p WEB x264 [YTS]",
+            "score": 11,
+            "source": "yts.lt",
+            "seeders": 50,
+        },
     ]
     x_results = [
-        {"title": "Alien.1979.1080p.BluRay.x265", "score": 16, "source": "1337x"},
+        {
+            "title": "Alien.1979.1080p.BluRay.x265",
+            "score": 16,
+            "source": "1337x",
+            "seeders": 80,
+        },
     ]
+
     m_yts = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_yts",
         new=AsyncMock(return_value=yts_results),
@@ -196,10 +212,19 @@ async def test_dry_run_tv_search_workflow_basic(mocker):
     }
 
     x_results = [
-        {"title": "My.Show.S01E01.1080p.WEB.x265", "score": 17, "source": "1337x"},
-        {"title": "My.Show.S01E01.720p.WEB.x264", "score": 9, "source": "1337x"},
+        {
+            "title": "My.Show.S01E01.1080p.WEB.x265",
+            "score": 17,
+            "source": "1337x",
+            "seeders": 100,
+        },
+        {
+            "title": "My.Show.S01E01.720p.WEB.x264",
+            "score": 9,
+            "source": "1337x",
+            "seeders": 50,
+        },
     ]
-
     m_1337 = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_1337x",
         new=AsyncMock(return_value=x_results),

@@ -205,6 +205,8 @@ def _transform_results(
             continue
 
         seeders = _safe_int(entry.get("seeders"))
+        if seeders < 20:
+            continue
         leechers = _safe_int(entry.get("leechers"))
         uploader = entry.get("username") or "Anonymous"
         score = score_torrent_result(

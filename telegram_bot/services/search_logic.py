@@ -185,8 +185,12 @@ async def orchestrate_searches(
             scraping_service._coerce_swarm_counts(r) for r in site_results
         ]
 
-        # Filter by score: remove non-viable results (score < 6)
-        viable_results = [r for r in coerced_results if r.get("score", 0) >= 6]
+        # Filter by score and viability: remove results with score < 6 or seeders < 20
+        viable_results = [
+            r
+            for r in coerced_results
+            if r.get("score", 0) >= 6 and r.get("seeders", 0) >= 20
+        ]
 
         _log_scraper_results(site_label, viable_results)
         all_results.extend(viable_results)

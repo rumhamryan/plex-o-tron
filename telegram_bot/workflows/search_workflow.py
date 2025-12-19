@@ -3073,49 +3073,119 @@ def _pick_collection_candidate(
     template_size: float | None,
     template_uploader: str | None,
 ) -> dict[str, Any] | None:
-    working = list(results or [])
-    resolution_value = _normalize_resolution_filter(preferred_resolution or "all")
-    if resolution_value != "all":
-        working = _filter_results_by_resolution(working, resolution_value)
+    """
+    Selects the best candidate using a strict tiered fallback hierarchy.
 
-    codec_target = (preferred_codec or "any").lower()
-    if codec_target != "any":
-        filtered = []
-        for item in working:
-            codec_value = (item.get("codec") or "").lower()
-            if codec_value == codec_target:
-                filtered.append(item)
-        if filtered:
-            working = filtered
-
-    if not working:
-        working = list(results or [])
-    if not working:
+    Hierarchy:
+    1. Requested Resolution + Requested Codec
+    2. Requested Resolution + Alternate Codec (Codec is the 1st compromise)
+    3. Fallback Resolution + Requested Codec
+    4. Fallback Resolution + Alternate Codec
+    5. Best in Requested Resolution (Any Codec)
+    6. Best Overall (Score-based)
+    """
+    if not results:
         return None
 
+    target_res = _normalize_resolution_filter(preferred_resolution or "all")
+    target_codec = (preferred_codec or "any").lower()
+
+    # Define fallbacks
+    fallback_res: str | None = None
+    if target_res == "2160p":
+        fallback_res = "1080p"
+    elif target_res == "1080p":
+        fallback_res = "720p"
+
+    alt_codec: str | None = None
+    if target_codec == "x265":
+        alt_codec = "x264"
+    elif target_codec == "x264":
+        alt_codec = "x265"
+
     def _score(item: dict[str, Any]) -> float:
-        score = float(item.get("score") or 0)
-        codec_value = (item.get("codec") or "").lower()
-        if codec_target != "any" and codec_value == codec_target:
-            score += 5
-        uploader_value = _normalize_release_field(item.get("uploader"), "Anonymous")
-        if template_uploader and uploader_value == template_uploader:
-            score += 8
-        size_value = _coerce_float(item.get("size_gb"))
-        if template_size and size_value:
+        base_score = float(item.get("score") or 0)
+
+        # Bias toward uploader consistency
+        uploader_val = _normalize_release_field(item.get("uploader"), "Anonymous")
+        if template_uploader and uploader_val == template_uploader:
+            base_score += 15
+
+        # Reward size consistency
+        size_val = _coerce_float(item.get("size_gb"))
+        if template_size and size_val:
             try:
-                deviation = abs(size_value - template_size) / template_size
+                deviation = abs(size_val - template_size) / template_size
             except ZeroDivisionError:
                 deviation = 1.0
-            if deviation <= 0.1:
-                score += 10
-            else:
-                score -= deviation * 10
-        seeders = _coerce_int(item.get("seeders")) or 0
-        score += min(seeders, 50) * 0.1
-        return score
 
-    return max(working, key=_score)
+            if deviation <= 0.1:
+                base_score += 10
+            else:
+                base_score -= deviation * 5
+
+        # Tie breaker
+        seeders = _coerce_int(item.get("seeders")) or 0
+        base_score += min(seeders, 50) * 0.1
+
+        return base_score
+
+    def _get_best(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+        return max(candidates, key=_score) if candidates else None
+
+    # Tier 1: Target Res + Target Codec
+    t1 = (
+        _filter_results_by_resolution(results, target_res)
+        if target_res != "all"
+        else list(results)
+    )
+    if target_codec != "any":
+        t1 = [r for r in t1 if (r.get("codec") or "").lower() == target_codec]
+    best = _get_best(t1)
+    if best:
+        return best
+
+    # Tier 2: Target Res + Alt Codec (Codec compromise)
+    if alt_codec:
+        t2 = (
+            _filter_results_by_resolution(results, target_res)
+            if target_res != "all"
+            else list(results)
+        )
+        t2 = [r for r in t2 if (r.get("codec") or "").lower() == alt_codec]
+        best = _get_best(t2)
+        if best:
+            return best
+
+    # Tier 3: Fallback Res + Target Codec
+    if fallback_res:
+        t3 = _filter_results_by_resolution(results, fallback_res)
+        if target_codec != "any":
+            t3 = [r for r in t3 if (r.get("codec") or "").lower() == target_codec]
+        best = _get_best(t3)
+        if best:
+            return best
+
+    # Tier 4: Fallback Res + Alt Codec
+    if fallback_res and alt_codec:
+        t4 = _filter_results_by_resolution(results, fallback_res)
+        t4 = [r for r in t4 if (r.get("codec") or "").lower() == alt_codec]
+        best = _get_best(t4)
+        if best:
+            return best
+
+    # Tier 5: Absolute Fallback (Requested Resolution, Any Codec)
+    t5 = (
+        _filter_results_by_resolution(results, target_res)
+        if target_res != "all"
+        else []
+    )
+    best = _get_best(t5)
+    if best:
+        return best
+
+    # Tier 6: Final Resort (Best Score Overall)
+    return _get_best(results)
 
 
 async def _present_collection_download_confirmation(
@@ -3175,19 +3245,19 @@ async def _present_collection_download_confirmation(
 
 
 def _filter_results_by_resolution(results: list[dict], resolution: str) -> list[dict]:
-    """Filters search results to only include entries matching the desired resolution."""
+    """Filters search results using word boundaries to ensure precise matching."""
     res = resolution.lower()
     if res == "2160p":
-        patterns = ["2160p", "4k"]
+        patterns = [r"2160p", r"\b4k\b", r"\buhd\b"]
     elif res == "1080p":
-        patterns = ["1080p"]
+        patterns = [r"1080p", r"\bfhd\b"]
     elif res == "720p":
-        patterns = ["720p"]
+        patterns = [r"720p", r"\bhd\b"]
     else:
-        patterns = [res]
-    return [
-        r for r in results if any(p in r.get("title", "").lower() for p in patterns)
-    ]
+        patterns = [re.escape(res)]
+
+    regex = re.compile("|".join(patterns), re.IGNORECASE)
+    return [r for r in results if regex.search(r.get("title", ""))]
 
 
 def _log_aggregated_results(query_str: str, results: list[dict[str, Any]]) -> None:

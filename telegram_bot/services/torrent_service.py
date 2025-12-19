@@ -44,10 +44,9 @@ async def process_user_input(
         )
         return None
 
-    logger.debug(f"[TORRENT] process_user_input called with info_url: {info_url}")
-
     if info_url:
         context.user_data["pending_info_url"] = info_url
+        logger.debug(f"[TORRENT] Stored pending_info_url: {info_url}")
     else:
         # Clear any previous value if not provided
         context.user_data.pop("pending_info_url", None)

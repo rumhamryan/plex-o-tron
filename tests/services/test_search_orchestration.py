@@ -55,13 +55,12 @@ async def test_orchestrate_searches_calls_sites_and_sorts(mocker):
     )
 
     yts_results = [
-        {"title": "Alien (1979) 1080p", "score": 20, "source": "yts.lt"},
-        {"title": "Alien (1979) 720p", "score": 10, "source": "yts.lt"},
+        {"title": "Alien (1979) 1080p", "score": 20, "source": "yts.lt", "seeders": 25},
+        {"title": "Alien (1979) 720p", "score": 10, "source": "yts.lt", "seeders": 25},
     ]
     txx_results = [
-        {"title": "Alien.1979.1080p", "score": 15, "source": "1337x"},
+        {"title": "Alien.1979.1080p", "score": 15, "source": "1337x", "seeders": 25},
     ]
-
     m_yts = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_yts",
         new=AsyncMock(return_value=yts_results),
@@ -114,9 +113,17 @@ async def test_orchestrate_searches_respects_enabled_flag(mocker):
     m_1337 = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_1337x",
         new=AsyncMock(
-            return_value=[{"title": "Alien.1979.1080p", "score": 10, "source": "1337x"}]
+            return_value=[
+                {
+                    "title": "Alien.1979.1080p",
+                    "score": 10,
+                    "source": "1337x",
+                    "seeders": 25,
+                }
+            ]
         ),
     )
+
     results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
     assert results and results[0]["source"] == "1337x"
     # YTS disabled, so not called
@@ -139,7 +146,14 @@ async def test_orchestrate_searches_yaml_fallback_for_unknown_site(mocker):
     m_yaml = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_yaml_site",
         new=AsyncMock(
-            return_value=[{"title": "Alien (1979) EZ", "score": 9, "source": "EZTV"}]
+            return_value=[
+                {
+                    "title": "Alien (1979) EZ",
+                    "score": 9,
+                    "source": "EZTV",
+                    "seeders": 25,
+                }
+            ]
         ),
     )
 
@@ -169,7 +183,9 @@ async def test_orchestrate_searches_handles_yts_name_variants(mocker):
     m_yts = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_yts",
         new=AsyncMock(
-            return_value=[{"title": "Alien", "score": 10, "source": "yts.lt"}]
+            return_value=[
+                {"title": "Alien", "score": 10, "source": "yts.lt", "seeders": 25}
+            ]
         ),
     )
     results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
@@ -194,7 +210,11 @@ async def test_orchestrate_searches_normalizes_eztv_domains(mocker):
 
     m_yaml = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_yaml_site",
-        new=AsyncMock(return_value=[{"title": "Show", "score": 10, "source": "eztv"}]),
+        new=AsyncMock(
+            return_value=[
+                {"title": "Show", "score": 10, "source": "eztv", "seeders": 25}
+            ]
+        ),
     )
     results = await orchestrate_searches("Example Show S01E01", "tv", ctx)
 
@@ -218,7 +238,11 @@ async def test_orchestrate_searches_uses_tpb_scraper(mocker):
 
     m_tpb = mocker.patch(
         "telegram_bot.services.scraping_service.scrape_tpb",
-        new=AsyncMock(return_value=[{"title": "Movie", "score": 8, "source": "tpb"}]),
+        new=AsyncMock(
+            return_value=[
+                {"title": "Movie", "score": 8, "source": "tpb", "seeders": 25}
+            ]
+        ),
     )
 
     results = await orchestrate_searches("Movie", "movie", ctx)
