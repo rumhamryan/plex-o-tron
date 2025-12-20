@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import platform
 import subprocess
 from typing import Any, Sequence, Set
 
@@ -84,22 +85,35 @@ async def get_plex_server_status(context: ContextTypes.DEFAULT_TYPE) -> str:
 
 async def restart_plex_server() -> tuple[bool, str]:
     """
-    Attempts to restart the Plex server by executing the 'restart_plex.sh' script.
+    Attempts to restart the Plex server by executing the OS-specific restart script.
 
     Returns:
         A tuple containing (success_boolean, message_string).
     """
-    script_path = os.path.abspath("restart_plex.sh")
+    is_linux = platform.system() == "Linux"
+    script_name = "restart_plex.sh" if is_linux else "restart_plex.ps1"
+
+    # Check if script exists in the root or the utility_scripts folder
+    script_path = os.path.abspath(script_name)
+    if not os.path.exists(script_path):
+        # Fallback to utility_scripts folder
+        script_path = os.path.join(
+            os.path.dirname(__file__), "..", "utility_scripts", script_name
+        )
+        script_path = os.path.abspath(script_path)
 
     if not os.path.exists(script_path):
         error_msg = f"Wrapper script not found at {script_path}"
         logger.error(f"[PLEX RESTART] {error_msg}")
         return (
             False,
-            "The `restart_plex.sh` script was not found in the bot's directory.",
+            f"The `{script_name}` script was not found.",
         )
 
-    command = ["/usr/bin/sudo", script_path]
+    if is_linux:
+        command = ["/usr/bin/sudo", script_path]
+    else:
+        command = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script_path]
 
     try:
         logger.info(f"[PLEX RESTART] Executing wrapper script: {' '.join(command)}")
@@ -119,10 +133,16 @@ async def restart_plex_server() -> tuple[bool, str]:
     except subprocess.CalledProcessError as e:
         error_output = e.stderr or e.stdout
         logger.error(f"[PLEX RESTART] Script failed to execute: {error_output}")
-        return False, (
-            "This almost always means the `sudoers` rule for `restart_plex.sh` is "
-            "incorrect or missing.\n\n*Details:*\n`{}`"
-        ).format(escape_markdown(error_output, version=2))
+        if is_linux:
+            return False, (
+                "This almost always means the `sudoers` rule for `restart_plex.sh` is "
+                "incorrect or missing.\n\n*Details:*\n`{}`"
+            ).format(escape_markdown(error_output, version=2))
+        else:
+            return False, (
+                "The PowerShell script failed. Ensure you are running the bot with "
+                "Administrator privileges to restart services.\n\n*Details:*\n`{}`"
+            ).format(escape_markdown(error_output, version=2))
 
     except Exception as e:
         logger.error(f"[PLEX RESTART] An unexpected error occurred: {e}")

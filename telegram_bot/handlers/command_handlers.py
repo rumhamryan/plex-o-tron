@@ -1,6 +1,5 @@
 # telegram_bot/handlers/command_handlers.py
 
-import platform
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -207,12 +206,6 @@ async def plex_restart_command(
     if not chat:
         logger.warning(
             "plex_restart_command was triggered but could not find an effective_chat."
-        )
-        return
-
-    if platform.system() != "Linux":
-        await context.bot.send_message(
-            chat_id=chat.id, text="This command is configured to run on Linux only."
         )
         return
 
