@@ -1913,7 +1913,8 @@ async def _handle_result_selection_button(
     url_to_process = selected_result.get("page_url")
     info_url = selected_result.get("info_url")
 
-    logger.debug(f"[SEARCH] Selecting result with info_url: {info_url}")
+    display_link = info_url or url_to_process
+    logger.info(f"[SEARCH] User selected torrent: {display_link}")
 
     if not url_to_process:
         await safe_edit_message(
@@ -2344,9 +2345,20 @@ def _select_consistent_episode_set(
             )
 
     if best_entry is None:
+        logger.info(
+            "[SEARCH] No consistent release found across episodes. Using top results."
+        )
         return default_selection, None
 
-    release_key, _, matched, avg_size, spread, resolution = best_entry
+    release_key, score, matched, avg_size, spread, resolution = best_entry
+    logger.info(
+        "[SEARCH] Best consistent release: %s via %s (score: %.1f, coverage: %d/%d)",
+        release_key[1],
+        release_key[0],
+        score,
+        len(matched),
+        total_eps,
+    )
     matched_map = {cand.episode: cand for cand in matched}
     final_selection: list[EpisodeCandidate] = []
     fallback_eps: list[int] = []
@@ -2867,6 +2879,18 @@ async def _perform_tv_season_search(
         )
 
     for candidate in selected_candidates:
+        is_fallback = (
+            consistency_summary
+            and candidate.episode in consistency_summary.fallback_episodes
+        )
+        fallback_tag = " (FALLBACK)" if is_fallback else ""
+        display_link = candidate.info_url or candidate.link
+        logger.info(
+            "[SEARCH] Selected torrent for E%02d: %s%s",
+            candidate.episode,
+            display_link,
+            fallback_tag,
+        )
         parsed_info = parse_torrent_name(candidate.title)
         parsed_info["title"] = corrected_title or title
         parsed_info["season"] = season
