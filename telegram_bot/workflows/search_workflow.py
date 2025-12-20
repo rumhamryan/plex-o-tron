@@ -73,6 +73,7 @@ class EpisodeCandidate:
     size_gb: float | None = None
     seeders: int | None = None
     resolution: str | None = None
+    codec: str | None = None
     score: float | None = None
 
     @property
@@ -2854,6 +2855,7 @@ async def _perform_tv_season_search(
                     size_gb=_coerce_float(raw.get("size_gb")),
                     seeders=_coerce_int(raw.get("seeders")),
                     resolution=_infer_resolution_from_title(raw.get("title")),
+                    codec=raw.get("codec"),
                     score=_coerce_float(raw.get("score")),
                 )
                 normalized_candidates.append(candidate)
@@ -2887,11 +2889,26 @@ async def _perform_tv_season_search(
         )
 
     for candidate in selected_candidates:
-        is_fallback = (
+        fallback_tag = ""
+        if (
             consistency_summary
             and candidate.episode in consistency_summary.fallback_episodes
-        )
-        fallback_tag = " (FALLBACK)" if is_fallback else ""
+        ):
+            # Check if it's a true fallback (codec/res mismatch) or just different uploader
+            res_mismatch = (
+                target_res != "all"
+                and (candidate.resolution or "").lower() != target_res.lower()
+            )
+            codec_mismatch = (
+                target_codec != "all"
+                and (candidate.codec or "").lower() != target_codec.lower()
+            )
+
+            if res_mismatch or codec_mismatch:
+                fallback_tag = " (FALLBACK)"
+            else:
+                fallback_tag = " (DIFFERENT_UPLOADER)"
+
         display_link = candidate.info_url or candidate.link
         logger.info(
             "[SEARCH] Selected torrent for E%02d: %s%s",
