@@ -92,6 +92,7 @@ class SeasonConsistencySummary:
     matched_count: int
     total_count: int
     fallback_episodes: list[int] = field(default_factory=list)
+    different_uploader_episodes: list[int] = field(default_factory=list)
     resolution: str | None = None
 
     @property
@@ -2269,6 +2270,8 @@ def _target_size_for_resolution(resolution: str | None) -> float:
 
 def _select_consistent_episode_set(
     candidates_by_episode: dict[int, list[EpisodeCandidate]],
+    target_res: str = "all",
+    target_codec: str = "all",
 ) -> tuple[list[EpisodeCandidate], SeasonConsistencySummary | None]:
     if not candidates_by_episode:
         return [], None
@@ -2355,6 +2358,7 @@ def _select_consistent_episode_set(
     matched_map = {cand.episode: cand for cand in matched}
     final_selection: list[EpisodeCandidate] = []
     fallback_eps: list[int] = []
+    different_uploader_eps: list[int] = []
     for ep in episodes:
         selected: EpisodeCandidate | None = matched_map.get(ep)
         if selected is None:
@@ -2368,7 +2372,22 @@ def _select_consistent_episode_set(
             )
             fallback_candidate = candidates_by_episode[ep][0]
             selected = fallback_candidate
-            fallback_eps.append(ep)
+
+            # Check if it's a true fallback (codec/res mismatch) or just different uploader
+            res_mismatch = (
+                target_res != "all"
+                and (selected.resolution or "").lower() != target_res.lower()
+            )
+            codec_mismatch = (
+                target_codec != "all"
+                and (selected.codec or "").lower() != target_codec.lower()
+            )
+
+            if res_mismatch or codec_mismatch:
+                fallback_eps.append(ep)
+            else:
+                different_uploader_eps.append(ep)
+
         assert selected is not None
         final_selection.append(selected)
 
@@ -2380,6 +2399,7 @@ def _select_consistent_episode_set(
         matched_count=len(matched),
         total_count=total_eps,
         fallback_episodes=fallback_eps,
+        different_uploader_episodes=different_uploader_eps,
         resolution=resolution,
     )
     return final_selection, summary
@@ -2412,6 +2432,11 @@ def _format_consistency_summary(
         base_line += " ".join(details)
 
     lines = [base_line]
+    if summary.different_uploader_episodes:
+        diff_str = ", ".join(
+            f"E{num:02d}" for num in summary.different_uploader_episodes
+        )
+        lines.append(f"ℹ️ Different uploader: {escape_markdown(diff_str, version=2)}")
     if summary.fallback_episodes:
         fallback_str = ", ".join(f"E{num:02d}" for num in summary.fallback_episodes)
         lines.append(f"⚠️ Fallback episodes: {escape_markdown(fallback_str, version=2)}")
@@ -2886,7 +2911,9 @@ async def _perform_tv_season_search(
     selected_candidates: list[EpisodeCandidate] = []
     if episode_candidates:
         selected_candidates, consistency_summary = _select_consistent_episode_set(
-            episode_candidates
+            episode_candidates,
+            target_res=target_res,
+            target_codec=target_codec,
         )
 
     for candidate in selected_candidates:
