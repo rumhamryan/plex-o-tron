@@ -1504,14 +1504,6 @@ async def _handle_resolution_button(
             return
 
         if tv_scope == "season" and title and season is not None:
-            await safe_edit_message(
-                query.message,
-                text=(
-                    f"🔍 Searching for Season {escape_markdown(str(season), version=2)} "
-                    f"of *{escape_markdown(title, version=2)}* in *{resolution}*\\.\\.\\."
-                ),
-                parse_mode=ParseMode.MARKDOWN_V2,
-            )
             await _perform_tv_season_search(query.message, context, title, int(season))
             return
 
@@ -2679,6 +2671,15 @@ async def _perform_tv_season_search(
         target_codec
     )
     _save_session(context, session)
+
+    await safe_edit_message(
+        message,
+        text=(
+            f"🔍 Searching for Season {escape_markdown(str(season), version=2)} "
+            f"of *{escape_markdown(title, version=2)}* in *{escape_markdown(target_res, version=2)}*\\.\\.\\."
+        ),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
 
     season_queries = [f"{title} S{season:02d}", f"{title} Season {season}"]
     found_results: list[dict[str, Any]] = []
