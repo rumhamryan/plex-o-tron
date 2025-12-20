@@ -2365,6 +2365,14 @@ def _select_consistent_episode_set(
     for ep in episodes:
         selected: EpisodeCandidate | None = matched_map.get(ep)
         if selected is None:
+            available = candidates_by_episode.get(ep, [])
+            keys_found = [c.release_key for c in available]
+            logger.info(
+                "[SEARCH] E%02d missing from consistent set %s. Available candidates: %s",
+                ep,
+                release_key,
+                keys_found,
+            )
             fallback_candidate = candidates_by_episode[ep][0]
             selected = fallback_candidate
             fallback_eps.append(ep)
