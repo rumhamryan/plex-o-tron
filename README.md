@@ -126,7 +126,7 @@ The bot supports the following commands (with or without a leading slash):
     *   For TV Shows, you can delete an entire show, a specific season, or a single episode.
     *   Requires final confirmation before files are removed.
 *   **status**: Checks and reports the connection status to your Plex Media Server.
-*   **restart**: (Linux-only) Restarts the Plex Media Server service using the configured script.
+*   **restart**: Restarts the Plex Media Server service using the configured OS-specific script.
 *   **links**: Provides a list of popular torrent and tracker websites.
 
-**Pro-tip**: You can also just paste a **magnet link** or a **torrent site URL** directly into the chat, and the bot will attempt to parse and download it automatically!
+**Pro-tip**: You can also just paste a **magnet link** directly into the chat, and the bot will attempt to parse and download it automatically!

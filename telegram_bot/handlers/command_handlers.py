@@ -13,16 +13,16 @@ from ..services.plex_service import get_plex_server_status, restart_plex_server
 
 def get_help_message_text() -> str:
     """Returns the formatted help message string."""
-    # --- FIX: Use a raw string (r"...") to prevent Python from interpreting backslashes ---
-    # This ensures the backslashes are passed to Telegram for MarkdownV2 parsing.
-    return r"""Here are the available commands:
+    return r"""*Plex\-o\-Tron Bot Commands*
 
-`delete`   \- Delete Movie or TV Show\.
-`help`       \- Display this message\.
-`links`      \- List popular torrent sites\.
-`restart`  \- Restart the Plex Server\.
-`search`   \- Search for a Movie or TV Show\.
-`status`   \- Check Plex server status\.
+`search`  \- Start a search for Movies or TV Shows\. Supports Movie Collections\!
+`delete`  \- Interactively delete media from your Plex library\.
+`status`  \- Check the connection to your Plex Media Server\.
+`restart` \- Restart the Plex Server service\.
+`links`   \- Show links to popular torrent and tracker sites\.
+`help`    \- Display this list of available commands\.
+
+*Pro\-tip:* You can also just paste a magnet link or torrent site URL directly into the chat\!
 """
 
 
