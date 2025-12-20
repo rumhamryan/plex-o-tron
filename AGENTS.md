@@ -60,10 +60,10 @@ uv run __main__.py
 ## Tests
 
 ```bash
-uv run pytest -q
+uv run pre-commit run --all-files
 ```
-
-Unit tests cover handlers, services (download, scraping, torrent, Plex), workflows, and utilities.
+- Code quality hooks and unit tests.
+- Unit tests cover handlers, services (download, scraping, torrent, Plex), workflows, and utilities.
 
 ## Code style & tooling
 

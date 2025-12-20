@@ -15,93 +15,168 @@ This Telegram bot that automates the process of downloading torrents and organiz
 *   **Download Persistence**: Resumes any active downloads if the bot is restarted.
 *   **Clean UI**: Deletes user commands and edits status messages in place to keep the chat tidy.
 
-## System Configuration & Installation
+## Installation
 
-This project is designed to run on both Windows or Linux (Ubuntu).
-The setup for Windows is a manual process, follow these steps carefully.
-For Linux, there is a setup script.
+This project is designed to run on Windows and Linux (Ubuntu/Debian).
 
-### Step 1: System Prerequisites
+### Prerequisites
 
-Before setting up the Python environment, ensure the necessary system-level dependencies are installed.
+*   **Python 3.12+**: Ensure Python is installed and in your PATH.
+*   **uv**: We highly recommend using [uv](https://github.com/astral-sh/uv) for fast, reliable dependency management.
+    *   *To install uv:* `curl -LsSf https://astral.sh/uv/install.sh | sh` (Linux/Mac) or via PowerShell (Windows).
+*   **Git**: To clone the repository.
 
-#### Python
-*   **Python 3.12 or later** is required. It is assumed that you have Python installed and available in your system's PATH. You can verify this by running `python --version` or `python3 --version`.
+#### Telegram Bot Setup
+1.  **Create a Bot**: Message [@BotFather](https://t.me/botfather) on Telegram and use the `/newbot` command. Follow the prompts to get your **Bot Token**.
+2.  **Get Your User ID**: Message [@userinfobot](https://t.me/userinfobot) to get your numeric **User ID**. You will need this to authorize yourself as an admin of the bot.
+3.  **Privacy Settings**: By default, bots cannot see messages in groups. If you plan to use this in a group, use `/setprivacy` in @BotFather to disable privacy mode (though direct messages are recommended for this bot).
 
-#### uv
-This will be required to create the venv and manage dependencies.
+---
 
-#### C++ Dependencies (Crucial for `libtorrent`)
-The `libtorrent` package is a Python wrapper around a powerful C++ library. For it to work, the underlying C++ components must be available on your system.
+### Linux Installation (Ubuntu/Debian)
 
-*   **On Windows**:
-    *   The `libtorrent` Python package often relies on the **Microsoft Visual C++ Redistributable**.
-    *   Many systems already have this installed. If you encounter errors during the `pip install` step related to missing DLLs (like `VCRUNTIME140.dll`), you will need to install it.
-    *   You can download the latest version directly from Microsoft's website: [Latest supported Visual C++ Redistributable downloads](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170). Be sure to install the **x64** version.
+This guide covers setting up the bot on a Linux server, including system dependencies, virtual environment, and configuring it as a systemd service for auto-restart.
 
-*   **On Ubuntu / Debian**:
-    *   The equivalent of the C++ dependency is provided by the `libtorrent-rasterbar` package. You must install this from the system's package manager **before** installing the Python packages.
-    *   This command installs both the required runtime library and the development files needed by `pip`.
-    *   Run the following in your terminal:
-        ```bash
-        # Update your package list
-        sudo apt-get update
-
-        # Install the libtorrent-rasterbar library and its development headers
-        sudo apt-get install -y libtorrent-rasterbar-dev
-        ```
-
-### Step 2: Create and Activate a Virtual Environment
-
-Using a virtual environment is highly recommended to isolate project dependencies.
-
-1.  **Navigate to the project directory** in your terminal or command prompt.
-2.  **Create the virtual environment**: `uv venv`
-3.  **Activate the virtual environment**:
-    *   **Windows**: `.\venv\Scripts\activate`
-    *   **Ubuntu / Debian**: `source venv/bin/activate`
-
-### Step 3: Install Python Dependencies
-
-With your virtual environment activated (and after completing Step 1), you can install all required Python packages with a single command.
+#### 1. Install System Dependencies
+Update your package list and install the required build tools and the `libtorrent` C++ library headers.
 
 ```bash
+sudo apt update
+sudo apt install -y git python3-venv libtorrent-rasterbar-dev
+```
+
+#### 2. Clone the Repository
+Navigate to your desired install directory (e.g., `/opt` or your home folder) and clone the project.
+
+```bash
+git clone https://github.com/yourusername/plex-o-tron.git
+cd plex-o-tron
+```
+
+#### 3. Set Up Python Environment
+Create a virtual environment and install the dependencies using `uv`.
+
+```bash
+# Create the virtual environment
+uv venv
+
+# Activate the virtual environment
+source .venv/bin/activate
+
+# Install project dependencies
 uv pip sync pyproject.toml
 ```
 
-### Step 4: Configure the Bot
+#### 4. Configure the Bot
+You can use the provided helper script to interactively generate your `config.ini` file.
 
-Configuration is handled in the config.ini file.
+**Option A: Use the Setup Script (Recommended)**
+```bash
+# Make the script executable first
+chmod +x telegram_bot/utility_scripts/setup_config.sh
 
-1.  Create config.ini: If it doesn't exist, create it.
-2.  Edit the file with your details:
-```ini
-[telegram]
-# Get your bot token from @BotFather on Telegram
-token = TELEGRAM_BOT_TOKEN
-# Get your numeric User ID from @userinfobot on Telegram
-allowed_user_ids = USER_ID_1, USER_ID_2, ...
-
-[plex]
-# (Optional) Your Plex server URL and API token
-plex_url = http://192.168.1.100:32400
-plex_token = YOUR_PLEX_TOKEN_HERE
-
-[host]
-# Define absolute paths for your media. Use forward slashes for both OSes.
-default_save_path = ~/Downloads
-movies_save_path = /mnt/movies
-tv_shows_save_path = /mnt/tv
+# Run the interactive setup
+./telegram_bot/utility_scripts/setup_config.sh
 ```
 
-### Step 5: Run the Bot
-
-With your virtual environment active and configuration complete, start the bot:
+**Option B: Manual Configuration**
+Create the configuration file from the template and edit it with your details.
 ```bash
+cp config.ini.template config.ini
+nano config.ini
+```
+*   **[telegram]**: Add your Bot Token and allowed User IDs.
+*   **[plex]**: (Optional) Add your Plex URL (e.g., `http://localhost:32400`) and Token.
+*   **[host]**: Set the absolute paths where downloads should go (e.g., `/mnt/media/downloads` and `/mnt/media/movies`).
+
+#### 5. Set Up Plex Restart (Optional)
+The bot can restart the Plex Media Server service if you grant it permission.
+
+1.  **Make the script executable**:
+    ```bash
+    chmod +x telegram_bot/utility_scripts/restart_plex.sh
+    ```
+2.  **Configure sudoers**:
+    Allow your user (e.g., `ubuntu`) to run this specific script as root without a password.
+    ```bash
+    sudo visudo -f /etc/sudoers.d/99-plex-bot-restart
+    ```
+    Add the following line (replace `ubuntu` with your username and fix the path):
+    ```text
+    ubuntu ALL=(ALL) NOPASSWD: /home/ubuntu/plex-o-tron/telegram_bot/utility_scripts/restart_plex.sh
+    ```
+3.  **Save and exit**.
+
+#### 6. Run as a System Service (systemd)
+To keep the bot running in the background and start on boot, create a systemd service.
+
+1.  **Create the service file**:
+    ```bash
+    sudo nano /etc/systemd/system/plex-bot.service
+    ```
+2.  **Paste the following configuration** (update `User`, `WorkingDirectory`, and `ExecStart` paths):
+    ```ini
+    [Unit]
+    Description=Plex-o-Tron Telegram Bot
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=ubuntu
+    WorkingDirectory=/home/ubuntu/plex-o-tron
+    # Point to the python executable inside your venv
+    ExecStart=/home/ubuntu/plex-o-tron/.venv/bin/python __main__.py
+    Restart=on-failure
+    RestartSec=10
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+3.  **Enable and Start**:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable plex-bot
+    sudo systemctl start plex-bot
+    ```
+4.  **Check Status**:
+    ```bash
+    sudo systemctl status plex-bot
+    ```
+
+---
+
+### Windows Installation
+
+#### 1. System Prerequisites
+*   **Microsoft Visual C++ Redistributable**: The `libtorrent` library requires this. [Download the x64 version here](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170).
+
+#### 2. Create Virtual Environment
+Open PowerShell in the project directory:
+
+```powershell
+uv venv
+.\.venv\Scripts\activate
+```
+
+#### 3. Install Dependencies
+
+```powershell
+uv pip sync pyproject.toml
+```
+
+#### 4. Configure
+Run the setup script to interactively generate your configuration:
+
+```powershell
+.\telegram_bot\utility_scripts\setup_config.ps1
+```
+
+Alternatively, copy `config.ini.template` to `config.ini` and edit it manually. Ensure paths use strictly forward slashes `/` or escaped backslashes `\\`.
+
+#### 5. Run
+```powershell
 uv run __main__.py
 ```
-
-To stop the bot, press `Ctrl+C`. Remember to reactivate the virtual environment (`source venv/bin/activate` or `.\venv\Scripts\activate`) every time you want to run the bot in a new terminal session.
 
 ## Development Setup
 

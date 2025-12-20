@@ -20,12 +20,24 @@ tv_shows_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\TV
 [search]
 websites = {
     "movies": [
-        {"name": "yts.lt", "search_url": "https://yts.lt/browse-movies/{query}/all/all/0/latest/0/all"},
-        {"name": "1337x", "search_url": "https://1337x.to/category-search/{query}/Movies/1/"}
+        {
+            "name": "YTS.lt",
+            "search_url": "https://yts.lt/browse-movies/{query}/{quality}/all/0/latest/{year}/all"
+        },
+        {
+            "name": "tpb",
+            "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"
+        }
     ],
     "tv": [
-        {"name": "EZTVx.to", "search_url": "https://eztvx.to/search/{query}"},
-        {"name": "1337x", "search_url": "https://1337x.to/category-search/{query}/TV/1/"}
+        {
+            "name": "eztvx.to",
+            "search_url": "https://eztvx.to/search/{query}"
+        },
+        {
+            "name": "tpb",
+            "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"
+        }
     ]
 }
 preferences = {
