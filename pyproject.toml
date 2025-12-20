@@ -17,7 +17,7 @@ authors = [
 
 # Core runtime dependencies for the bot to function
 dependencies = [
-    "beautifulsoup4",
+    "beautifulsoup4>=4.12.3",
     "lxml",
     "flask",
     "python-telegram-bot",
@@ -26,7 +26,7 @@ dependencies = [
     "plexapi",
     "thefuzz",
     "httpx[http2]",
-    "PyYAML"
+    "PyYAML",
 ]
 
 [project.optional-dependencies]

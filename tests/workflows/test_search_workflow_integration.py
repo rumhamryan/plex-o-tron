@@ -14,7 +14,12 @@ async def test_tv_season_fallback_uses_wiki_titles_and_corrected_title(mocker):
     # Mock episode titles and corrected show title from Wikipedia
     mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-        new=AsyncMock(return_value=({1: "Pilot"}, "Show (TV series)")),
+        new=AsyncMock(
+            return_value=(
+                {1: {"title": "Pilot", "release_date": None}},
+                "Show (TV series)",
+            )
+        ),
     )
 
     # Season queries return no results to force fallback

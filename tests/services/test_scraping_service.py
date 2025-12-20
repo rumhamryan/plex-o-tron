@@ -237,6 +237,31 @@ OVERVIEW_ONGOING_ONLY_HTML = """
 """
 
 
+FUTURE_AND_TBA_HTML = """
+<h3>Season 5</h3>
+<table class="wikitable">
+<tr><th>No.</th><th>Title</th><th>Original air date</th></tr>
+<tr><td>1</td><td>"Released Episode"</td><td>January 1, 2000</td></tr>
+<tr><td>2</td><td>"Future Episode"</td><td>January 1, 3000</td></tr>
+<tr><td>3</td><td>"TBA Episode"</td><td>TBA</td></tr>
+<tr><td>4</td><td>"NA Episode"</td><td>N/A</td></tr>
+</table>
+"""
+
+
+@pytest.mark.asyncio
+async def test_fetch_season_episode_count_filters_unreleased(mocker):
+    mock_page = mocker.Mock()
+    mock_page.url = "http://example.com"
+    mock_page.html.return_value = FUTURE_AND_TBA_HTML
+    mocker.patch("wikipedia.page", return_value=mock_page)
+    mocker.patch("wikipedia.search", return_value=["Show"])
+
+    # Should return 1 because only the first episode is released
+    count = await scraping_service.fetch_season_episode_count_from_wikipedia("Show", 5)
+    assert count == 1
+
+
 @pytest.mark.asyncio
 async def test_fetch_episode_title_dedicated_page(mocker):
     mock_page = mocker.Mock()

@@ -603,7 +603,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beautifulsoup4" },
+    { name = "beautifulsoup4", specifier = ">=4.12.3" },
     { name = "black", marker = "extra == 'dev'" },
     { name = "flask" },
     { name = "httpx", extras = ["http2"] },

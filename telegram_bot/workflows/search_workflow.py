@@ -814,6 +814,44 @@ async def _fast_track_tv_scope_selection(
     _save_session(context, session)
 
 
+async def _validate_episode_released(
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    title: str,
+    season: int,
+    episode: int,
+) -> bool:
+    """Checks if an episode has been released yet. Returns False if unreleased."""
+    try:
+        titles_map, _ = await scraping_service.fetch_episode_titles_for_season(
+            title, season
+        )
+        meta = titles_map.get(episode)
+        if meta and meta.get("release_date"):
+            current_date = datetime.now().date().isoformat()
+            if meta["release_date"] > current_date:
+                logger.info(
+                    "[SEARCH] Guard: Episode %s S%02dE%02d is unreleased (Released: %s)",
+                    title,
+                    season,
+                    episode,
+                    meta["release_date"],
+                )
+                await safe_send_message(
+                    context.bot,
+                    chat_id,
+                    text=f"❌ Episode *{escape_markdown(str(episode), version=2)}* of "
+                    f"*{escape_markdown(title, version=2)}* S{int(season):02d} "
+                    f"is scheduled for release on *{escape_markdown(meta['release_date'], version=2)}* "
+                    "and cannot be searched for yet\\.",
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                )
+                return False
+    except Exception as e:
+        logger.debug("[SEARCH] Error during release date check: %s", e)
+    return True
+
+
 async def _fast_track_tv_episode_resolution(
     chat_id: int,
     context: ContextTypes.DEFAULT_TYPE,
@@ -826,6 +864,10 @@ async def _fast_track_tv_episode_resolution(
     allow_detail_change: bool = False,
 ) -> None:
     """Skip directly to resolution selection for a detected episode."""
+    if not await _validate_episode_released(chat_id, context, title, season, episode):
+        clear_search_session(context.user_data)
+        return
+
     final_title = f"{title} S{int(season):02d}E{int(episode):02d}"
     session.media_type = "tv"
     session.tv_scope = "single"
@@ -976,6 +1018,11 @@ async def _handle_episode_selection_button(
         clear_search_session(context.user_data)
         return
 
+    if not await _validate_episode_released(
+        query.message.chat_id, context, title, season, episode_num
+    ):
+        return
+
     full_search_term = f"{title} S{int(season):02d}E{episode_num:02d}"
     session.media_type = "tv"
     session.tv_scope = "single"
@@ -1005,6 +1052,9 @@ async def _handle_tv_episode_reply(
         return
 
     episode = int(query)
+    if not await _validate_episode_released(chat_id, context, title, season, episode):
+        return
+
     full_search_term = f"{title} S{int(season):02d}E{episode:02d}"
 
     session.media_type = "tv"
@@ -2686,7 +2736,7 @@ async def _perform_tv_season_search(
     else:
         targets = list(range(1, episode_count + 1))
 
-    titles_map: dict[int, str] = {}
+    titles_map: dict[int, dict[str, Any]] = {}
     corrected_title: str | None = None
     try:
         (
@@ -2695,6 +2745,38 @@ async def _perform_tv_season_search(
         ) = await scraping_service.fetch_episode_titles_for_season(title, season)
     except Exception:
         titles_map, corrected_title = {}, None
+
+    # Filter out episodes that haven't been released yet
+    current_date = datetime.now().date().isoformat()
+    filtered_targets = []
+    for ep in targets:
+        meta = titles_map.get(ep)
+        if meta and meta.get("release_date"):
+            if meta["release_date"] > current_date:
+                logger.info(
+                    "[SEARCH] Skipping unreleased episode %s S%02dE%02d (Released: %s)",
+                    title,
+                    season,
+                    ep,
+                    meta["release_date"],
+                )
+                continue
+        filtered_targets.append(ep)
+
+    if targets and not filtered_targets:
+        logger.warning(
+            "[SEARCH] All requested episodes for %s S%02d are unreleased.",
+            title,
+            season,
+        )
+        await safe_edit_message(
+            message,
+            text=f"❌ No episodes for *{escape_markdown(title, version=2)}* S{int(season):02d} have been released yet or could be verified\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    targets = filtered_targets
 
     episode_candidates: dict[int, list[EpisodeCandidate]] = {}
     missing_candidates: list[int] = []
@@ -2790,7 +2872,8 @@ async def _perform_tv_season_search(
         parsed_info["season"] = season
         parsed_info["episode"] = candidate.episode
         parsed_info["type"] = "tv"
-        parsed_info["episode_title"] = titles_map.get(candidate.episode)
+        meta = titles_map.get(candidate.episode)
+        parsed_info["episode_title"] = meta.get("title") if meta else None
         torrents_to_queue.append(
             {
                 "link": candidate.link,

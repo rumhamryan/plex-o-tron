@@ -498,6 +498,12 @@ async def test_search_tv_happy_path(mocker, context, make_callback_query, make_m
         new=AsyncMock(return_value=5),
     )
     mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+        new=AsyncMock(
+            return_value=({2: {"title": "Ep 2", "release_date": "2020-01-01"}}, None)
+        ),
+    )
+    mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
         new=AsyncMock(return_value=10),
     )
@@ -579,6 +585,12 @@ async def test_tv_title_fast_path_skips_prompts(
     present_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow._present_search_results",
         new=AsyncMock(side_effect=fake_present),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+        new=AsyncMock(
+            return_value=({5: {"title": "Ep 5", "release_date": "2020-01-01"}}, None)
+        ),
     )
     seasons_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_total_seasons_from_wikipedia",
@@ -926,42 +938,41 @@ async def test_handle_tv_scope_selection_single(
     assert session.step == SearchStep.TV_EPISODE
     send_prompt.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    async def test_handle_tv_scope_selection_season(
-        mocker, context, make_callback_query, make_message
-    ):
-        mocker.patch(
-            "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-            new=AsyncMock(return_value=({}, None)),
-        )
-        mocker.patch(
-            "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
-            new=AsyncMock(return_value=set()),
-        )
-        mocker.patch(
-            "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
-        )
-        mocker.patch(
-            "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
-            new=AsyncMock(return_value=2),
-        )
-        prompt_mock = mocker.patch(
-            "telegram_bot.workflows.search_workflow._prompt_tv_season_resolution",
-            new=AsyncMock(),
-        )
-        session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
-        session.set_title("Show")
-        session.save(context.user_data)
-        # Select season scope
-        update = Update(
-            update_id=1,
-            callback_query=make_callback_query(
-                "search_tv_scope_season", make_message()
-            ),
-        )
-        await handle_search_buttons(update, context)
 
-        prompt_mock.assert_awaited_once()
+@pytest.mark.asyncio
+async def test_handle_tv_scope_selection_season(
+    mocker, context, make_callback_query, make_message
+):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
+        new=AsyncMock(return_value=({}, None)),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.plex_service.get_existing_episodes_for_season",
+        new=AsyncMock(return_value=set()),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        new=AsyncMock(return_value=2),
+    )
+    prompt_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow._prompt_tv_season_resolution",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
+    session.set_title("Show")
+    session.save(context.user_data)
+    # Select season scope
+    update = Update(
+        update_id=1,
+        callback_query=make_callback_query("search_tv_scope_season", make_message()),
+    )
+    await handle_search_buttons(update, context)
+
+    prompt_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -970,7 +981,15 @@ async def test_handle_tv_scope_selection_season_fallback(
 ):
     mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-        new=AsyncMock(return_value=({1: "Episode 1", 2: "Episode 2"}, None)),
+        new=AsyncMock(
+            return_value=(
+                {
+                    1: {"title": "Episode 1", "release_date": None},
+                    2: {"title": "Episode 2", "release_date": None},
+                },
+                None,
+            )
+        ),
     )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.safe_edit_message", new=AsyncMock()
@@ -1095,7 +1114,12 @@ async def test_entire_season_skips_pack_and_targets_missing(
 ):
     mocker.patch(
         "telegram_bot.workflows.search_workflow.scraping_service.fetch_episode_titles_for_season",
-        new=AsyncMock(return_value=({i: f"Ep {i}" for i in range(1, 6)}, None)),
+        new=AsyncMock(
+            return_value=(
+                {i: {"title": f"Ep {i}", "release_date": None} for i in range(1, 6)},
+                None,
+            )
+        ),
     )
     # Mock messaging and data sources
     mocker.patch(

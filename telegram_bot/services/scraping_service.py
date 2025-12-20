@@ -290,7 +290,7 @@ async def fetch_season_episode_count_from_wikipedia(
 
 async def fetch_episode_titles_for_season(
     show_title: str, season: int, _last_resort: bool = False
-) -> tuple[dict[int, str], str | None]:
+) -> tuple[dict[int, dict[str, Any]], str | None]:
     normalized_title = _display_title(show_title)
     cache_key = _episode_titles_cache_key(show_title, season)
     season_tag = _season_label(normalized_title, season)
