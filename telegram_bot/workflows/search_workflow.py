@@ -1269,10 +1269,10 @@ async def _prompt_tv_season_resolution(
         [
             [
                 InlineKeyboardButton(
-                    "1080p", callback_data="search_tv_season_resolution_1080p"
+                    "720p", callback_data="search_tv_season_resolution_720p"
                 ),
                 InlineKeyboardButton(
-                    "2160p / 4K", callback_data="search_tv_season_resolution_2160p"
+                    "1080p", callback_data="search_tv_season_resolution_1080p"
                 ),
             ],
             [
@@ -1298,7 +1298,7 @@ async def _handle_tv_season_resolution_button(
         return
 
     choice = _get_callback_data(query).split("_")[-1]
-    if choice not in {"1080p", "2160p", "all"}:
+    if choice not in {"720p", "1080p", "all"}:
         choice = "1080p"
     session.resolution = choice
     _save_session(context, session)
@@ -2684,7 +2684,7 @@ async def _perform_tv_season_search(
     found_results: list[dict[str, Any]] = []
 
     # Add resolution hints to query if specific
-    if target_res in ("1080p", "2160p"):
+    if target_res in ("720p", "1080p"):
         season_queries = [f"{q} {target_res}" for q in season_queries] + season_queries
 
     for q in season_queries:
@@ -2816,7 +2816,7 @@ async def _perform_tv_season_search(
     for ep in targets:
         search_term = f"{title} S{season:02d}E{ep:02d}"
         # Hint resolution in query
-        if target_res in ("1080p", "2160p"):
+        if target_res in ("720p", "1080p"):
             search_term += f" {target_res}"
 
         ep_results = await search_logic.orchestrate_searches(
