@@ -32,6 +32,7 @@ from ..utils import (
     parse_torrent_name,
     safe_send_message,
     format_bytes,
+    sanitize_collection_name,
 )
 from .search_session import (
     CONTEXT_LOST_MESSAGE,
@@ -114,34 +115,6 @@ def _normalize_label(value: Any) -> str:
     elif value is not None:
         text = str(value)
     return re.sub(r"[\W_]+", "", text.strip()).casefold()
-
-
-_COLLECTION_SUFFIX_KEYWORDS = (
-    "franchise",
-    "film series",
-    "films",
-    "collection",
-    "cinematic universe",
-    "universe",
-)
-
-
-def _sanitize_collection_name(value: str | None) -> str:
-    invalid_chars = '<>:"/\\|?*'
-    safe_value = "".join(c for c in (value or "") if c not in invalid_chars).strip()
-    if not safe_value:
-        return "Collection"
-    suffix_pattern = re.compile(
-        r"\((?:[^)]*\b(?:franchise|collection|film series|films|cinematic universe|universe)\b[^)]*)\)",
-        re.IGNORECASE,
-    )
-    safe_value = suffix_pattern.sub("", safe_value).strip()
-    for keyword in _COLLECTION_SUFFIX_KEYWORDS:
-        keyword_pattern = re.compile(rf"\b{keyword}\b\.?$", re.IGNORECASE)
-        new_value = keyword_pattern.sub("", safe_value).strip()
-        safe_value = new_value or safe_value
-    safe_value = safe_value.strip("-_ ,")
-    return safe_value or "Collection"
 
 
 def _format_collection_movie_label(movie: dict[str, Any]) -> str:
@@ -572,7 +545,7 @@ async def _start_collection_lookup(
         return
 
     session.collection_name = franchise_name
-    session.collection_fs_name = _sanitize_collection_name(franchise_name)
+    session.collection_fs_name = sanitize_collection_name(franchise_name)
     session.collection_movies = normalized_movies
     session.collection_exclusions = []
     session.collection_resolution = None
@@ -3075,7 +3048,7 @@ def _resolve_collection_paths(
         raise RuntimeError("Movies path is not configured.")
 
     final_name = collection_fs_name or collection_name or "Collection"
-    safe_name = _sanitize_collection_name(final_name)
+    safe_name = sanitize_collection_name(final_name)
     franchise_dir = os.path.join(movies_root, safe_name)
     return movies_root, franchise_dir
 

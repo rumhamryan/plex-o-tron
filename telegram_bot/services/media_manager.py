@@ -384,7 +384,12 @@ def _get_final_destination_path(
     media_type = parsed_info.get("type")
 
     if media_type == "movie":
-        return save_paths.get("movies", save_paths["default"])
+        root = save_paths.get("movies", save_paths["default"])
+        collection_name = parsed_info.get("collection_name")
+        if collection_name:
+            safe_col_name = _sanitize_directory_component(collection_name, "Collection")
+            return os.path.join(root, safe_col_name)
+        return root
 
     if media_type == "tv":
         root_path = save_paths.get("tv_shows", save_paths["default"])

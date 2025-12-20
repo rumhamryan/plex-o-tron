@@ -469,3 +469,40 @@ def score_torrent_result(
     score += int(round(health))
 
     return score
+
+
+_COLLECTION_SUFFIX_KEYWORDS = (
+    "franchise",
+    "film series",
+    "films",
+    "collection",
+    "cinematic universe",
+    "universe",
+)
+
+
+def sanitize_collection_name(value: str | None) -> str:
+    """
+    Sanitizes a collection name by removing invalid characters and common
+    franchise suffixes (e.g., " (Franchise)", " Collection").
+    """
+    invalid_chars = '<>:"/\\|?*'
+    safe_value = "".join(c for c in (value or "") if c not in invalid_chars).strip()
+    if not safe_value:
+        return "Collection"
+
+    # Remove parenthetical suffixes like "(Franchise)"
+    suffix_pattern = re.compile(
+        r"\((?:[^)]*\b(?:franchise|collection|film series|films|cinematic universe|universe)\b[^)]*)\)",
+        re.IGNORECASE,
+    )
+    safe_value = suffix_pattern.sub("", safe_value).strip()
+
+    # Remove trailing keywords
+    for keyword in _COLLECTION_SUFFIX_KEYWORDS:
+        keyword_pattern = re.compile(rf"\b{keyword}\b\.?$", re.IGNORECASE)
+        new_value = keyword_pattern.sub("", safe_value).strip()
+        safe_value = new_value or safe_value
+
+    safe_value = safe_value.strip("-_ ,")
+    return safe_value or "Collection"

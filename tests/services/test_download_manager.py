@@ -558,8 +558,12 @@ async def test_add_collection_to_queue_owned_only(
         "telegram_bot.services.download_manager.ensure_collection_contains_movies",
         AsyncMock(return_value=[]),
     )
+    sleep_mock = mocker.patch("asyncio.sleep", AsyncMock())
 
     await add_collection_to_queue(update, context)
+
+    # Should wait 120s for Plex
+    sleep_mock.assert_awaited_once_with(120)
 
     process_mock.assert_not_awaited()
     kwargs = edit_mock.await_args.kwargs

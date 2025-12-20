@@ -16,7 +16,7 @@ from telegram.helpers import escape_markdown
 
 from ..config import logger, PERSISTENCE_FILE
 from ..state import save_state
-from ..utils import safe_edit_message
+from ..utils import safe_edit_message, sanitize_collection_name
 from .media_manager import handle_successful_download, _trigger_plex_scan
 from .plex_service import ensure_collection_contains_movies
 from ..workflows import finalize_movie_collection
@@ -50,7 +50,7 @@ class ProgressReporter:
 
             current_time = time.monotonic()
             if (
-                current_time - self.last_update_time < 1
+                current_time - self.last_update_time < 2
             ):  # Reduced from 5 for more frequent updates
                 return
             self.last_update_time = current_time
@@ -241,7 +241,7 @@ async def download_with_progress(
             time.monotonic() - start_time > 60
         ):
             logger.warning(f"Metadata download timed out for {handle.name()}")
-            return False, None
+            raise TimeoutError("metadata_timeout")
 
         await asyncio.sleep(1)
 
@@ -283,6 +283,18 @@ async def download_task_wrapper(download_data: dict, application: Application):
         )
 
         if success and ti:
+            # Inject sanitized collection name if part of a collection batch
+            batch_id = source_dict.get("batch_id")
+            if batch_id:
+                batches = application.bot_data.get("DOWNLOAD_BATCHES", {})
+                batch = batches.get(batch_id)
+                if batch and batch.get("collection"):
+                    raw_name = batch["collection"].get("name")
+                    if raw_name:
+                        source_dict.setdefault("parsed_info", {})["collection_name"] = (
+                            sanitize_collection_name(raw_name)
+                        )
+
             # Defer Plex scan if this download is part of a batch of episodes
             defer_scan = bool(source_dict.get("batch_id"))
             message_text = await handle_successful_download(
@@ -313,6 +325,25 @@ async def download_task_wrapper(download_data: dict, application: Application):
         else:
             if not download_data.get("requeued"):
                 message_text = "❌ *Download Failed*\nAn unknown error occurred in the download manager\\."
+
+    except TimeoutError as e:
+        if str(e) == "metadata_timeout":
+            logger.warning(f"Metadata timeout for '{clean_name}'. Requeueing.")
+            download_data["requeued"] = True
+            download_data["metadata_timeout_occurred"] = True
+            message_text = f"⚠️ *Metadata Timeout*\nRetrying download for:\n`{escape_markdown(clean_name)}`"
+
+            # Clean up the stuck torrent
+            ses = application.bot_data["TORRENT_SESSION"]
+            handle = download_data.get("handle")
+            if handle and handle.is_valid():
+                ses.remove_torrent(handle, lt.session.delete_files)
+        else:
+            logger.error(
+                f"Unexpected TimeoutError in download task for '{clean_name}': {e}",
+                exc_info=True,
+            )
+            message_text = f"❌ *Error*\nAn unexpected timeout occurred:\n`{escape_markdown(str(e))}`"
 
     except asyncio.CancelledError:
         if download_data.get("requeued"):
@@ -427,8 +458,14 @@ async def _update_batch_and_maybe_scan(
         scan_msg = await _trigger_plex_scan(media_type, plex_config)
 
         if media_type == "movie":
+            # Wait 120s for Plex scan to likely complete so items are indexable
+            if scan_msg:
+                logger.info("Waiting 120 seconds for Plex scan to index new movies...")
+                await asyncio.sleep(120)
+
             collection_meta = batch.get("collection") or {}
-            collection_name = str(collection_meta.get("name") or "").strip()
+            raw_name = str(collection_meta.get("name") or "").strip()
+            collection_name = sanitize_collection_name(raw_name)
             added = await ensure_collection_contains_movies(
                 plex_config,
                 collection_name,
@@ -457,7 +494,17 @@ async def _requeue_download(download_data: dict, application: Application):
     download_data.pop("task", None)
     download_data.pop("handle", None)
     download_data.pop("requeued", None)
-    download_data["is_paused"] = True  # Ensure it's marked as paused
+
+    # Check if this was a metadata timeout
+    is_metadata_timeout = download_data.pop("metadata_timeout_occurred", False)
+
+    # If it was a timeout, we want to auto-retry (unpaused).
+    # Otherwise (e.g., interrupted by higher priority), we default to paused state
+    # so it doesn't auto-resume unexpectedly unless logic elsewhere dictates.
+    if is_metadata_timeout:
+        download_data["is_paused"] = False
+    else:
+        download_data["is_paused"] = True  # Ensure it's marked as paused
 
     if chat_id_str not in download_queues:
         download_queues[chat_id_str] = []
@@ -465,6 +512,14 @@ async def _requeue_download(download_data: dict, application: Application):
 
     if chat_id_str in active_downloads:
         del active_downloads[chat_id_str]
+
+    # If this was a metadata timeout and it's the ONLY item in the queue,
+    # wait 60 seconds before letting process_queue_for_user pick it up again.
+    if is_metadata_timeout and len(download_queues[chat_id_str]) == 1:
+        logger.info(
+            "Metadata timeout on the only queued item. Waiting 60s before retry."
+        )
+        await asyncio.sleep(60)
 
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
     await process_queue_for_user(chat_id, application)  # Start next in queue
@@ -850,8 +905,9 @@ async def _finalize_owned_collection_batch(
     batches.pop(batch_id, None)
 
     collection_meta = franchise_meta or {}
-    collection_name = str(collection_meta.get("name") or "this collection")
-    collection_md = escape_markdown(collection_name, version=2)
+    raw_name = str(collection_meta.get("name") or "this collection")
+    collection_name = sanitize_collection_name(raw_name)
+    collection_md = escape_markdown(raw_name, version=2)
     combined = "\n\n".join(summaries) if summaries else "✅ *Already Organized*"
 
     await finalize_movie_collection(context, collection_meta)
@@ -864,6 +920,12 @@ async def _finalize_owned_collection_batch(
 
     plex_config = context.bot_data.get("PLEX_CONFIG")
     scan_msg = await _trigger_plex_scan("movie", plex_config)
+
+    # Wait 120s for Plex scan to likely complete
+    if scan_msg:
+        logger.info("Waiting 120 seconds for Plex scan to index existing movies...")
+        await asyncio.sleep(120)
+
     added = await ensure_collection_contains_movies(
         plex_config,
         collection_name,

@@ -217,6 +217,17 @@ def test_get_final_destination_path_collection():
     assert result == "/library/movies"
 
 
+def test_get_final_destination_path_with_collection_name():
+    parsed = {
+        "type": "movie",
+        "collection_name": "Saga Collection",
+    }
+    save_paths = {"movies": "/library/movies", "default": "/library"}
+    result = _get_final_destination_path(parsed, save_paths)
+    expected = os.path.join("/library/movies", "Saga Collection")
+    assert result == expected
+
+
 @pytest.mark.asyncio
 async def test_trigger_plex_scan_skips_placeholder_token():
     result = await _trigger_plex_scan(

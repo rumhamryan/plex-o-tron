@@ -21,6 +21,7 @@ This project is designed to run on Windows and Linux (Ubuntu/Debian).
 
 ### Prerequisites
 
+*   **Plex Media Server**: Required for full-functionality, but the bot can run without a Plex server.
 *   **Python 3.12+**: Ensure Python is installed and in your PATH.
 *   **uv**: We highly recommend using [uv](https://github.com/astral-sh/uv) for fast, reliable dependency management.
     *   *To install uv:* `curl -LsSf https://astral.sh/uv/install.sh | sh` (Linux/Mac) or via PowerShell (Windows).
