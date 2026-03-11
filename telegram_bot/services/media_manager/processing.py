@@ -141,7 +141,7 @@ async def handle_successful_download(
         logger.error("Post-processing failed: %s", e, exc_info=True)
         return (
             "❌ *Post-Processing Error*\n"
-            "Download completed but failed during file handling.\n\n"
+            "Download completed but failed during file handling\\.\n\n"
             f"`{escape_markdown(str(e))}`"
         )
 
@@ -163,6 +163,6 @@ async def handle_successful_download(
     season_note = ""
     if is_season_pack:
         processed_label = season_pack_processed or 0
-        season_note = f"\nProcessed and moved {processed_label} episodes from the season pack."
+        season_note = f"\nProcessed and moved {processed_label} episodes from the season pack\\."
 
     return f"{summary_text}{season_note}{scan_status_message}"

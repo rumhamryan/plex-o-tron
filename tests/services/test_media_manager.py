@@ -277,7 +277,7 @@ async def test_handle_successful_download_season_pack(mocker):
     assert size_mock.call_count == 2
     assert "Successfully Added to Plex" in result
     assert "📦 Size: 3\\.0 KB" in result
-    assert "Processed and moved 2 episodes from the season pack." in result
+    assert "Processed and moved 2 episodes from the season pack\\." in result
 
 
 def test_get_final_destination_path_collection():
