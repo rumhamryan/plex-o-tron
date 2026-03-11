@@ -1,0 +1,77 @@
+# file: config.ini
+
+[telegram]
+# Get your bot token from @BotFather on Telegram
+bot_token = TELEGRAM_BOT_TOKEN
+# Get your numeric User ID from @userinfobot on Telegram
+allowed_user_ids = USER_ID_1, USER_ID_2
+
+[plex]
+# (Optional) Your Plex server URL and API token
+plex_url = http://192.168.0.121:32400
+plex_token = PLEX_TOKEN
+
+[host]
+# Define absolute paths for your media. Use forward slashes for both OSes.
+default_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Unsorted
+movies_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Movies
+tv_shows_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\TV
+
+[search]
+websites = {
+    "movies": [
+        {
+            "name": "YTS.lt",
+            "search_url": "https://yts.lt/browse-movies/{query}/{quality}/all/0/latest/{year}/all"
+        },
+        {
+            "name": "tpb",
+            "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"
+        }
+    ],
+    "tv": [
+        {
+            "name": "eztvx.to",
+            "search_url": "https://eztvx.to/search/{query}"
+        },
+        {
+            "name": "tpb",
+            "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"
+        }
+    ]
+}
+preferences = {
+    "movies": {
+        "resolutions": {
+            "4k": 5,
+            "2160p": 5,
+            "1080p": 3,
+            "720p": 1
+        },
+        "codecs": {
+            "x265": 2,
+            "hevc": 2,
+            "x264": 1,
+            "h264": 1
+        },
+        "uploaders": {
+            "mazemaze16": 5,
+            "QxR": 5
+        }
+    },
+    "tv": {
+        "resolutions": {
+            "1080p": 5,
+            "720p": 2
+        },
+        "codecs": {
+            "x265": 2,
+            "hevc": 2,
+            "x264": 1
+        },
+        "uploaders": {
+            "EZTV": 5,
+            "MeGusta": 5
+        }
+    }
+}

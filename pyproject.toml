@@ -1,0 +1,79 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plex-o-tron-bot"
+version = "0.3.0"
+description = "A Telegram bot that automates the process of downloading torrents and organizing them for a Plex media server."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Ryan", email = "roswalt@pm.me" },
+]
+
+# Core runtime dependencies for the bot to function
+dependencies = [
+    "beautifulsoup4>=4.12.3",
+    "lxml",
+    "flask",
+    "python-telegram-bot",
+    "wikipedia",
+    "libtorrent",
+    "plexapi",
+    "thefuzz",
+    "httpx[http2]",
+    "PyYAML",
+]
+
+[project.optional-dependencies]
+# Dependencies for development, testing, and code quality
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-cov",
+    "pre-commit",
+    "ruff",
+    "pyright",
+    "mypy",
+    "types-requests",
+    "types-beautifulsoup4",
+    "pluggy",
+    "pygments",
+    "iniconfig",
+    "types-PyYAML",
+]
+
+# --- Tool Configurations ---
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["telegram_bot"]
+
+# Ignore third-party libraries that don't have type hints
+ignore_missing_imports = true
+explicit_package_bases = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+filterwarnings = [
+    # Suppress BeautifulSoup parser guess warning emitted by the wikipedia lib
+    "ignore::bs4.GuessedAtParserWarning",
+]
+norecursedirs = [
+    "tests/_tmp",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+]
+cache_dir = "tests/.pytest_cache"
