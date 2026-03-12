@@ -39,6 +39,7 @@ from .helpers import (
     _normalize_release_field,
 )
 from .movie_collection_flow import COLLECTION_CODEC_CHOICES
+from .preferences import _render_search_preferences_prompt
 from .results import _filter_results_by_resolution, _log_aggregated_results, _present_search_results
 from .state import (
     _get_callback_data,
@@ -57,6 +58,9 @@ RESOLUTION_SIZE_TARGETS = {
 }
 SIZE_VARIANCE_WEIGHT = 12.0
 SIZE_DEVIATION_WEIGHT = 8.0
+TV_SEASON_RESOLUTION_CHOICES: tuple[str, ...] = ("720p", "1080p")
+TV_SEASON_RESOLUTION_OPTIONS = (("720p", "720p"), ("1080p", "1080p"))
+TV_SEASON_CODEC_OPTIONS = (("x264", "x264 / AVC"), ("x265", "x265 / HEVC"))
 
 
 @dataclass(slots=True)
@@ -583,6 +587,8 @@ async def _handle_tv_scope_selection(
         session.missing_episode_numbers = missing_list
         session.tv_scope = "season"
         session.media_type = "tv"
+        session.resolution = None
+        session.tv_codec = None
         session.advance(SearchStep.RESOLUTION)
         _save_session(context, session)
 
@@ -619,35 +625,27 @@ async def _handle_tv_scope_selection(
 
         session.allow_detail_change = False
         _save_session(context, session)
-        await _prompt_tv_season_resolution(query.message, context, session)
+        await _prompt_tv_season_preferences(query.message, context, session)
 
 
-async def _prompt_tv_season_resolution(
+async def _prompt_tv_season_preferences(
     message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
     text = (
-        "Choose the target resolution for this season pack or episode batch\\.\n"
-        "This helps me bias torrent selection toward consistent releases\\."
+        "Choose the resolution and codec for this season search\\.\n"
+        "These preferences guide selection toward consistent releases\\."
     )
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("720p", callback_data="search_tv_season_resolution_720p"),
-                InlineKeyboardButton("1080p", callback_data="search_tv_season_resolution_1080p"),
-            ],
-            [
-                InlineKeyboardButton(
-                    "Best Available", callback_data="search_tv_season_resolution_all"
-                )
-            ],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-        ]
-    )
-    await safe_edit_message(
+    await _render_search_preferences_prompt(
         message,
         text=text,
-        reply_markup=keyboard,
-        parse_mode=ParseMode.MARKDOWN_V2,
+        selected_resolution=session.resolution,
+        resolution_options=TV_SEASON_RESOLUTION_OPTIONS,
+        resolution_callback_prefix="search_tv_season_resolution_",
+        selected_codec=session.tv_codec,
+        codec_options=TV_SEASON_CODEC_OPTIONS,
+        codec_callback_prefix="search_tv_season_codec_",
+        continue_callback_data="search_tv_season_preferences_continue",
+        continue_label="Search",
     )
 
 
@@ -658,36 +656,16 @@ async def _handle_tv_season_resolution_button(
         return
 
     choice = _get_callback_data(query).split("_")[-1]
-    if choice not in {"720p", "1080p", "all"}:
-        choice = "1080p"
+    if choice not in TV_SEASON_RESOLUTION_CHOICES:
+        try:
+            await query.answer(text="Please choose 720p or 1080p.", show_alert=False)
+        except RuntimeError:
+            pass
+        await _prompt_tv_season_preferences(query.message, context, session)
+        return
     session.resolution = choice
     _save_session(context, session)
-    await _prompt_tv_season_codec(query.message, context, session)
-
-
-async def _prompt_tv_season_codec(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
-) -> None:
-    text = (
-        "Select your preferred codec for this season\\.\n"
-        'Choosing "Either" allows the best match per episode/pack\\.'
-    )
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("x264 / AVC", callback_data="search_tv_season_codec_x264"),
-                InlineKeyboardButton("x265 / HEVC", callback_data="search_tv_season_codec_x265"),
-            ],
-            [InlineKeyboardButton("Either Codec", callback_data="search_tv_season_codec_any")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-        ]
-    )
-    await safe_edit_message(
-        message,
-        text=text,
-        reply_markup=keyboard,
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
+    await _prompt_tv_season_preferences(query.message, context, session)
 
 
 async def _handle_tv_season_codec_button(
@@ -698,9 +676,36 @@ async def _handle_tv_season_codec_button(
 
     choice = _get_callback_data(query).split("_")[-1].lower()
     if choice not in COLLECTION_CODEC_CHOICES:
-        choice = "any"
+        try:
+            await query.answer(text="Please choose x264 or x265.", show_alert=False)
+        except RuntimeError:
+            pass
+        await _prompt_tv_season_preferences(query.message, context, session)
+        return
     session.tv_codec = choice
     _save_session(context, session)
+    await _prompt_tv_season_preferences(query.message, context, session)
+
+
+async def _handle_tv_season_preferences_continue(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    if (
+        session.resolution not in TV_SEASON_RESOLUTION_CHOICES
+        or session.tv_codec not in COLLECTION_CODEC_CHOICES
+    ):
+        try:
+            await query.answer(
+                text="Choose both a resolution and codec before searching.",
+                show_alert=False,
+            )
+        except RuntimeError:
+            pass
+        await _prompt_tv_season_preferences(query.message, context, session)
+        return
 
     title = session.require_title()
     season = session.require_season()

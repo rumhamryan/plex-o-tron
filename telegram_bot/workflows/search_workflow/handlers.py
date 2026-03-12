@@ -34,6 +34,7 @@ from .movie_collection_flow import (
     _handle_collection_codec_button,
     _handle_collection_confirm,
     _handle_collection_movie_toggle,
+    _handle_collection_preferences_continue,
     _handle_collection_resolution_button,
 )
 from .movie_flow import _handle_movie_title_reply, _handle_movie_year_reply, _search_movie_results
@@ -56,6 +57,7 @@ from .tv_flow import (
     _build_tv_scope_keyboard,
     _handle_tv_change_details,
     _handle_tv_episode_reply,
+    _handle_tv_season_preferences_continue,
     _handle_tv_scope_selection,
     _handle_tv_season_codec_button,
     _handle_tv_season_reply,
@@ -154,6 +156,8 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         in {
             "search_collection_accept",
             "search_collection_confirm",
+            "search_collection_preferences_continue",
+            "search_tv_season_preferences_continue",
         }
         or action == "search_tv_change_details"
     )
@@ -175,6 +179,8 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
             await _handle_collection_resolution_button(query, context, session)
         elif action.startswith("search_collection_codec_"):
             await _handle_collection_codec_button(query, context, session)
+        elif action == "search_collection_preferences_continue":
+            await _handle_collection_preferences_continue(query, context, session)
         elif action.startswith("search_collection_toggle_"):
             await _handle_collection_movie_toggle(query, context, session)
         elif action == "search_collection_confirm":
@@ -187,6 +193,8 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
             await _handle_tv_season_resolution_button(query, context, session)
         elif action.startswith("search_tv_season_codec_"):
             await _handle_tv_season_codec_button(query, context, session)
+        elif action == "search_tv_season_preferences_continue":
+            await _handle_tv_season_preferences_continue(query, context, session)
         elif action.startswith("search_select_season_"):
             await _handle_season_selection_button(query, context, session)
         elif action.startswith("search_select_episode_"):

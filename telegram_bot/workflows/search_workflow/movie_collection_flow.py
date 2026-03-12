@@ -41,6 +41,7 @@ from .helpers import (
     _normalize_release_field,
     _parse_release_iso,
 )
+from .preferences import _render_search_preferences_prompt
 from .results import (
     FOUR_K_SIZE_MULTIPLIER,
     _filter_results_by_resolution,
@@ -50,7 +51,10 @@ from .results import (
 from .state import _get_callback_data, _get_user_data_store, _save_session
 
 COLLECTION_MOVIE_PREVIEW_LIMIT = 6
-COLLECTION_CODEC_CHOICES: tuple[str, ...] = ("x264", "x265", "any")
+COLLECTION_CODEC_CHOICES: tuple[str, ...] = ("x264", "x265")
+COLLECTION_RESOLUTION_CHOICES: tuple[str, ...] = ("1080p", "2160p")
+COLLECTION_RESOLUTION_OPTIONS = (("1080p", "1080p"), ("2160p", "2160p / 4K"))
+COLLECTION_CODEC_OPTIONS = (("x264", "x264 / AVC"), ("x265", "x265 / HEVC"))
 
 
 async def _start_collection_lookup(
@@ -222,10 +226,10 @@ async def _handle_collection_accept(
     session.prompt_message_id = query.message.message_id
     session.advance(SearchStep.RESOLUTION)
     _save_session(context, session)
-    await _prompt_collection_resolution(query.message, context, session)
+    await _prompt_collection_preferences(query.message, context, session)
 
 
-async def _prompt_collection_resolution(
+async def _prompt_collection_preferences(
     message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
     owned_note = ""
@@ -235,30 +239,20 @@ async def _prompt_collection_resolution(
             "already exist in your library and will be skipped\\."
         )
     text = (
-        "Choose the target resolution for this collection run\\."
-        f"{owned_note}\n\nThis helps me bias torrent selection toward consistent releases\\."
+        "Choose the resolution and codec for this collection run\\."
+        f"{owned_note}\n\nThese preferences guide selection toward consistent releases\\."
     )
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("1080p", callback_data="search_collection_resolution_1080p"),
-                InlineKeyboardButton(
-                    "2160p / 4K", callback_data="search_collection_resolution_2160p"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "Best Available", callback_data="search_collection_resolution_all"
-                )
-            ],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-        ]
-    )
-    await safe_edit_message(
+    await _render_search_preferences_prompt(
         message,
         text=text,
-        reply_markup=keyboard,
-        parse_mode=ParseMode.MARKDOWN_V2,
+        selected_resolution=session.collection_resolution,
+        resolution_options=COLLECTION_RESOLUTION_OPTIONS,
+        resolution_callback_prefix="search_collection_resolution_",
+        selected_codec=session.collection_codec,
+        codec_options=COLLECTION_CODEC_OPTIONS,
+        codec_callback_prefix="search_collection_codec_",
+        continue_callback_data="search_collection_preferences_continue",
+        continue_label="Continue",
     )
 
 
@@ -269,36 +263,16 @@ async def _handle_collection_resolution_button(
         return
 
     choice = _get_callback_data(query).split("_")[-1]
-    if choice not in {"1080p", "2160p", "all"}:
-        choice = "1080p"
+    if choice not in COLLECTION_RESOLUTION_CHOICES:
+        try:
+            await query.answer(text="Please choose 1080p or 4K.", show_alert=False)
+        except RuntimeError:
+            pass
+        await _prompt_collection_preferences(query.message, context, session)
+        return
     session.collection_resolution = choice
     _save_session(context, session)
-    await _prompt_collection_codec(query.message, context, session)
-
-
-async def _prompt_collection_codec(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
-) -> None:
-    text = (
-        "Select your preferred codec for this collection\\.\n"
-        'Choosing "Either" allows the best match per movie\\.'
-    )
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("x264 / AVC", callback_data="search_collection_codec_x264"),
-                InlineKeyboardButton("x265 / HEVC", callback_data="search_collection_codec_x265"),
-            ],
-            [InlineKeyboardButton("Either Codec", callback_data="search_collection_codec_any")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-        ]
-    )
-    await safe_edit_message(
-        message,
-        text=text,
-        reply_markup=keyboard,
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
+    await _prompt_collection_preferences(query.message, context, session)
 
 
 async def _handle_collection_codec_button(
@@ -309,9 +283,37 @@ async def _handle_collection_codec_button(
 
     choice = _get_callback_data(query).split("_")[-1].lower()
     if choice not in COLLECTION_CODEC_CHOICES:
-        choice = "any"
+        try:
+            await query.answer(text="Please choose x264 or x265.", show_alert=False)
+        except RuntimeError:
+            pass
+        await _prompt_collection_preferences(query.message, context, session)
+        return
     session.collection_codec = choice
     _save_session(context, session)
+    await _prompt_collection_preferences(query.message, context, session)
+
+
+async def _handle_collection_preferences_continue(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+
+    if (
+        session.collection_resolution not in COLLECTION_RESOLUTION_CHOICES
+        or session.collection_codec not in COLLECTION_CODEC_CHOICES
+    ):
+        try:
+            await query.answer(
+                text="Choose both a resolution and codec before continuing.",
+                show_alert=False,
+            )
+        except RuntimeError:
+            pass
+        await _prompt_collection_preferences(query.message, context, session)
+        return
+
     await _render_collection_movie_picker(query.message, context, session)
 
 

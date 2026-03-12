@@ -9,6 +9,7 @@ from telegram_bot.workflows.search_workflow import handle_search_buttons, handle
 from telegram_bot.workflows.search_workflow.movie_collection_flow import (
     _ensure_existing_movie_in_collection,
     _handle_collection_confirm,
+    _prompt_collection_preferences,
 )
 from telegram_bot.workflows.search_workflow.results import (
     RESULTS_SESSION_TTL_SECONDS,
@@ -19,6 +20,7 @@ from telegram_bot.workflows.search_workflow.state import _clear_search_context
 from telegram_bot.workflows.search_workflow.tv_flow import (
     EpisodeCandidate,
     _present_season_download_confirmation,
+    _prompt_tv_season_preferences,
     _select_consistent_episode_set,
 )
 
@@ -910,7 +912,7 @@ async def test_handle_tv_scope_selection_season(mocker, context, make_callback_q
         new=AsyncMock(return_value=2),
     )
     prompt_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.tv_flow._prompt_tv_season_resolution",
+        "telegram_bot.workflows.search_workflow.tv_flow._prompt_tv_season_preferences",
         new=AsyncMock(),
     )
     session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
@@ -950,7 +952,7 @@ async def test_handle_tv_scope_selection_season_fallback(
         new=AsyncMock(return_value=2),
     )
     prompt_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.tv_flow._prompt_tv_season_resolution",
+        "telegram_bot.workflows.search_workflow.tv_flow._prompt_tv_season_preferences",
         new=AsyncMock(),
     )
 
@@ -1125,11 +1127,22 @@ async def test_entire_season_skips_pack_and_targets_missing(
         context,
     )
 
-    # 3) User chooses Any Codec (Triggers search)
+    # 3) User chooses a codec
     await handle_search_buttons(
         Update(
             update_id=3,
-            callback_query=make_callback_query("search_tv_season_codec_any", make_message()),
+            callback_query=make_callback_query("search_tv_season_codec_x265", make_message()),
+        ),
+        context,
+    )
+
+    # 4) User continues with the selected preferences
+    await handle_search_buttons(
+        Update(
+            update_id=4,
+            callback_query=make_callback_query(
+                "search_tv_season_preferences_continue", make_message()
+            ),
         ),
         context,
     )
@@ -1146,6 +1159,53 @@ async def test_entire_season_skips_pack_and_targets_missing(
     # And present confirmation with exactly those episodes
     torrents = present_conf_mock.await_args.args[2]
     assert {t["parsed_info"]["episode"] for t in torrents} == {1, 3, 5}
+
+
+@pytest.mark.asyncio
+async def test_collection_preferences_prompt_uses_unified_filter_layout(
+    mocker, context, make_message
+):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.preferences.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="movie")
+    session.collection_owned_count = 2
+    session.collection_resolution = "2160p"
+    session.collection_codec = "x265"
+
+    await _prompt_collection_preferences(make_message(), context, session)
+
+    kwargs = safe_mock.await_args.kwargs
+    labels = [btn.text for row in kwargs["reply_markup"].inline_keyboard for btn in row]
+    assert "🟢2160p / 4K" in labels
+    assert "🟢x265 / HEVC" in labels
+    assert "➡️ Continue" in labels
+    assert "Best Available" not in labels
+    assert "Either Codec" not in labels
+
+
+@pytest.mark.asyncio
+async def test_tv_season_preferences_prompt_uses_unified_filter_layout(
+    mocker, context, make_message
+):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.preferences.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="tv", season=1)
+    session.resolution = "1080p"
+    session.tv_codec = "x264"
+
+    await _prompt_tv_season_preferences(make_message(), context, session)
+
+    kwargs = safe_mock.await_args.kwargs
+    labels = [btn.text for row in kwargs["reply_markup"].inline_keyboard for btn in row]
+    assert "🟢1080p" in labels
+    assert "🟢x264 / AVC" in labels
+    assert "➡️ Search" in labels
+    assert "Best Available" not in labels
+    assert "Either Codec" not in labels
 
 
 @pytest.mark.asyncio

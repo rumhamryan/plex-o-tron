@@ -36,7 +36,7 @@ async def test_future_episodes_are_skipped(mocker, context, make_callback_query,
     )
 
     mocker.patch(
-        "telegram_bot.workflows.search_workflow.tv_flow._prompt_tv_season_resolution",
+        "telegram_bot.workflows.search_workflow.tv_flow._prompt_tv_season_preferences",
         new=AsyncMock(),
     )
 
@@ -52,15 +52,18 @@ async def test_future_episodes_are_skipped(mocker, context, make_callback_query,
 
     session = SearchSession(media_type="tv", step=SearchStep.TV_SCOPE, season=1)
     session.set_title("Show")
-    session.resolution = "1080p"  # Set resolution to avoid prompt
+    session.resolution = "1080p"
+    session.tv_codec = "x264"
     session.season_episode_count = 3
     session.save(context.user_data)
 
-    # Simulate user selecting "Any Codec", which triggers _perform_tv_season_search
+    # Simulate user confirming the selected preferences, which triggers the season search.
     await handle_search_buttons(
         Update(
             update_id=1,
-            callback_query=make_callback_query("search_tv_season_codec_any", make_message()),
+            callback_query=make_callback_query(
+                "search_tv_season_preferences_continue", make_message()
+            ),
         ),
         context,
     )
