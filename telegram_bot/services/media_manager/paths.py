@@ -17,6 +17,20 @@ def _get_path_size_bytes(path: str) -> int | None:
         return None
 
 
+def _get_disk_usage_percent(path: str) -> int | None:
+    """Safely return disk usage percentage for the filesystem backing the path."""
+    try:
+        total_bytes, used_bytes, _ = adapters.get_disk_usage(path)
+    except OSError as exc:
+        logger.info("Unable to determine disk usage for '%s': %s", path, exc)
+        return None
+
+    if total_bytes <= 0:
+        return None
+
+    return round((used_bytes / total_bytes) * 100)
+
+
 def _get_final_destination_path(parsed_info: dict[str, Any], save_paths: dict[str, str]) -> str:
     """Determines the final directory for the downloaded media."""
     media_type = parsed_info.get("type")

@@ -86,9 +86,12 @@ def format_media_summary(
     title: str,
     size_label: str | None = None,
     destination_label: str | None = None,
+    disk_usage_percent: int | None = None,
+    highlight_disk_usage: bool = False,
     title_icon: str | None = None,
     size_icon: str | None = None,
     destination_icon: str | None = None,
+    disk_usage_icon: str | None = None,
 ) -> str:
     """
     Builds a MarkdownV2-safe summary block describing a media item.
@@ -103,6 +106,10 @@ def format_media_summary(
         Optional human-readable size string.
     destination_label:
         Optional label or filesystem path describing where the media lives.
+    disk_usage_percent:
+        Optional filesystem usage percentage for the destination drive.
+    highlight_disk_usage:
+        Whether to emphasize the disk usage line.
     *_icon:
         Optional emoji to prepend to each line for additional context.
     """
@@ -120,5 +127,13 @@ def format_media_summary(
     if destination_label:
         escaped_destination = escape_markdown(destination_label, version=2)
         lines.append(_compose_line(destination_icon, f"Destination: `{escaped_destination}`"))
+
+    if disk_usage_percent is not None:
+        percent_text = f"{int(disk_usage_percent)}%"
+        if highlight_disk_usage:
+            rendered_percent = f"*{percent_text}*"
+        else:
+            rendered_percent = escape_markdown(percent_text, version=2)
+        lines.append(_compose_line(disk_usage_icon, f"Disk Usage: {rendered_percent}"))
 
     return "\n".join(lines)

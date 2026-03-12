@@ -16,3 +16,8 @@ def move_file(source: str, destination: str) -> None:
 
 def get_path_size_bytes(path: str) -> int:
     return os.path.getsize(path)
+
+
+def get_disk_usage(path: str) -> tuple[int, int, int]:
+    usage = shutil.disk_usage(path)
+    return usage.total, usage.used, usage.free

@@ -56,15 +56,18 @@ def test_format_media_summary_with_icons():
         title="Movie (2024)",
         size_label="2.5 GB",
         destination_label="/movies/Movie (2024)",
+        disk_usage_percent=62,
         title_icon="🎬",
         size_icon="📦",
         destination_icon="📁",
+        disk_usage_icon="💽",
     )
     lines = result.split("\n")
     assert lines[0] == "🗑️ *Removed*"
     assert lines[1] == "🎬 Movie \\(2024\\)"
     assert lines[2] == "📦 Size: 2\\.5 GB"
     assert lines[3] == "📁 Destination: `/movies/Movie \\(2024\\)`"
+    assert lines[4] == "💽 Disk Usage: 62%"
 
 
 def test_format_media_summary_without_optional_fields():
@@ -73,6 +76,17 @@ def test_format_media_summary_without_optional_fields():
         title="Plain Title",
     )
     assert result == "✅ Done\nPlain Title"
+
+
+def test_format_media_summary_highlights_disk_usage():
+    result = format_media_summary(
+        prefix="✅ Done",
+        title="Plain Title",
+        disk_usage_percent=91,
+        highlight_disk_usage=True,
+        disk_usage_icon="⚠️",
+    )
+    assert result == "✅ Done\nPlain Title\n⚠️ Disk Usage: *91%*"
 
 
 class DummyFiles:
@@ -114,6 +128,10 @@ async def test_handle_successful_download(mocker):
         "telegram_bot.services.media_manager.adapters.get_path_size_bytes",
         return_value=1024,
     )
+    disk_usage_mock = mocker.patch(
+        "telegram_bot.services.media_manager.adapters.get_disk_usage",
+        return_value=(100, 62, 38),
+    )
 
     result = await handle_successful_download(
         ti,
@@ -132,9 +150,11 @@ async def test_handle_successful_download(mocker):
 
     scan_mock.assert_called_once()
     size_mock.assert_called_once_with(expected_dest_path)
+    disk_usage_mock.assert_called_once_with(expected_dest_path)
     assert "Successfully Added to Plex" in result
     assert "📦 Size: 1\\.0 KB" in result
     assert "📁 Destination: `/final/Sample \\(2023\\)\\.mkv`" in result
+    assert "💽 Disk Usage: 62%" in result
 
 
 class MovieWithSampleFiles:
@@ -188,6 +208,10 @@ async def test_handle_successful_download_prefers_main_movie_over_sample(mocker)
         "telegram_bot.services.media_manager.adapters.get_path_size_bytes",
         return_value=14 * 1024 * 1024 * 1024,
     )
+    disk_usage_mock = mocker.patch(
+        "telegram_bot.services.media_manager.adapters.get_disk_usage",
+        return_value=(100, 91, 9),
+    )
 
     result = await handle_successful_download(
         ti,
@@ -205,7 +229,9 @@ async def test_handle_successful_download_prefers_main_movie_over_sample(mocker)
     expected_dest_path = os.path.join("/final", "The Wild Robot (2024).mkv")
     move_mock.assert_called_once_with(expected_source_path, expected_dest_path)
     size_mock.assert_called_once_with(expected_dest_path)
+    disk_usage_mock.assert_called_once_with(expected_dest_path)
     assert "📦 Size: 14\\.0 GB" in result
+    assert "⚠️ Disk Usage: *91%*" in result
 
 
 class SeasonFiles:
@@ -250,6 +276,10 @@ async def test_handle_successful_download_season_pack(mocker):
         "telegram_bot.services.media_manager.adapters.get_path_size_bytes",
         side_effect=[1024, 2048],
     )
+    disk_usage_mock = mocker.patch(
+        "telegram_bot.services.media_manager.adapters.get_disk_usage",
+        return_value=(100, 40, 60),
+    )
 
     result = await handle_successful_download(
         ti,
@@ -275,8 +305,10 @@ async def test_handle_successful_download_season_pack(mocker):
     # One scan after all files have been moved
     assert scan_mock.call_count == 1
     assert size_mock.call_count == 2
+    disk_usage_mock.assert_called_once_with("/final")
     assert "Successfully Added to Plex" in result
     assert "📦 Size: 3\\.0 KB" in result
+    assert "💽 Disk Usage: 40%" in result
     assert "Processed and moved 2 episodes from the season pack\\." in result
 
 

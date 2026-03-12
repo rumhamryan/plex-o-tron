@@ -14,9 +14,11 @@ from telegram_bot.utils import format_bytes, parse_torrent_name
 
 from . import adapters
 from .naming import _build_media_display_name, generate_plex_filename
-from .paths import _get_final_destination_path, _get_path_size_bytes
+from .paths import _get_disk_usage_percent, _get_final_destination_path, _get_path_size_bytes
 from .plex_scan import _trigger_plex_scan
 from .validation import select_primary_media_file
+
+LOW_FREE_SPACE_USAGE_THRESHOLD_PERCENT = 85
 
 
 async def handle_successful_download(
@@ -147,6 +149,13 @@ async def handle_successful_download(
 
     size_label = format_bytes(summary_size_bytes) if summary_size_bytes is not None else None
     destination_label = summary_destination.replace("\\", "/") if summary_destination else None
+    disk_usage_percent = (
+        _get_disk_usage_percent(summary_destination) if summary_destination else None
+    )
+    highlight_disk_usage = (
+        disk_usage_percent is not None
+        and disk_usage_percent >= LOW_FREE_SPACE_USAGE_THRESHOLD_PERCENT
+    )
 
     media_type = parsed_info.get("type")
     title_icon = "🎬" if media_type == "movie" else "📺" if media_type == "tv" else None
@@ -155,9 +164,12 @@ async def handle_successful_download(
         title=summary_title,
         size_label=size_label,
         destination_label=destination_label,
+        disk_usage_percent=disk_usage_percent,
+        highlight_disk_usage=highlight_disk_usage,
         title_icon=title_icon,
         size_icon="📦",
         destination_icon="📁",
+        disk_usage_icon="⚠️" if highlight_disk_usage else "💽",
     )
 
     season_note = ""
