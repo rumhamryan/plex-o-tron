@@ -56,7 +56,6 @@ from .results import (
 )
 from .state import _get_callback_data, _get_user_data_store, _save_session
 
-COLLECTION_MOVIE_PREVIEW_LIMIT = 6
 COLLECTION_CODEC_CHOICES: tuple[str, ...] = ("x264", "x265")
 COLLECTION_RESOLUTION_CHOICES: tuple[str, ...] = ("1080p", "2160p")
 COLLECTION_RESOLUTION_OPTIONS = (("1080p", "1080p"), ("2160p", "2160p / 4K"))
@@ -306,14 +305,9 @@ async def _prompt_collection_confirmation(
         ", ".join(_format_collection_movie_label(movie) for movie in movies) or "(none)",
     )
     preview_lines: list[str] = []
-    limited_movies = movies[:COLLECTION_MOVIE_PREVIEW_LIMIT]
-    for movie in limited_movies:
+    for movie in movies:
         label = escape_markdown(_format_collection_movie_label(movie), version=2)
         preview_lines.append(f"• {label}")
-    remaining = max(len(movies) - len(limited_movies), 0)
-    if remaining > 0:
-        remaining_label = escape_markdown(f"…and {remaining} more", version=2)
-        preview_lines.append(f"• {remaining_label}")
 
     summary = "\n".join(preview_lines)
     text = (

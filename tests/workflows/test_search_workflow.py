@@ -770,6 +770,26 @@ async def test_collection_confirmation_logs_titles(mocker, context, make_message
     safe_mock.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_collection_confirmation_lists_every_movie(mocker, context, make_message):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="movie")
+    session.collection_name = "Saga"
+    session.collection_movies = [
+        {"title": f"Movie {idx}", "year": 2000 + idx} for idx in range(1, 9)
+    ]
+
+    await _prompt_collection_confirmation(make_message(), context, session)
+
+    text = safe_mock.await_args.kwargs["text"]
+    for idx in range(1, 9):
+        assert f"Movie {idx} \\({2000 + idx}\\)" in text
+    assert "…and" not in text
+
+
 def test_format_collection_movie_label_avoids_duplicate_year_suffix():
     assert (
         _format_collection_movie_label(
