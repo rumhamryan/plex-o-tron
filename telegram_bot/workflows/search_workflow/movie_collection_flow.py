@@ -3,7 +3,6 @@
 import asyncio
 import os
 import re
-import shutil
 from datetime import date
 from typing import Any
 
@@ -46,6 +45,11 @@ from .helpers import (
     _normalize_label,
     _normalize_release_field,
     _parse_release_iso,
+)
+from .collection_reconciliation import (
+    CollectionMovieResolution,
+    locate_collection_movie_matches,
+    reconcile_collection_movie,
 )
 from .preferences import _render_search_preferences_prompt
 from .results import (
@@ -493,12 +497,20 @@ async def _render_collection_movie_picker(
         m
         for m in movies
         if not m.get("owned")
+        and m.get("reconciliation_status") != "ambiguous"
         and not m.get("queued")
         and m["identifier"] not in session.collection_exclusions
     ]
-    downloadable = [m for m in movies if not m.get("owned") and not m.get("queued")]
+    downloadable = [
+        m
+        for m in movies
+        if not m.get("owned")
+        and m.get("reconciliation_status") != "ambiguous"
+        and not m.get("queued")
+    ]
     owned_count = sum(1 for m in movies if m.get("owned"))
     queued_count = sum(1 for m in movies if m.get("queued"))
+    ambiguous_count = sum(1 for m in movies if m.get("reconciliation_status") == "ambiguous")
     franchise = session.collection_name or "Franchise"
 
     text_lines = [
@@ -510,8 +522,15 @@ async def _render_collection_movie_picker(
         text_lines.append(f"📁 Owned: {owned_count}")
     if queued_count:
         text_lines.append(f"⏳ Already queued: {queued_count}")
+    if ambiguous_count:
+        text_lines.append(f"⚠️ Needs manual review: {ambiguous_count}")
     if not downloadable:
-        text_lines.append("Everything in this franchise already exists or is queued\\.")
+        if ambiguous_count:
+            text_lines.append(
+                "No additional downloads are ready\\. Remaining titles already exist, are queued, or need review\\."
+            )
+        else:
+            text_lines.append("Everything in this franchise already exists or is queued\\.")
     text = "\n".join(text_lines)
 
     keyboard_rows: list[list[InlineKeyboardButton]] = []
@@ -521,6 +540,8 @@ async def _render_collection_movie_picker(
         prefix = ""
         if movie.get("owned"):
             prefix = "📁 "
+        elif movie.get("reconciliation_status") == "ambiguous":
+            prefix = "⚠️ "
         elif movie.get("queued"):
             prefix = "⏳ "
         elif identifier in session.collection_exclusions:
@@ -537,13 +558,11 @@ async def _render_collection_movie_picker(
             ]
         )
 
-    if downloadable:
+    can_continue = bool(downloadable or owned_count)
+    if can_continue:
+        confirm_label = "✅ Confirm Selection" if downloadable else "✅ Continue"
         keyboard_rows.append(
-            [
-                InlineKeyboardButton(
-                    "✅ Confirm Selection", callback_data="search_collection_confirm"
-                )
-            ]
+            [InlineKeyboardButton(confirm_label, callback_data="search_collection_confirm")]
         )
     keyboard_rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
 
@@ -566,7 +585,12 @@ async def _handle_collection_movie_toggle(
     identifier = _get_callback_data(query).split("search_collection_toggle_")[-1]
     movie_map = {m["identifier"]: m for m in session.collection_movies or []}
     movie = movie_map.get(identifier)
-    if not movie or movie.get("owned") or movie.get("queued"):
+    if (
+        not movie
+        or movie.get("owned")
+        or movie.get("queued")
+        or movie.get("reconciliation_status") == "ambiguous"
+    ):
         try:
             await query.answer(text="This title is already handled.", show_alert=False)
         except RuntimeError:
@@ -593,6 +617,7 @@ async def _handle_collection_confirm(
         m
         for m in session.collection_movies or []
         if not m.get("owned")
+        and m.get("reconciliation_status") != "ambiguous"
         and not m.get("queued")
         and m["identifier"] not in (session.collection_exclusions or [])
     ]
@@ -636,19 +661,44 @@ async def _handle_collection_confirm(
 async def _prepare_collection_directory(
     context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> int:
-    """Checks for existing movies in the library to mark them as owned."""
-    movies_root, _ = _resolve_collection_paths(
+    """Checks for existing movies and stores structured ownership metadata."""
+    movies_root, franchise_dir = _resolve_collection_paths(
         context, session.collection_name, session.collection_fs_name
     )
 
     owned = 0
     for movie in session.collection_movies or []:
         label = _format_collection_movie_label(movie)
-        # Check if the movie already exists in the main movies directory
-        existing = await asyncio.to_thread(_locate_existing_movie_entry, movies_root, label)
-        movie["owned"] = bool(existing)
-        if existing:
+        matches = await asyncio.to_thread(
+            locate_collection_movie_matches,
+            movies_root,
+            franchise_dir,
+            label,
+        )
+        if len(matches) == 1:
+            match = matches[0]
+            movie["owned"] = True
+            movie["existing_path"] = match.path
+            movie["existing_location"] = match.location
+            movie["already_in_collection"] = match.location == "collection"
+            movie["reconciliation_status"] = (
+                "already_in_collection"
+                if movie["already_in_collection"]
+                else "available_outside_collection"
+            )
             owned += 1
+        elif len(matches) > 1:
+            movie["owned"] = False
+            movie["existing_path"] = None
+            movie["existing_location"] = None
+            movie["already_in_collection"] = False
+            movie["reconciliation_status"] = "ambiguous"
+        else:
+            movie["owned"] = False
+            movie["existing_path"] = None
+            movie["existing_location"] = None
+            movie["already_in_collection"] = False
+            movie["reconciliation_status"] = "missing"
     _save_session(context, session)
     return owned
 
@@ -657,15 +707,8 @@ async def _ensure_existing_movie_in_collection(
     root_path: str, franchise_dir: str, label: str
 ) -> bool:
     """Moves an existing movie file/folder into the collection directory if present."""
-    existing = await asyncio.to_thread(_locate_existing_movie_entry, franchise_dir, label)
-    if existing:
-        return await _flatten_movie_entry(existing, franchise_dir)
-
-    existing = await asyncio.to_thread(_locate_existing_movie_entry, root_path, label)
-    if not existing:
-        return False
-
-    return await _flatten_movie_entry(existing, franchise_dir)
+    resolution = await reconcile_collection_movie(root_path, franchise_dir, label)
+    return resolution.status in {"already_in_collection", "moved_to_collection"}
 
 
 def _resolve_collection_paths(
@@ -687,11 +730,26 @@ def _resolve_collection_paths(
 
 async def finalize_movie_collection(
     context: ContextTypes.DEFAULT_TYPE, collection_meta: dict[str, Any]
-) -> None:
+) -> dict[str, Any]:
     """
     Finalizes a movie collection run by creating the franchise directory
     and moving all associated movies (new and existing) into it.
     """
+    summary: dict[str, Any] = {
+        "collection_dir": None,
+        "results": [],
+        "moved_count": 0,
+        "already_in_collection_count": 0,
+        "missing_count": 0,
+        "conflict_count": 0,
+        "ambiguous_count": 0,
+        "error_count": 0,
+        "organized_movies": [],
+        "missing_movies": [],
+        "conflict_movies": [],
+        "ambiguous_movies": [],
+        "error_movies": [],
+    }
     try:
         collection_name = collection_meta.get("name")
         collection_fs_name = collection_meta.get("fs_name")
@@ -700,32 +758,53 @@ async def finalize_movie_collection(
         movies_root, franchise_dir = _resolve_collection_paths(
             context, collection_name, collection_fs_name
         )
+        summary["collection_dir"] = franchise_dir
 
-        # 1. Create the directory only now
         await asyncio.to_thread(os.makedirs, franchise_dir, exist_ok=True)
 
-        # 2. Find and move every movie in the collection
+        results: list[CollectionMovieResolution] = []
         for movie in movies:
             label = _format_collection_movie_label(movie)
-            # Check root first
-            existing = await asyncio.to_thread(_locate_existing_movie_entry, movies_root, label)
-            if existing:
-                await _flatten_movie_entry(existing, franchise_dir)
-            else:
-                # Check if it's already there (shouldn't hurt)
-                existing = await asyncio.to_thread(
-                    _locate_existing_movie_entry, franchise_dir, label
-                )
-                if existing:
-                    await _flatten_movie_entry(existing, franchise_dir)
+            resolution = await reconcile_collection_movie(movies_root, franchise_dir, label)
+            results.append(resolution)
+            if resolution.status == "moved_to_collection":
+                summary["moved_count"] += 1
+                summary["organized_movies"].append(dict(movie))
+            elif resolution.status == "already_in_collection":
+                summary["already_in_collection_count"] += 1
+                summary["organized_movies"].append(dict(movie))
+            elif resolution.status == "missing":
+                summary["missing_count"] += 1
+                summary["missing_movies"].append(dict(movie))
+            elif resolution.status == "conflict":
+                summary["conflict_count"] += 1
+                summary["conflict_movies"].append(dict(movie))
+            elif resolution.status == "ambiguous":
+                summary["ambiguous_count"] += 1
+                summary["ambiguous_movies"].append(dict(movie))
+            elif resolution.status == "error":
+                summary["error_count"] += 1
+                summary["error_movies"].append(dict(movie))
+        summary["results"] = results
 
         logger.info(
-            "[COLLECTION] Finalized reorganization for '%s' into %s",
+            (
+                "[COLLECTION] Finalized reorganization for '%s' into %s "
+                "(moved=%d, already=%d, missing=%d, conflicts=%d, ambiguous=%d, errors=%d)"
+            ),
             collection_name,
             franchise_dir,
+            summary["moved_count"],
+            summary["already_in_collection_count"],
+            summary["missing_count"],
+            summary["conflict_count"],
+            summary["ambiguous_count"],
+            summary["error_count"],
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[COLLECTION] Reorganization failed: %s", exc)
+        summary["error_count"] += 1
+    return summary
 
 
 async def _collect_owned_collection_summaries(
@@ -743,19 +822,21 @@ async def _collect_owned_collection_summaries(
         return []
 
     summaries: list[str] = []
-    # plex_entries will be handled during finalization once files are actually moved
     for movie in owned_movies:
         label = _format_collection_movie_label(movie)
-
-        # Locate where it is currently
-        entry_path = await asyncio.to_thread(_locate_existing_movie_entry, movies_root, label)
-
+        entry_path = movie.get("existing_path")
         if not entry_path:
-            # Fallback: maybe it's already in the franchise dir (manual or previous run)
-            entry_path = await asyncio.to_thread(_locate_existing_movie_entry, franchise_dir, label)
+            matches = await asyncio.to_thread(
+                locate_collection_movie_matches,
+                movies_root,
+                franchise_dir,
+                label,
+            )
+            if len(matches) == 1:
+                entry_path = matches[0].path
 
         size_label: str | None = None
-        if entry_path:
+        if isinstance(entry_path, str) and entry_path:
             size_bytes = _get_path_size_bytes(entry_path)
             if size_bytes:
                 size_label = format_bytes(size_bytes)
@@ -772,54 +853,6 @@ async def _collect_owned_collection_summaries(
             )
         )
     return summaries
-
-
-def _locate_existing_movie_entry(root_path: str, label: str) -> str | None:
-    """Finds a directory or file in the movies root that matches the target folder."""
-    if not root_path or not os.path.isdir(root_path):
-        return None
-    normalized = _normalize_label(label)
-    if not normalized:
-        return None
-    try:
-        for entry in os.listdir(root_path):
-            entry_path = os.path.join(root_path, entry)
-            entry_key = _normalize_label(entry)
-            if entry_key == normalized:
-                return entry_path
-            stem, _ = os.path.splitext(entry)
-            if stem and _normalize_label(stem) == normalized:
-                return entry_path
-    except FileNotFoundError:
-        return None
-    return None
-
-
-async def _flatten_movie_entry(existing: str, franchise_dir: str) -> bool:
-    """Moves/normalizes a movie entry so it lives directly under the franchise folder."""
-    try:
-        if os.path.isdir(existing):
-            entries = os.listdir(existing)
-            for entry in entries:
-                source_path = os.path.join(existing, entry)
-                target_path = os.path.join(franchise_dir, entry)
-                if os.path.abspath(source_path) == os.path.abspath(target_path):
-                    continue
-                await asyncio.to_thread(shutil.move, source_path, target_path)
-            if entries:
-                await asyncio.to_thread(shutil.rmtree, existing, ignore_errors=True)
-            return True
-
-        parent_dir = os.path.dirname(existing)
-        if os.path.abspath(parent_dir) == os.path.abspath(franchise_dir):
-            return True
-
-        target_path = os.path.join(franchise_dir, os.path.basename(existing))
-        await asyncio.to_thread(shutil.move, existing, target_path)
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed moving '%s' into collection folder: %s", existing, exc)
-        return False
 
 
 def _update_collection_movie_status(
@@ -1135,6 +1168,17 @@ async def _present_collection_download_confirmation(
             f"\n\nAlready owned: *{len(owned_summaries)}* title"
             f"{'s' if len(owned_summaries) != 1 else ''} will be organized and added to Plex\\."
         )
+    ambiguous_movies = [
+        movie
+        for movie in session.collection_movies or []
+        if movie.get("reconciliation_status") == "ambiguous"
+    ]
+    if ambiguous_movies:
+        labels = "\n".join(
+            f"• {escape_markdown(_format_collection_movie_label(movie), version=2)}"
+            for movie in ambiguous_movies
+        )
+        text += f"\n\n⚠️ Existing library matches need review and were skipped:\n{labels}"
     if missing:
         skipped = "\n".join(f"• {escape_markdown(label, version=2)}" for label in missing)
         text += f"\n\n⚠️ No suitable torrent was found for:\n{skipped}"

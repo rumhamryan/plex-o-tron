@@ -34,6 +34,10 @@ from .bot_data_access import (
     require_download_queues,
     require_save_paths,
 )
+from .collection_reporting import (
+    build_collection_reconciliation_lines,
+    get_collection_movies_for_plex,
+)
 
 
 async def process_queue_for_user(chat_id: int, application) -> None:
@@ -365,13 +369,17 @@ async def _finalize_owned_collection_batch(
     collection_md = escape_markdown(raw_name, version=2)
     combined = "\n\n".join(summaries) if summaries else "✅ *Already Organized*"
 
-    await finalize_movie_collection(context, collection_meta)
+    finalization = await finalize_movie_collection(context, collection_meta)
+    reconciliation_lines = build_collection_reconciliation_lines(finalization)
+    organized_movies = get_collection_movies_for_plex(finalization)
 
     info_line = (
         "\n\n*Collection Complete*\n"
         f"All titles for *{collection_md}* were already available\\.\n"
-        "Organized your library and starting Plex scan…"
+        "Reconciled your library and starting Plex scan…"
     )
+    if reconciliation_lines:
+        info_line += "\n" + "\n".join(reconciliation_lines)
 
     plex_config = get_plex_config(context.bot_data)
     scan_msg = await _trigger_plex_scan("movie", plex_config)
@@ -381,11 +389,7 @@ async def _finalize_owned_collection_batch(
         logger.info("Waiting 120 seconds for Plex scan to index existing movies...")
         await asyncio.sleep(120)
 
-    added = await ensure_collection_contains_movies(
-        plex_config,
-        collection_name,
-        collection_meta.get("movies") or [],
-    )
+    added = await ensure_collection_contains_movies(plex_config, collection_name, organized_movies)
     if added:
         info_line += (
             f"\nAdded {len(added)} film{'s' if len(added) != 1 else ''} to the Plex collection\\."

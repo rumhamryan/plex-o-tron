@@ -547,11 +547,25 @@ async def test_add_collection_to_queue_owned_only(
         "telegram_bot.services.download_manager.safe_edit_message",
         AsyncMock(),
     )
+    finalize_mock = mocker.patch(
+        "telegram_bot.services.download_manager.finalize_movie_collection",
+        AsyncMock(
+            return_value={
+                "organized_movies": [{"title": "Movie One", "year": 2001}],
+                "moved_count": 1,
+                "already_in_collection_count": 0,
+                "missing_count": 0,
+                "conflict_count": 0,
+                "ambiguous_count": 0,
+                "error_count": 0,
+            }
+        ),
+    )
     mocker.patch(
         "telegram_bot.services.download_manager._trigger_plex_scan",
         AsyncMock(return_value="\nScan started"),
     )
-    mocker.patch(
+    ensure_mock = mocker.patch(
         "telegram_bot.services.download_manager.ensure_collection_contains_movies",
         AsyncMock(return_value=[]),
     )
@@ -563,9 +577,16 @@ async def test_add_collection_to_queue_owned_only(
     sleep_mock.assert_awaited_once_with(120)
 
     process_mock.assert_not_awaited()
+    finalize_mock.assert_awaited_once()
+    ensure_mock.assert_awaited_once_with(
+        None,
+        "Saga",
+        [{"title": "Movie One", "year": 2001}],
+    )
     kwargs = edit_mock.await_args.kwargs
     assert "Collection Complete" in kwargs["text"]
     assert "Already Available" in kwargs["text"]
+    assert "Moved into collection folder" in kwargs["text"]
     assert kwargs["reply_markup"] is None
     assert not context.bot_data.get("DOWNLOAD_BATCHES")
 

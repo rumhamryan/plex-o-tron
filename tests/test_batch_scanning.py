@@ -101,11 +101,26 @@ async def test_update_batch_collection_includes_all_summaries(monkeypatch):
     async def fake_scan(media_type, cfg):
         return ""
 
+    captured = {}
+
     async def fake_ensure(plex_config, name, movies):
+        captured["movies"] = movies
         return []
+
+    async def fake_finalize(application, collection_meta):
+        return {
+            "organized_movies": [{"title": "Movie One", "year": 2001}],
+            "moved_count": 1,
+            "already_in_collection_count": 0,
+            "missing_count": 0,
+            "conflict_count": 0,
+            "ambiguous_count": 0,
+            "error_count": 0,
+        }
 
     monkeypatch.setattr(download_manager, "_trigger_plex_scan", fake_scan)
     monkeypatch.setattr(download_manager, "ensure_collection_contains_movies", fake_ensure)
+    monkeypatch.setattr(download_manager, "finalize_movie_collection", fake_finalize)
 
     source_dict = {"batch_id": batch_id}
     parsed_info = {"title": "Movie One"}
@@ -121,6 +136,8 @@ async def test_update_batch_collection_includes_all_summaries(monkeypatch):
     assert "First summary" in final
     assert "Second summary" in final
     assert "Collection Complete" in final
+    assert "Moved into collection folder" in final
+    assert captured["movies"] == [{"title": "Movie One", "year": 2001}]
 
     async def fake_scan(media_type, cfg):  # Should not be called
         raise AssertionError("Duplicate scan should be skipped")

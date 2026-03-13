@@ -21,6 +21,10 @@ from .bot_data_access import (
     get_plex_config,
     get_save_paths,
 )
+from .collection_reporting import (
+    build_collection_reconciliation_lines,
+    get_collection_movies_for_plex,
+)
 from .progress import ProgressReporter
 
 
@@ -237,8 +241,12 @@ async def _update_batch_and_maybe_scan(
             )
             combined_message = "\n\n".join(summaries) if summaries else message_text
 
+        finalization: dict[str, Any] = {}
         if media_type == "movie":
-            await finalize_movie_collection(application, collection_meta)
+            finalization = await finalize_movie_collection(application, collection_meta)
+            reconciliation_lines = build_collection_reconciliation_lines(finalization)
+            if reconciliation_lines:
+                info_line += "\n" + "\n".join(reconciliation_lines)
 
         scan_msg = await _trigger_plex_scan(media_type, plex_config)
 
@@ -250,10 +258,11 @@ async def _update_batch_and_maybe_scan(
 
             raw_name = str(collection_meta.get("name") or "").strip()
             collection_name = sanitize_collection_name(raw_name)
+            organized_movies = get_collection_movies_for_plex(finalization)
             added = await ensure_collection_contains_movies(
                 plex_config,
                 collection_name,
-                collection_meta.get("movies") or [],
+                organized_movies,
             )
             if added:
                 info_line += f"\nAdded {len(added)} film{'s' if len(added) != 1 else ''} to the Plex collection\\."

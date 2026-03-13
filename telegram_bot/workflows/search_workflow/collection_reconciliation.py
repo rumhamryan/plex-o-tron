@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+import asyncio
+import os
+import shutil
+from dataclasses import dataclass
+from typing import Literal, TypedDict, cast
+
+from ...config import logger
+from .helpers import _normalize_label
+
+CollectionMovieMatchLocation = Literal["movies_root", "collection"]
+CollectionMovieMatchKind = Literal["file", "directory"]
+CollectionMovieStatus = Literal[
+    "missing",
+    "already_in_collection",
+    "moved_to_collection",
+    "ambiguous",
+    "conflict",
+    "error",
+]
+
+
+@dataclass(frozen=True)
+class CollectionMovieMatch:
+    label: str
+    path: str
+    location: CollectionMovieMatchLocation
+    kind: CollectionMovieMatchKind
+
+
+@dataclass(frozen=True)
+class CollectionMovieResolution:
+    label: str
+    status: CollectionMovieStatus
+    source_path: str | None = None
+    destination_path: str | None = None
+    detail: str | None = None
+    match: CollectionMovieMatch | None = None
+
+
+class CollectionMoveResult(TypedDict, total=False):
+    status: Literal["already_in_collection", "moved_to_collection", "conflict"]
+    destination_path: str
+    detail: str
+
+
+def locate_collection_movie_matches(
+    movies_root: str, franchise_dir: str, label: str
+) -> list[CollectionMovieMatch]:
+    """Locate plausible filesystem matches for a collection movie label."""
+    matches: list[CollectionMovieMatch] = []
+    seen_paths: set[str] = set()
+
+    def _add_match(path: str, location: CollectionMovieMatchLocation) -> None:
+        normalized_path = os.path.abspath(path)
+        if normalized_path in seen_paths:
+            return
+        seen_paths.add(normalized_path)
+        match_kind: CollectionMovieMatchKind = "directory" if os.path.isdir(path) else "file"
+        matches.append(
+            CollectionMovieMatch(
+                label=label,
+                path=path,
+                location=location,
+                kind=match_kind,
+            )
+        )
+
+    for path in _find_label_matches(movies_root, label, recursive=False):
+        if os.path.abspath(path) == os.path.abspath(franchise_dir):
+            continue
+        _add_match(path, "movies_root")
+
+    for path in _find_label_matches(franchise_dir, label, recursive=True):
+        _add_match(path, "collection")
+
+    return matches
+
+
+async def reconcile_collection_movie(
+    movies_root: str, franchise_dir: str, label: str
+) -> CollectionMovieResolution:
+    """Ensure a movie lives inside the collection directory and report the outcome."""
+    try:
+        matches = await asyncio.to_thread(
+            locate_collection_movie_matches, movies_root, franchise_dir, label
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[COLLECTION] Failed locating '%s': %s", label, exc)
+        return CollectionMovieResolution(label=label, status="error", detail=str(exc))
+
+    if not matches:
+        return CollectionMovieResolution(label=label, status="missing")
+    if len(matches) > 1:
+        detail = ", ".join(match.path for match in matches)
+        return CollectionMovieResolution(label=label, status="ambiguous", detail=detail)
+
+    match = matches[0]
+    try:
+        move_result = await _move_match_into_collection(match, franchise_dir)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[COLLECTION] Failed reconciling '%s': %s", label, exc)
+        return CollectionMovieResolution(
+            label=label,
+            status="error",
+            source_path=match.path,
+            detail=str(exc),
+            match=match,
+        )
+
+    return CollectionMovieResolution(
+        label=label,
+        status=cast(CollectionMovieStatus, move_result["status"]),
+        source_path=match.path,
+        destination_path=move_result.get("destination_path"),
+        detail=move_result.get("detail"),
+        match=match,
+    )
+
+
+def _find_label_matches(root_path: str, label: str, *, recursive: bool) -> list[str]:
+    if not root_path or not os.path.isdir(root_path):
+        return []
+
+    normalized_label = _normalize_label(label)
+    if not normalized_label:
+        return []
+
+    matches: list[str] = []
+    if recursive:
+        for current_root, dirs, files in os.walk(root_path):
+            for entry in dirs + files:
+                entry_path = os.path.join(current_root, entry)
+                if _entry_matches_label(entry, normalized_label):
+                    matches.append(entry_path)
+    else:
+        try:
+            for entry in os.listdir(root_path):
+                entry_path = os.path.join(root_path, entry)
+                if _entry_matches_label(entry, normalized_label):
+                    matches.append(entry_path)
+        except FileNotFoundError:
+            return []
+
+    return _collapse_nested_matches(matches)
+
+
+def _entry_matches_label(entry_name: str, normalized_label: str) -> bool:
+    if _normalize_label(entry_name) == normalized_label:
+        return True
+    stem, _ = os.path.splitext(entry_name)
+    return bool(stem) and _normalize_label(stem) == normalized_label
+
+
+async def _move_match_into_collection(
+    match: CollectionMovieMatch, franchise_dir: str
+) -> CollectionMoveResult:
+    await asyncio.to_thread(os.makedirs, franchise_dir, exist_ok=True)
+    if match.kind == "directory":
+        return await _flatten_directory_into_collection(match.path, franchise_dir)
+    return await _move_file_into_collection(match.path, franchise_dir)
+
+
+async def _flatten_directory_into_collection(
+    source_dir: str, franchise_dir: str
+) -> CollectionMoveResult:
+    if os.path.abspath(source_dir) == os.path.abspath(franchise_dir):
+        return {"status": "already_in_collection", "destination_path": franchise_dir}
+
+    destination_path: str | None = None
+    entries = os.listdir(source_dir)
+    for entry in entries:
+        source_path = os.path.join(source_dir, entry)
+        target_path = os.path.join(franchise_dir, entry)
+        if os.path.abspath(source_path) == os.path.abspath(target_path):
+            destination_path = target_path
+            continue
+        if os.path.exists(target_path):
+            return {
+                "status": "conflict",
+                "destination_path": target_path,
+                "detail": f"Target already exists: {target_path}",
+            }
+        await asyncio.to_thread(shutil.move, source_path, target_path)
+        destination_path = target_path
+
+    if entries:
+        await asyncio.to_thread(shutil.rmtree, source_dir, ignore_errors=True)
+
+    return {
+        "status": "moved_to_collection",
+        "destination_path": destination_path or franchise_dir,
+    }
+
+
+async def _move_file_into_collection(source_path: str, franchise_dir: str) -> CollectionMoveResult:
+    parent_dir = os.path.dirname(source_path)
+    if os.path.abspath(parent_dir) == os.path.abspath(franchise_dir):
+        return {"status": "already_in_collection", "destination_path": source_path}
+
+    destination_path = os.path.join(franchise_dir, os.path.basename(source_path))
+    if os.path.exists(destination_path):
+        return {
+            "status": "conflict",
+            "destination_path": destination_path,
+            "detail": f"Target already exists: {destination_path}",
+        }
+
+    await asyncio.to_thread(shutil.move, source_path, destination_path)
+    return {"status": "moved_to_collection", "destination_path": destination_path}
+
+
+def _collapse_nested_matches(paths: list[str]) -> list[str]:
+    collapsed: list[str] = []
+    for path in sorted(paths, key=lambda candidate: (len(candidate), candidate.casefold())):
+        path_abs = os.path.abspath(path)
+        if any(_is_nested_under(path_abs, existing) for existing in collapsed):
+            continue
+        collapsed.append(path_abs)
+    return collapsed
+
+
+def _is_nested_under(path: str, candidate_parent: str) -> bool:
+    try:
+        common = os.path.commonpath([path, candidate_parent])
+    except ValueError:
+        return False
+    return common == os.path.abspath(candidate_parent) and path != os.path.abspath(candidate_parent)
