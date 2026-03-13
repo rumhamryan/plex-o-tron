@@ -383,6 +383,13 @@ async def _finalize_owned_collection_batch(
 
     plex_config = get_plex_config(context.bot_data)
     scan_msg = await _trigger_plex_scan("movie", plex_config)
+    initial_text = f"{combined}{info_line}{scan_msg}"
+    await safe_edit_message(
+        query.message,
+        text=initial_text,
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=None,
+    )
 
     # Wait 120s for Plex scan to likely complete
     if scan_msg:
@@ -391,14 +398,13 @@ async def _finalize_owned_collection_batch(
 
     added = await ensure_collection_contains_movies(plex_config, collection_name, organized_movies)
     if added:
-        info_line += (
-            f"\nAdded {len(added)} film{'s' if len(added) != 1 else ''} to the Plex collection\\."
+        final_text = (
+            f"{initial_text}\nAdded {len(added)} film{'s' if len(added) != 1 else ''} "
+            "to the Plex collection\\."
         )
-
-    final_text = f"{combined}{info_line}{scan_msg}"
-    await safe_edit_message(
-        query.message,
-        text=final_text,
-        parse_mode=ParseMode.MARKDOWN_V2,
-        reply_markup=None,
-    )
+        await safe_edit_message(
+            query.message,
+            text=final_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=None,
+        )

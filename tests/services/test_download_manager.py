@@ -569,7 +569,16 @@ async def test_add_collection_to_queue_owned_only(
         "telegram_bot.services.download_manager.ensure_collection_contains_movies",
         AsyncMock(return_value=[]),
     )
-    sleep_mock = mocker.patch("asyncio.sleep", AsyncMock())
+    events: list[str] = []
+
+    async def record_edit(*args, **kwargs):
+        events.append("edit")
+
+    async def record_sleep(seconds):
+        events.append("sleep")
+
+    edit_mock.side_effect = record_edit
+    sleep_mock = mocker.patch("asyncio.sleep", AsyncMock(side_effect=record_sleep))
 
     await add_collection_to_queue(update, context)
 
@@ -583,7 +592,8 @@ async def test_add_collection_to_queue_owned_only(
         "Saga",
         [{"title": "Movie One", "year": 2001}],
     )
-    kwargs = edit_mock.await_args.kwargs
+    assert events[:2] == ["edit", "sleep"]
+    kwargs = edit_mock.await_args_list[0].kwargs
     assert "Collection Complete" in kwargs["text"]
     assert "Already Available" in kwargs["text"]
     assert "Moved into collection folder" in kwargs["text"]
