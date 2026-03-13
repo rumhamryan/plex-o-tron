@@ -4,6 +4,11 @@ import re
 from datetime import date, datetime
 from typing import Any
 
+_TRAILING_COLLECTION_YEAR_PATTERN = re.compile(
+    r"\s*\((?P<year>(?:18|19|20|21)\d{2})(?:\s+film)?\)\s*$",
+    re.IGNORECASE,
+)
+
 
 def _normalize_label(value: Any) -> str:
     text = ""
@@ -14,9 +19,32 @@ def _normalize_label(value: Any) -> str:
     return re.sub(r"[\W_]+", "", text.strip()).casefold()
 
 
+def _normalize_collection_movie_title(
+    title: Any,
+    year: int | None = None,
+    release_date: Any = None,
+) -> str:
+    normalized_title = str(title or "Untitled").strip() or "Untitled"
+    effective_year = year
+    if effective_year is None:
+        parsed_release_date = _parse_release_iso(release_date)
+        if parsed_release_date is not None:
+            effective_year = parsed_release_date.year
+
+    match = _TRAILING_COLLECTION_YEAR_PATTERN.search(normalized_title)
+    if match is None or effective_year is None:
+        return normalized_title
+
+    if int(match.group("year")) != effective_year:
+        return normalized_title
+
+    stripped_title = normalized_title[: match.start()].rstrip()
+    return stripped_title or normalized_title
+
+
 def _format_collection_movie_label(movie: dict[str, Any]) -> str:
-    title = str(movie.get("title") or "Untitled").strip() or "Untitled"
-    year = movie.get("year")
+    year = _coerce_int(movie.get("year"))
+    title = _normalize_collection_movie_title(movie.get("title"), year, movie.get("release_date"))
     if isinstance(year, int):
         return f"{title} ({year})"
     return title

@@ -42,6 +42,7 @@ from .helpers import (
     _coerce_int,
     _ensure_identifier,
     _format_collection_movie_label,
+    _normalize_collection_movie_title,
     _normalize_label,
     _normalize_release_field,
     _parse_release_iso,
@@ -229,10 +230,15 @@ async def _start_collection_lookup(
         if release_state != "released":
             unknown_count += 1
             continue
+        normalized_title = _normalize_collection_movie_title(
+            title_str,
+            parsed_year,
+            release_date.isoformat() if release_date is not None else raw_movie.get("release_date"),
+        )
         entry = {
-            "title": title_str,
+            "title": normalized_title,
             "year": parsed_year,
-            "identifier": _ensure_identifier({"title": title_str, "year": parsed_year}, idx),
+            "identifier": _ensure_identifier({"title": normalized_title, "year": parsed_year}, idx),
             "owned": False,
             "queued": False,
             "release_date": release_date.isoformat() if release_date is not None else None,

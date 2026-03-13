@@ -7,6 +7,7 @@ from telegram import Update
 
 from telegram_bot.workflows.search_session import SearchSession, SearchStep
 from telegram_bot.workflows.search_workflow import handle_search_buttons, handle_search_workflow
+from telegram_bot.workflows.search_workflow.helpers import _format_collection_movie_label
 from telegram_bot.workflows.search_workflow.movie_collection_flow import (
     _classify_collection_release,
     _ensure_existing_movie_in_collection,
@@ -300,6 +301,65 @@ async def test_collection_lookup_ignores_unreleased_titles(
     assert len(session.collection_movies) == 1
     assert session.collection_movies[0]["title"] == "Already Out"
     assert session.collection_movies[0]["release_date"] == "2020-05-04"
+
+
+@pytest.mark.asyncio
+async def test_collection_lookup_strips_duplicate_trailing_year_from_titles(
+    mocker, context, make_callback_query, make_message
+):
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    status_message = make_message(message_id=120)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
+        new=AsyncMock(return_value=status_message),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
+        new=AsyncMock(
+            return_value=(
+                "Star Wars",
+                [
+                    {
+                        "title": "Star Wars (1977)",
+                        "year": 1977,
+                        "release_date": "1977-05-25",
+                    },
+                    {
+                        "title": "The Empire Strikes Back (1980)",
+                        "year": 1980,
+                        "release_date": "1980-05-21",
+                    },
+                ],
+            )
+        ),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=30,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_buttons(
+        Update(
+            update_id=31,
+            callback_query=make_callback_query("search_movie_scope_collection", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(Update(update_id=32, message=make_message("Star Wars")), context)
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert [movie["title"] for movie in session.collection_movies] == [
+        "Star Wars",
+        "The Empire Strikes Back",
+    ]
+    assert [movie["year"] for movie in session.collection_movies] == [1977, 1980]
 
 
 @pytest.mark.asyncio
@@ -708,6 +768,19 @@ async def test_collection_confirmation_logs_titles(mocker, context, make_message
         "Movie One (2001), Movie Two (2002)",
     )
     safe_mock.assert_awaited_once()
+
+
+def test_format_collection_movie_label_avoids_duplicate_year_suffix():
+    assert (
+        _format_collection_movie_label(
+            {
+                "title": "Star Wars (1977)",
+                "year": 1977,
+                "release_date": "1977-05-25",
+            }
+        )
+        == "Star Wars (1977)"
+    )
 
 
 @pytest.mark.asyncio
