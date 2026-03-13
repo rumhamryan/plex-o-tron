@@ -210,6 +210,126 @@ DEDICATED_WITH_OVERVIEW_ONGOING_HTML = """
 </table>
 """
 
+FRANCHISE_INFOBOX_HTML = """
+<table class="infobox vevent">
+  <tr><th scope="row" class="infobox-label">Film(s)</th><td class="infobox-data">
+    <div class="plainlist">
+      <ul>
+        <li><i><a title="The Equalizer (film)">The Equalizer</a></i> (2014)</li>
+        <li><i><a title="The Equalizer 2">The Equalizer 2</a></i> (2018)</li>
+        <li><i><a title="The Equalizer 3">The Equalizer 3</a></i> (2023)</li>
+      </ul>
+    </div>
+  </td></tr>
+  <tr><th scope="row" class="infobox-label">Television series</th><td class="infobox-data">
+    <div class="plainlist">
+      <ul>
+        <li><i><a title="The Equalizer (1985 TV series)">The Equalizer</a></i> (1985-1989)</li>
+        <li><i><a title="The Equalizer (2021 TV series)">The Equalizer</a></i> (2021-2025)</li>
+      </ul>
+    </div>
+  </td></tr>
+  <tr><th scope="row" class="infobox-label">Soundtrack(s)</th><td class="infobox-data">
+    <div class="plainlist">
+      <ul>
+        <li><i><a title="The Equalizer (soundtrack)">The Equalizer</a></i></li>
+      </ul>
+    </div>
+  </td></tr>
+</table>
+"""
+
+FILM_SERIES_SECTION_HTML = """
+<div class="mw-heading mw-heading2"><h2 id="Film_series">Film series</h2></div>
+<div class="mw-heading mw-heading3"><h3 id="Movie_1"><i>Movie One</i> (2001)</h3></div>
+<p>Some film production notes.</p>
+<div class="mw-heading mw-heading3"><h3 id="Movie_2"><i>Movie Two</i> (2004)</h3></div>
+<p>More release information.</p>
+<div class="mw-heading mw-heading3"><h3 id="Development">Development</h3></div>
+<p>Background text without a release year.</p>
+<div class="mw-heading mw-heading3"><h3 id="Movie_3"><i>Movie Three</i> (2008)</h3></div>
+<div class="mw-heading mw-heading2"><h2 id="Literature">Literature</h2></div>
+"""
+
+FRANCHISE_SCORING_HTML = (
+    """
+<h1>The Equalizer</h1>
+<p>The Equalizer is an American thriller franchise.</p>
+<div class="mw-heading mw-heading2"><h2 id="Film_series">Film series</h2></div>
+"""
+    + FRANCHISE_INFOBOX_HTML
+)
+
+SOUNDTRACK_SCORING_HTML = """
+<h1>The Equalizer (soundtrack)</h1>
+<p>The Equalizer soundtrack album features music from the film score and songs.</p>
+<div class="mw-heading mw-heading2"><h2 id="Track_listing">Track listing</h2></div>
+<div class="mw-heading mw-heading2"><h2 id="Discography">Discography</h2></div>
+"""
+
+SOUNDTRACK_WITH_FILM_TABLE_HTML = """
+<h1>The Equalizer Ranking Test (soundtrack)</h1>
+<p>The soundtrack album and film score includes songs from the series discography.</p>
+<table class="wikitable">
+  <tr><th>Film</th><th>Release date</th></tr>
+  <tr><td>The Equalizer</td><td>September 24, 2014</td></tr>
+  <tr><td>The Equalizer 2</td><td>July 20, 2018</td></tr>
+  <tr><td>The Equalizer 3</td><td>September 1, 2023</td></tr>
+</table>
+"""
+
+NAVBOX_FILMS_HTML = """
+<table class="nowraplinks hlist navbox-inner">
+  <tr>
+    <th scope="row" class="navbox-group">TV series</th>
+    <td class="navbox-list-with-group navbox-list">
+      <div><ul><li>The Equalizer (1985 TV series)</li><li>The Equalizer (2021 TV series)</li></ul></div>
+    </td>
+  </tr>
+  <tr>
+    <th scope="row" class="navbox-group">Films</th>
+    <td class="navbox-list-with-group navbox-list">
+      <div>
+        <ul>
+          <li><i>The Equalizer</i></li>
+          <li><i>The Equalizer 2</i></li>
+          <li><i>The Equalizer 3</i></li>
+        </ul>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <th scope="row" class="navbox-group">Soundtracks</th>
+    <td class="navbox-list-with-group navbox-list">
+      <div>
+        <ul>
+          <li><i>The Equalizer (soundtrack)</i></li>
+          <li><i>The Equalizer 2 (soundtrack)</i></li>
+          <li><i>The Equalizer 3 (soundtrack)</i></li>
+        </ul>
+      </div>
+    </td>
+  </tr>
+</table>
+"""
+
+NAVBOX_SOUNDTRACKS_ONLY_HTML = """
+<table class="nowraplinks hlist navbox-inner">
+  <tr>
+    <th scope="row" class="navbox-group">Soundtracks</th>
+    <td class="navbox-list-with-group navbox-list">
+      <div>
+        <ul>
+          <li><i>The Equalizer (soundtrack)</i></li>
+          <li><i>The Equalizer 2 (soundtrack)</i></li>
+          <li><i>The Equalizer 3 (soundtrack)</i></li>
+        </ul>
+      </div>
+    </td>
+  </tr>
+</table>
+"""
+
 
 def test_extract_movies_from_table_allows_duplicate_titles():
     html = """
@@ -226,6 +346,364 @@ def test_extract_movies_from_table_allows_duplicate_titles():
     dune_titles = [entry["title"] for entry in movies if "Dune" == entry["title"]]
     assert len(dune_titles) == 2
     assert all(entry.get("release_date") for entry in movies)
+
+
+def test_extract_movies_from_table_rejects_tv_season_box_sets():
+    html = """
+    <table class="wikitable">
+        <tr><th>Title</th><th>Release date</th></tr>
+        <tr><td>The First Season</td><td>September 23, 2008</td></tr>
+        <tr><td>The Second Season</td><td>September 1, 2009</td></tr>
+        <tr><td>The Third Season</td><td>September 7, 2010</td></tr>
+    </table>
+    """
+    soup = BeautifulSoup(html, "lxml")
+    movies = wiki_module._extract_movies_from_table(soup.find("table"))
+    assert movies == []
+
+
+def test_extract_movies_from_infobox_parses_films_row_only():
+    soup = BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml")
+
+    movies = wiki_module._extract_movies_from_infobox(soup)
+
+    assert [movie["title"] for movie in movies] == [
+        "The Equalizer",
+        "The Equalizer 2",
+        "The Equalizer 3",
+    ]
+    assert [movie["year"] for movie in movies] == [2014, 2018, 2023]
+
+
+def test_extract_movies_from_infobox_keeps_year_only_entries_without_fabricated_release_dates():
+    soup = BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml")
+
+    movies = wiki_module._extract_movies_from_infobox(soup)
+
+    assert [movie["release_date"] for movie in movies] == [None, None, None]
+
+
+def test_extract_movies_from_table_preserves_real_release_dates_exactly():
+    html = """
+    <table class="wikitable">
+        <tr><th>Title</th><th>Release date</th></tr>
+        <tr><td>Movie One</td><td>September 24, 2014</td></tr>
+        <tr><td>Movie Two</td><td>July 20, 2018</td></tr>
+    </table>
+    """
+    soup = BeautifulSoup(html, "lxml")
+
+    movies = wiki_module._extract_movies_from_table(soup.find("table"))
+
+    assert [movie["release_date"] for movie in movies] == ["2014-09-24", "2018-07-20"]
+
+
+def test_extract_movies_from_film_series_section_parses_movie_headings():
+    soup = BeautifulSoup(FILM_SERIES_SECTION_HTML, "lxml")
+
+    movies = wiki_module._extract_movies_from_film_series_section(soup)
+
+    assert [movie["title"] for movie in movies] == ["Movie One", "Movie Two", "Movie Three"]
+    assert [movie["year"] for movie in movies] == [2001, 2004, 2008]
+
+
+def test_extract_movies_from_navbox_films_uses_only_films_row():
+    soup = BeautifulSoup(NAVBOX_FILMS_HTML, "lxml")
+
+    movies = wiki_module._extract_movies_from_navbox_films(soup)
+
+    assert [movie["title"] for movie in movies] == [
+        "The Equalizer",
+        "The Equalizer 2",
+        "The Equalizer 3",
+    ]
+    assert all("soundtrack" not in movie["title"].casefold() for movie in movies)
+
+
+def test_extract_movies_from_navbox_films_ignores_soundtracks_only_row():
+    soup = BeautifulSoup(NAVBOX_SOUNDTRACKS_ONLY_HTML, "lxml")
+
+    movies = wiki_module._extract_movies_from_navbox_films(soup)
+
+    assert movies == []
+
+
+def test_score_franchise_candidate_prefers_franchise_page_over_soundtrack_page():
+    franchise_soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "lxml")
+    soundtrack_soup = BeautifulSoup(SOUNDTRACK_SCORING_HTML, "lxml")
+    movies = wiki_module._extract_movies_from_infobox(BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml"))
+
+    franchise_score = wiki_module._score_franchise_candidate(
+        candidate_title="The Equalizer",
+        resolved_title="The Equalizer (film series)",
+        soup=franchise_soup,
+        movies=movies,
+        source_kind="infobox",
+    )
+    soundtrack_score = wiki_module._score_franchise_candidate(
+        candidate_title="The Equalizer (soundtrack)",
+        resolved_title="The Equalizer (soundtrack)",
+        soup=soundtrack_soup,
+        movies=movies,
+        source_kind="generic",
+    )
+
+    assert franchise_score["score"] > soundtrack_score["score"]
+    assert "title:film series" in franchise_score["signals"]["positive"]
+    assert "title:soundtrack" in soundtrack_score["signals"]["negative"]
+
+
+def test_score_franchise_candidate_rewards_structured_and_dated_evidence():
+    soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "lxml")
+    movies = wiki_module._extract_movies_from_infobox(BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml"))
+
+    score = wiki_module._score_franchise_candidate(
+        candidate_title="The Equalizer",
+        resolved_title="The Equalizer (film series)",
+        soup=soup,
+        movies=movies,
+        source_kind="infobox",
+    )
+
+    assert "source:infobox" in score["signals"]["positive"]
+    assert "infobox:films_field" in score["signals"]["positive"]
+    assert "movies:count=3" in score["signals"]["positive"]
+    assert "movies:dated=3" in score["signals"]["positive"]
+    assert score["score"] > 0
+
+
+def test_score_franchise_candidate_rewards_dated_movies_over_title_only_entries():
+    soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "lxml")
+    dated_movies = [
+        {"title": "Movie One", "year": 2001, "release_date": None},
+        {"title": "Movie Two", "year": 2004, "release_date": None},
+        {"title": "Movie Three", "year": 2008, "release_date": None},
+    ]
+    title_only_movies = [
+        {"title": "Movie One", "year": None, "release_date": None},
+        {"title": "Movie Two", "year": None, "release_date": None},
+        {"title": "Movie Three", "year": None, "release_date": None},
+    ]
+
+    dated_score = wiki_module._score_franchise_candidate(
+        candidate_title="The Equalizer",
+        resolved_title="The Equalizer (film series)",
+        soup=soup,
+        movies=dated_movies,
+        source_kind="infobox",
+    )
+    title_only_score = wiki_module._score_franchise_candidate(
+        candidate_title="The Equalizer",
+        resolved_title="The Equalizer (film series)",
+        soup=soup,
+        movies=title_only_movies,
+        source_kind="infobox",
+    )
+
+    assert dated_score["score"] > title_only_score["score"]
+    assert "movies:dated=3" in dated_score["signals"]["positive"]
+    assert "movies:dated=3" not in title_only_score["signals"]["positive"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_accepts_infobox_only_page(mocker):
+    page = mocker.Mock()
+    page.title = "Equalizer Infobox Test"
+
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        return_value=["Equalizer Infobox Test"],
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(return_value=page),
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
+        new=AsyncMock(return_value=FRANCHISE_INFOBOX_HTML),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia(
+        "Equalizer Infobox Test"
+    )
+
+    assert result is not None
+    franchise_name, movies = result
+    assert franchise_name == "Equalizer Infobox Test"
+    assert [movie["title"] for movie in movies] == [
+        "The Equalizer",
+        "The Equalizer 2",
+        "The Equalizer 3",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_prefers_higher_scoring_later_candidate(mocker):
+    soundtrack_page = mocker.Mock()
+    soundtrack_page.title = "The Equalizer Ranking Test (soundtrack)"
+    franchise_page = mocker.Mock()
+    franchise_page.title = "The Equalizer Ranking Test (film series)"
+
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        return_value=[
+            "The Equalizer Ranking Test (soundtrack)",
+            "The Equalizer Ranking Test (film series)",
+        ],
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(side_effect=[soundtrack_page, franchise_page]),
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
+        new=AsyncMock(side_effect=[SOUNDTRACK_WITH_FILM_TABLE_HTML, FRANCHISE_SCORING_HTML]),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia(
+        "The Equalizer Ranking Test"
+    )
+
+    assert result is not None
+    franchise_name, movies = result
+    assert franchise_name == "The Equalizer Ranking Test (film series)"
+    assert [movie["title"] for movie in movies] == [
+        "The Equalizer",
+        "The Equalizer 2",
+        "The Equalizer 3",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_returns_none_for_low_confidence_soundtrack_page(
+    mocker,
+):
+    soundtrack_page = mocker.Mock()
+    soundtrack_page.title = "Soundtrack Confidence Test (soundtrack)"
+
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        return_value=["Soundtrack Confidence Test (soundtrack)"],
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(return_value=soundtrack_page),
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
+        new=AsyncMock(return_value=SOUNDTRACK_WITH_FILM_TABLE_HTML),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia(
+        "Soundtrack Confidence Test"
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_accepts_film_series_section_only_page(mocker):
+    page = mocker.Mock()
+    page.title = "Movie Saga"
+
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        return_value=["Movie Saga"],
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(return_value=page),
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
+        new=AsyncMock(return_value=FILM_SERIES_SECTION_HTML),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia("Movie Saga")
+
+    assert result is not None
+    franchise_name, movies = result
+    assert franchise_name == "Movie Saga"
+    assert [movie["title"] for movie in movies] == ["Movie One", "Movie Two", "Movie Three"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_accepts_navbox_films_only_page(mocker):
+    page = mocker.Mock()
+    page.title = "Equalizer Navbox Test"
+
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        return_value=["Equalizer Navbox Test"],
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(return_value=page),
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
+        new=AsyncMock(return_value=NAVBOX_FILMS_HTML),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia("Equalizer Navbox Test")
+
+    assert result is not None
+    franchise_name, movies = result
+    assert franchise_name == "Equalizer Navbox Test"
+    assert [movie["title"] for movie in movies] == [
+        "The Equalizer",
+        "The Equalizer 2",
+        "The Equalizer 3",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_skips_tv_season_release_tables(mocker):
+    tv_page = mocker.Mock()
+    tv_page.title = "The Equalizer (TV series)"
+    film_page = mocker.Mock()
+    film_page.title = "The Equalizer (film series)"
+
+    movie_html = """
+    <table class="wikitable">
+        <tr><th>Film</th><th>Release date</th></tr>
+        <tr><td>The Equalizer</td><td>September 24, 2014</td></tr>
+        <tr><td>The Equalizer 2</td><td>July 20, 2018</td></tr>
+        <tr><td>The Equalizer 3</td><td>September 1, 2023</td></tr>
+    </table>
+    """
+    season_html = """
+    <table class="wikitable">
+        <tr><th>Title</th><th>Release date</th></tr>
+        <tr><td>The First Season</td><td>September 23, 2008</td></tr>
+        <tr><td>The Second Season</td><td>September 1, 2009</td></tr>
+        <tr><td>The Third Season</td><td>September 7, 2010</td></tr>
+    </table>
+    """
+
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        return_value=["The Equalizer (TV series)", "The Equalizer (film series)"],
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(side_effect=[tv_page, film_page]),
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
+        new=AsyncMock(side_effect=[season_html, movie_html]),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia("The Equalizer")
+
+    assert result is not None
+    franchise_name, movies = result
+    assert franchise_name == "The Equalizer (film series)"
+    assert [movie["title"] for movie in movies] == [
+        "The Equalizer",
+        "The Equalizer 2",
+        "The Equalizer 3",
+    ]
 
 
 OVERVIEW_ONGOING_ONLY_HTML = """

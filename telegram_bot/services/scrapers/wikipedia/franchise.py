@@ -1,5 +1,6 @@
 import asyncio
-from typing import Any
+import re
+from typing import Any, Literal, TypedDict
 
 import wikipedia
 from bs4 import BeautifulSoup, Tag
@@ -27,6 +28,94 @@ _FRANCHISE_KEYWORDS = (
     "films",
 )
 
+_SEASON_ORDINAL_TOKENS = (
+    "first",
+    "second",
+    "third",
+    "fourth",
+    "fifth",
+    "sixth",
+    "seventh",
+    "eighth",
+    "ninth",
+    "tenth",
+    "eleventh",
+    "twelfth",
+    "final",
+    "last",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+)
+_SEASON_RELEASE_PATTERN = re.compile(
+    r"^(?:the\s+)?(?:complete\s+|entire\s+|full\s+)?"
+    r"(?:(?:" + "|".join(_SEASON_ORDINAL_TOKENS) + r")|\d+|[ivxlcdm]+)\s+"
+    r"(?:season|series)\b",
+    re.IGNORECASE,
+)
+_SEASON_SUFFIX_PATTERN = re.compile(
+    r"[:\-]\s*(?:the\s+)?(?:complete\s+|entire\s+|full\s+)?"
+    r"(?:(?:" + "|".join(_SEASON_ORDINAL_TOKENS) + r")|\d+|[ivxlcdm]+)\s+"
+    r"(?:season|series)\b",
+    re.IGNORECASE,
+)
+_COMPLETE_SERIES_PATTERN = re.compile(
+    r"^(?:the\s+)?(?:complete|entire|full)\s+series\b",
+    re.IGNORECASE,
+)
+_FILM_INFOBOX_LABEL_KEYS = {"film", "films"}
+_FILM_SERIES_SECTION_PATTERN = re.compile(r"\bfilm\s+series\b", re.IGNORECASE)
+_TRAILING_YEAR_QUALIFIER_PATTERN = re.compile(
+    r"\s*\((?:18|19|20|21)\d{2}[^)]*\)\s*$",
+    re.IGNORECASE,
+)
+_NEGATIVE_CANDIDATE_KEYWORDS = ("soundtrack", "album", "score", "song", "discography")
+_POSITIVE_CANDIDATE_KEYWORDS = ("franchise", "film series")
+
+
+class _FranchiseScoreSignals(TypedDict):
+    positive: list[str]
+    negative: list[str]
+
+
+_FranchiseSourceKind = Literal["infobox", "film_series_section", "navbox_films", "generic"]
+
+
+class _FranchiseExtractionResult(TypedDict):
+    movies: list[dict[str, Any]]
+    source_kind: _FranchiseSourceKind
+
+
+class _FranchiseCandidateResult(TypedDict):
+    page_title: str
+    resolved_title: str
+    movies: list[dict[str, Any]]
+    source_kind: _FranchiseSourceKind
+    score: float
+    signals: _FranchiseScoreSignals
+
+
+_SOURCE_KIND_SCORE_BONUS: dict[_FranchiseSourceKind, float] = {
+    "infobox": 12.0,
+    "film_series_section": 8.0,
+    "navbox_films": 10.0,
+    "generic": 0.0,
+}
+_SOURCE_KIND_RANK: dict[_FranchiseSourceKind, int] = {
+    "infobox": 4,
+    "film_series_section": 3,
+    "navbox_films": 2,
+    "generic": 1,
+}
+_MIN_FRANCHISE_CANDIDATE_SCORE = 15.0
+
 
 def _compose_movie_key(
     normalized_title: str, year: int | None, release_iso: str | None, fallback_idx: int
@@ -45,6 +134,17 @@ def _candidate_match_flags(candidate_title: str, normalized_query: str) -> tuple
     lowered = candidate_title.casefold()
     has_keyword = any(keyword in lowered for keyword in _FRANCHISE_KEYWORDS)
     return matches_query, has_keyword
+
+
+def _looks_like_season_release(label: str) -> bool:
+    cleaned = _clean_movie_label(label)
+    if not cleaned:
+        return False
+    return bool(
+        _SEASON_RELEASE_PATTERN.search(cleaned)
+        or _SEASON_SUFFIX_PATTERN.search(cleaned)
+        or _COMPLETE_SERIES_PATTERN.search(cleaned)
+    )
 
 
 async def _resolve_franchise_candidate(
@@ -68,6 +168,339 @@ async def _resolve_franchise_candidate(
     except Exception:
         return None
     return None
+
+
+def _build_movie_entry(
+    raw_title: str,
+    release_text: str,
+    fallback_idx: int,
+) -> dict[str, Any] | None:
+    cleaned_title = _clean_movie_label(raw_title)
+    if not cleaned_title or cleaned_title.casefold() in {"title", "film"}:
+        return None
+    normalized_key = _normalize_for_comparison(cleaned_title)
+    if not normalized_key:
+        return None
+    year_value = _extract_year_from_text(release_text)
+    if year_value is None:
+        year_value = _extract_year_from_text(cleaned_title)
+    release_iso = _extract_release_date_iso(release_text)
+    return {
+        "title": cleaned_title,
+        "year": year_value,
+        "identifier": _compose_movie_key(normalized_key, year_value, release_iso, fallback_idx),
+        "release_text": release_text,
+        "release_date": release_iso,
+    }
+
+
+def _infobox_label_keys(soup: BeautifulSoup) -> set[str]:
+    infobox = soup.find("table", class_=re.compile(r"\binfobox\b"))
+    if not isinstance(infobox, Tag):
+        return set()
+
+    labels: set[str] = set()
+    for header in infobox.find_all("th"):
+        if not isinstance(header, Tag):
+            continue
+        label_key = _normalize_for_comparison(header.get_text(" ", strip=True))
+        if label_key:
+            labels.add(label_key)
+    return labels
+
+
+def _score_keyword_matches(
+    *,
+    score: float,
+    signals: _FranchiseScoreSignals,
+    text: str,
+    keywords: tuple[str, ...],
+    prefix: str,
+    weight: float,
+    bucket: Literal["positive", "negative"],
+    seen: set[str],
+) -> float:
+    lowered = text.casefold()
+    for keyword in keywords:
+        if keyword not in lowered:
+            continue
+        signal = f"{prefix}:{keyword}"
+        if signal in seen:
+            continue
+        score += weight
+        signals[bucket].append(signal)
+        seen.add(signal)
+    return score
+
+
+def _score_franchise_candidate(
+    *,
+    candidate_title: str,
+    resolved_title: str,
+    soup: BeautifulSoup,
+    movies: list[dict[str, Any]],
+    source_kind: _FranchiseSourceKind,
+) -> dict[str, Any]:
+    score = 0.0
+    signals: _FranchiseScoreSignals = {
+        "positive": [],
+        "negative": [],
+    }
+    seen_positive: set[str] = set()
+    seen_negative: set[str] = set()
+
+    title_text = " ".join(
+        part.strip() for part in (candidate_title, resolved_title) if part
+    ).casefold()
+    heading_text = " ".join(
+        heading.get_text(" ", strip=True) for heading in soup.find_all(["h1", "h2", "h3", "h4"])
+    )
+    lead_text = " ".join(
+        paragraph.get_text(" ", strip=True) for paragraph in soup.find_all("p")[:3]
+    )
+    infobox_text = " ".join(sorted(_infobox_label_keys(soup)))
+    key_content_text = " ".join(part for part in (heading_text, lead_text, infobox_text) if part)
+
+    score = _score_keyword_matches(
+        score=score,
+        signals=signals,
+        text=title_text,
+        keywords=_NEGATIVE_CANDIDATE_KEYWORDS,
+        prefix="title",
+        weight=-40.0,
+        bucket="negative",
+        seen=seen_negative,
+    )
+    score = _score_keyword_matches(
+        score=score,
+        signals=signals,
+        text=key_content_text,
+        keywords=_NEGATIVE_CANDIDATE_KEYWORDS,
+        prefix="content",
+        weight=-10.0,
+        bucket="negative",
+        seen=seen_negative,
+    )
+    score = _score_keyword_matches(
+        score=score,
+        signals=signals,
+        text=title_text,
+        keywords=_POSITIVE_CANDIDATE_KEYWORDS,
+        prefix="title",
+        weight=18.0,
+        bucket="positive",
+        seen=seen_positive,
+    )
+    score = _score_keyword_matches(
+        score=score,
+        signals=signals,
+        text=key_content_text,
+        keywords=_POSITIVE_CANDIDATE_KEYWORDS,
+        prefix="content",
+        weight=8.0,
+        bucket="positive",
+        seen=seen_positive,
+    )
+
+    source_bonus = _SOURCE_KIND_SCORE_BONUS[source_kind]
+    if source_bonus:
+        score += source_bonus
+        signals["positive"].append(f"source:{source_kind}")
+
+    if _FILM_INFOBOX_LABEL_KEYS & _infobox_label_keys(soup):
+        score += 20.0
+        signals["positive"].append("infobox:films_field")
+
+    movie_count = len(movies)
+    if movie_count:
+        score += min(movie_count * 2.0, 10.0)
+        signals["positive"].append(f"movies:count={movie_count}")
+
+    dated_count = sum(
+        1 for movie in movies if movie.get("year") is not None or movie.get("release_date")
+    )
+    if dated_count:
+        score += min(dated_count * 4.0, 16.0)
+        signals["positive"].append(f"movies:dated={dated_count}")
+
+    return {
+        "score": score,
+        "signals": signals,
+    }
+
+
+def _extract_movies_from_generic_structures(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    for table in soup.find_all("table", class_="wikitable"):
+        movies = _extract_movies_from_table(table)
+        if len(movies) >= 2:
+            return movies
+    movies = _extract_movies_from_lists(soup)
+    if movies:
+        return movies
+    condensed: list[dict[str, Any]] = []
+    for table in soup.find_all("table"):
+        movies = _extract_movies_from_table(table)
+        if movies:
+            condensed.extend(movies)
+            break
+    return condensed if len(condensed) >= 2 else []
+
+
+def _extract_movies_from_navbox_films(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    for navbox in soup.find_all("table", class_=re.compile(r"\bnavbox\b")):
+        if not isinstance(navbox, Tag):
+            continue
+        for row in navbox.find_all("tr"):
+            if not isinstance(row, Tag):
+                continue
+            header = row.find("th")
+            value = row.find("td")
+            if not isinstance(header, Tag) or not isinstance(value, Tag):
+                continue
+            label_key = _normalize_for_comparison(header.get_text(" ", strip=True))
+            if label_key != "films":
+                continue
+
+            movies: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            candidates = list(value.find_all("li", recursive=False))
+            if not candidates:
+                candidates = list(value.find_all("li"))
+            if not candidates:
+                candidates = [value]
+
+            for idx, candidate in enumerate(candidates):
+                if not isinstance(candidate, Tag):
+                    continue
+                raw_title = candidate.get_text(" ", strip=True)
+                movie = _build_movie_entry(raw_title, raw_title, idx)
+                if not movie or _looks_like_season_release(movie["title"]):
+                    continue
+                if movie["identifier"] in seen:
+                    continue
+                seen.add(movie["identifier"])
+                movies.append(movie)
+
+            return movies if len(movies) >= 2 else []
+
+    return []
+
+
+def _extract_franchise_candidate_result(html: str) -> _FranchiseExtractionResult | None:
+    soup = BeautifulSoup(html, "lxml")
+    extractors: tuple[tuple[_FranchiseSourceKind, Any], ...] = (
+        ("infobox", _extract_movies_from_infobox),
+        ("film_series_section", _extract_movies_from_film_series_section),
+        ("navbox_films", _extract_movies_from_navbox_films),
+        ("generic", _extract_movies_from_generic_structures),
+    )
+    for source_kind, extractor in extractors:
+        movies = extractor(soup)
+        if movies:
+            return {
+                "movies": movies,
+                "source_kind": source_kind,
+            }
+    return None
+
+
+def _extract_movies_from_infobox(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    infobox = soup.find("table", class_=re.compile(r"\binfobox\b"))
+    if not isinstance(infobox, Tag):
+        return []
+
+    for row in infobox.find_all("tr"):
+        if not isinstance(row, Tag):
+            continue
+        header = row.find("th")
+        value = row.find("td")
+        if not isinstance(header, Tag) or not isinstance(value, Tag):
+            continue
+
+        label_key = _normalize_for_comparison(header.get_text(" ", strip=True))
+        if label_key not in _FILM_INFOBOX_LABEL_KEYS:
+            continue
+
+        movies: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        list_items = list(value.find_all("li"))
+        candidates: list[Tag] = list_items or list(value.find_all(["i", "em"]))
+        if not candidates:
+            candidates = [value]
+
+        for idx, candidate in enumerate(candidates):
+            if not isinstance(candidate, Tag):
+                continue
+            label_source = candidate.find(["i", "em"])
+            raw_title = (
+                label_source.get_text(" ", strip=True)
+                if isinstance(label_source, Tag)
+                else candidate.get_text(" ", strip=True)
+            )
+            release_text = candidate.get_text(" ", strip=True)
+            movie = _build_movie_entry(raw_title, release_text, idx)
+            if not movie or _looks_like_season_release(movie["title"]):
+                continue
+            if movie["identifier"] in seen:
+                continue
+            seen.add(movie["identifier"])
+            movies.append(movie)
+
+        return movies if len(movies) >= 2 else []
+
+    return []
+
+
+def _extract_direct_heading(node: Tag) -> Tag | None:
+    if node.name in {"h2", "h3", "h4"}:
+        return node
+    direct_heading = node.find(["h2", "h3", "h4"], recursive=False)
+    return direct_heading if isinstance(direct_heading, Tag) else None
+
+
+def _heading_container(heading: Tag) -> Tag:
+    parent = heading.parent
+    parent_classes = parent.get("class", []) if isinstance(parent, Tag) else []
+    if isinstance(parent, Tag) and "mw-heading" in parent_classes:
+        return parent
+    return heading
+
+
+def _extract_movies_from_film_series_section(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    for heading in soup.find_all(["h2", "h3", "h4"]):
+        heading_text = heading.get_text(" ", strip=True)
+        if not _FILM_SERIES_SECTION_PATTERN.search(heading_text):
+            continue
+
+        section_level = int(heading.name[1])
+        entries: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        sibling = _heading_container(heading).find_next_sibling()
+        while sibling:
+            if isinstance(sibling, Tag):
+                direct_heading = _extract_direct_heading(sibling)
+                if isinstance(direct_heading, Tag):
+                    level = int(direct_heading.name[1])
+                    if level <= section_level:
+                        break
+                    raw_heading_text = direct_heading.get_text(" ", strip=True)
+                    if _extract_year_from_text(raw_heading_text) is not None:
+                        italic = direct_heading.find(["i", "em"])
+                        raw_title = (
+                            italic.get_text(" ", strip=True)
+                            if isinstance(italic, Tag)
+                            else _TRAILING_YEAR_QUALIFIER_PATTERN.sub("", raw_heading_text).strip()
+                        )
+                        movie = _build_movie_entry(raw_title, raw_heading_text, len(entries))
+                        if movie and movie["identifier"] not in seen:
+                            seen.add(movie["identifier"])
+                            entries.append(movie)
+            sibling = sibling.find_next_sibling()
+
+        if len(entries) >= 2:
+            return entries
+
+    return []
 
 
 def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
@@ -97,6 +530,7 @@ def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
 
     movies: list[dict[str, Any]] = []
     seen: set[str] = set()
+    season_like_titles = 0
     for row_idx, row in enumerate(table.find_all("tr")):
         cells = row.find_all(["td", "th"])
         if len(cells) <= title_idx:
@@ -105,6 +539,8 @@ def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
         cleaned_title = _clean_movie_label(raw_title)
         if not cleaned_title or cleaned_title.casefold() in {"title", "film"}:
             continue
+        if _looks_like_season_release(cleaned_title):
+            season_like_titles += 1
         normalized_key = _normalize_for_comparison(cleaned_title)
         if not normalized_key:
             continue
@@ -130,7 +566,11 @@ def _extract_movies_from_table(table: Tag) -> list[dict[str, Any]]:
                 "release_date": release_iso,
             }
         )
-    return movies if len(movies) >= 2 else []
+    if len(movies) < 2:
+        return []
+    if season_like_titles > len(movies) // 2:
+        return []
+    return movies
 
 
 def _extract_movies_from_lists(soup: BeautifulSoup) -> list[dict[str, Any]]:
@@ -181,21 +621,35 @@ def _extract_movies_from_lists(soup: BeautifulSoup) -> list[dict[str, Any]]:
 
 
 def _extract_movies_from_franchise_html(html: str) -> list[dict[str, Any]]:
-    soup = BeautifulSoup(html, "lxml")
-    for table in soup.find_all("table", class_="wikitable"):
-        movies = _extract_movies_from_table(table)
-        if len(movies) >= 2:
-            return movies
-    movies = _extract_movies_from_lists(soup)
-    if movies:
-        return movies
-    condensed: list[dict[str, Any]] = []
-    for table in soup.find_all("table"):
-        movies = _extract_movies_from_table(table)
-        if movies:
-            condensed.extend(movies)
-            break
-    return condensed if len(condensed) >= 2 else []
+    extraction = _extract_franchise_candidate_result(html)
+    return extraction["movies"] if extraction else []
+
+
+def _dated_movie_count(movies: list[dict[str, Any]]) -> int:
+    return sum(1 for movie in movies if movie.get("year") is not None or movie.get("release_date"))
+
+
+def _candidate_sort_key(candidate: _FranchiseCandidateResult) -> tuple[float, int, int, int]:
+    movies = candidate["movies"]
+    return (
+        candidate["score"],
+        _SOURCE_KIND_RANK[candidate["source_kind"]],
+        len(movies),
+        _dated_movie_count(movies),
+    )
+
+
+def _select_best_franchise_candidate(
+    candidates: list[_FranchiseCandidateResult],
+) -> _FranchiseCandidateResult | None:
+    viable_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate["score"] >= _MIN_FRANCHISE_CANDIDATE_SCORE
+    ]
+    if not viable_candidates:
+        return None
+    return max(viable_candidates, key=_candidate_sort_key)
 
 
 async def fetch_movie_franchise_details_from_wikipedia(
@@ -217,7 +671,8 @@ async def fetch_movie_franchise_details_from_wikipedia(
         f"List of {search_title} films",
         search_title,
     ]
-    attempted: set[str] = set()
+    gathered_candidates: list[str] = []
+    seen_candidates: set[str] = set()
 
     for term in search_variants:
         try:
@@ -227,7 +682,7 @@ async def fetch_movie_franchise_details_from_wikipedia(
             search_results = []
         filtered: list[tuple[str, bool]] = []
         for candidate in search_results or []:
-            if candidate in attempted:
+            if candidate in seen_candidates:
                 continue
             matches_query, has_keyword = _candidate_match_flags(candidate, normalized_query)
             if not matches_query:
@@ -244,21 +699,47 @@ async def fetch_movie_franchise_details_from_wikipedia(
             ordered_candidates = prioritized + fallbacks
 
         for candidate, _ in ordered_candidates:
-            if candidate in attempted:
+            if candidate in seen_candidates:
                 continue
-            attempted.add(candidate)
-            page = await _resolve_franchise_candidate(candidate)
-            if not page:
-                continue
-            html = await _fetch_html_from_page(page)
-            if not html:
-                continue
-            movies = _extract_movies_from_franchise_html(html)
-            if not movies:
-                continue
-            resolved_name = _sanitize_wikipedia_title(page.title.strip())
-            payload = (resolved_name, movies)
-            _WIKI_FRANCHISE_CACHE[cache_key] = payload
-            return payload
+            seen_candidates.add(candidate)
+            gathered_candidates.append(candidate)
 
-    return None
+    evaluated_candidates: list[_FranchiseCandidateResult] = []
+    for candidate in gathered_candidates:
+        page = await _resolve_franchise_candidate(candidate)
+        if not page:
+            continue
+        html = await _fetch_html_from_page(page)
+        if not html:
+            continue
+        extraction = _extract_franchise_candidate_result(html)
+        if not extraction:
+            continue
+
+        soup = BeautifulSoup(html, "lxml")
+        resolved_name = _sanitize_wikipedia_title(page.title.strip())
+        scoring = _score_franchise_candidate(
+            candidate_title=candidate,
+            resolved_title=resolved_name,
+            soup=soup,
+            movies=extraction["movies"],
+            source_kind=extraction["source_kind"],
+        )
+        evaluated_candidates.append(
+            {
+                "page_title": candidate,
+                "resolved_title": resolved_name,
+                "movies": extraction["movies"],
+                "source_kind": extraction["source_kind"],
+                "score": scoring["score"],
+                "signals": scoring["signals"],
+            }
+        )
+
+    best_candidate = _select_best_franchise_candidate(evaluated_candidates)
+    if best_candidate is None:
+        return None
+
+    payload = (best_candidate["resolved_title"], best_candidate["movies"])
+    _WIKI_FRANCHISE_CACHE[cache_key] = payload
+    return payload

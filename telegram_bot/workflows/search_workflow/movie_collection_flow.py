@@ -2,10 +2,13 @@
 
 import asyncio
 import os
+import re
 import shutil
 from datetime import date
 from typing import Any
 
+import wikipedia
+from bs4 import BeautifulSoup, Tag
 from telegram import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -19,6 +22,8 @@ from telegram.helpers import escape_markdown
 from ...config import LOG_SCRAPER_STATS, MAX_TORRENT_SIZE_GB, logger
 from ...services import scraping_service, search_logic
 from ...services.media_manager import _get_path_size_bytes
+from ...services.scrapers.wikipedia.dates import _extract_release_date_iso
+from ...services.scrapers.wikipedia.fetch import _fetch_html_from_page
 from ...ui.messages import format_media_summary
 from ...utils import (
     format_bytes,
@@ -55,6 +60,116 @@ COLLECTION_CODEC_CHOICES: tuple[str, ...] = ("x264", "x265")
 COLLECTION_RESOLUTION_CHOICES: tuple[str, ...] = ("1080p", "2160p")
 COLLECTION_RESOLUTION_OPTIONS = (("1080p", "1080p"), ("2160p", "2160p / 4K"))
 COLLECTION_CODEC_OPTIONS = (("x264", "x264 / AVC"), ("x265", "x265 / HEVC"))
+
+
+def _classify_collection_release(
+    raw_movie: dict[str, Any], today: date
+) -> tuple[str, int | None, date | None]:
+    """Classifies a franchise entry using release_date first, then year as fallback."""
+    parsed_year = _coerce_int(raw_movie.get("year"))
+    release_date = _parse_release_iso(raw_movie.get("release_date"))
+    if release_date is not None:
+        if release_date > today:
+            return "unreleased", parsed_year, release_date
+        return "released", parsed_year, release_date
+    if parsed_year is None:
+        return "unknown", None, None
+    if parsed_year > today.year:
+        return "unreleased", parsed_year, None
+    return "released", parsed_year, None
+
+
+def _extract_release_date_from_movie_html(html: str) -> date | None:
+    soup = BeautifulSoup(html, "lxml")
+    infobox = soup.find("table", class_=re.compile(r"\binfobox\b"))
+    if not isinstance(infobox, Tag):
+        return None
+
+    for row in infobox.find_all("tr"):
+        if not isinstance(row, Tag):
+            continue
+        header = row.find("th")
+        if not isinstance(header, Tag):
+            continue
+        if "release" not in header.get_text(" ", strip=True).casefold():
+            continue
+        value = row.find("td")
+        if not isinstance(value, Tag):
+            continue
+        release_iso = _extract_release_date_iso(value.get_text(" ", strip=True))
+        if release_iso:
+            return _parse_release_iso(release_iso)
+    return None
+
+
+async def _resolve_current_year_release_date(title: str, year: int) -> date | None:
+    """Best-effort lookup for ambiguous current-year entries."""
+    corrected_title: str | None = None
+    try:
+        _, corrected_title = await scraping_service.fetch_movie_years_from_wikipedia(title)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[COLLECTION] Could not refine current-year movie title '%s' (%s): %s",
+            title,
+            year,
+            exc,
+        )
+
+    candidate_queries: list[str] = []
+    for base_title in (corrected_title, title):
+        if not base_title:
+            continue
+        candidate_queries.append(f"{base_title} ({year} film)")
+
+    seen_queries: set[str] = set()
+    for query in candidate_queries:
+        cleaned_query = query.strip()
+        if not cleaned_query or cleaned_query in seen_queries:
+            continue
+        seen_queries.add(cleaned_query)
+        try:
+            page = await asyncio.to_thread(
+                wikipedia.page, cleaned_query, auto_suggest=False, redirect=True
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        html = await _fetch_html_from_page(page)
+        if not html:
+            continue
+        if release_date := _extract_release_date_from_movie_html(html):
+            return release_date
+
+    return None
+
+
+async def _resolve_collection_release(
+    raw_movie: dict[str, Any], today: date
+) -> tuple[str, int | None, date | None]:
+    release_state, parsed_year, release_date = _classify_collection_release(raw_movie, today)
+    if release_date is not None or parsed_year != today.year:
+        return release_state, parsed_year, release_date
+
+    raw_title = raw_movie.get("title") or raw_movie.get("name")
+    title = str(raw_title).strip() if raw_title is not None else ""
+    if not title:
+        return release_state, parsed_year, release_date
+
+    try:
+        resolved_release_date = await _resolve_current_year_release_date(title, parsed_year)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[COLLECTION] Current-year release lookup failed for '%s' (%s): %s",
+            title,
+            parsed_year,
+            exc,
+        )
+        return release_state, parsed_year, release_date
+
+    if resolved_release_date is None:
+        return release_state, parsed_year, release_date
+    if resolved_release_date > today:
+        return "unreleased", parsed_year, resolved_release_date
+    return "released", parsed_year, resolved_release_date
 
 
 async def _start_collection_lookup(
@@ -101,14 +216,18 @@ async def _start_collection_lookup(
     normalized_movies: list[dict[str, Any]] = []
     today = date.today()
     unreleased_count = 0
+    unknown_count = 0
     for idx, raw_movie in enumerate(movies or []):
         raw_title = raw_movie.get("title") or raw_movie.get("name") or display_title
         title_str = str(raw_title).strip() or display_title
-        year_value = raw_movie.get("year")
-        parsed_year = _coerce_int(year_value)
-        release_date = _parse_release_iso(raw_movie.get("release_date"))
-        if release_date is None or release_date > today:
+        release_state, parsed_year, release_date = await _resolve_collection_release(
+            raw_movie, today
+        )
+        if release_state == "unreleased":
             unreleased_count += 1
+            continue
+        if release_state != "released":
+            unknown_count += 1
             continue
         entry = {
             "title": title_str,
@@ -116,18 +235,32 @@ async def _start_collection_lookup(
             "identifier": _ensure_identifier({"title": title_str, "year": parsed_year}, idx),
             "owned": False,
             "queued": False,
-            "release_date": release_date.isoformat(),
+            "release_date": release_date.isoformat() if release_date is not None else None,
         }
         normalized_movies.append(entry)
 
     if not normalized_movies:
-        if unreleased_count:
+        if unreleased_count and not unknown_count:
+            logger.info(
+                "[COLLECTION] Franchise '%s' matched for '%s' has no released titles yet (%d unreleased entries).",
+                franchise_name,
+                display_title,
+                unreleased_count,
+            )
             message_text = (
                 f"⚠️ The detected franchise for "
                 f"*{escape_markdown(display_title, version=2)}* has no released titles available yet\\.\n"
                 "Please try again once those movies premiere or pick another franchise\\."
             )
         else:
+            if unreleased_count or unknown_count:
+                logger.info(
+                    "[COLLECTION] Franchise '%s' matched for '%s' has no queueable titles (%d unreleased, %d missing release metadata).",
+                    franchise_name,
+                    display_title,
+                    unreleased_count,
+                    unknown_count,
+                )
             message_text = (
                 f"⚠️ The detected franchise for "
                 f"*{escape_markdown(display_title, version=2)}* contains no movies I can queue\\."
@@ -161,6 +294,11 @@ async def _prompt_collection_confirmation(
 ) -> None:
     franchise = session.collection_name or "Franchise"
     movies = session.collection_movies or []
+    logger.info(
+        "[COLLECTION] Prompting use/cancel confirmation for '%s' with titles: %s",
+        franchise,
+        ", ".join(_format_collection_movie_label(movie) for movie in movies) or "(none)",
+    )
     preview_lines: list[str] = []
     limited_movies = movies[:COLLECTION_MOVIE_PREVIEW_LIMIT]
     for movie in limited_movies:

@@ -1,4 +1,5 @@
 import time
+from datetime import date
 import pytest
 from unittest.mock import AsyncMock
 
@@ -7,9 +8,12 @@ from telegram import Update
 from telegram_bot.workflows.search_session import SearchSession, SearchStep
 from telegram_bot.workflows.search_workflow import handle_search_buttons, handle_search_workflow
 from telegram_bot.workflows.search_workflow.movie_collection_flow import (
+    _classify_collection_release,
     _ensure_existing_movie_in_collection,
     _handle_collection_confirm,
     _prompt_collection_preferences,
+    _prompt_collection_confirmation,
+    _resolve_collection_release,
 )
 from telegram_bot.workflows.search_workflow.results import (
     RESULTS_SESSION_TTL_SECONDS,
@@ -299,12 +303,423 @@ async def test_collection_lookup_ignores_unreleased_titles(
 
 
 @pytest.mark.asyncio
+async def test_collection_lookup_accepts_past_year_only_titles(
+    mocker, context, make_callback_query, make_message
+):
+    class _FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 3, 12)
+
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    status_message = make_message(message_id=121)
+    mocker.patch("telegram_bot.workflows.search_workflow.movie_collection_flow.date", _FixedDate)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
+        new=AsyncMock(return_value=status_message),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
+        new=AsyncMock(
+            return_value=(
+                "The Equalizer",
+                [
+                    {"title": "The Equalizer", "year": 2014, "release_date": None},
+                    {"title": "The Equalizer 2", "year": 2018, "release_date": None},
+                    {"title": "The Equalizer 3", "year": 2023, "release_date": None},
+                ],
+            )
+        ),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=33,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_buttons(
+        Update(
+            update_id=34,
+            callback_query=make_callback_query("search_movie_scope_collection", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(
+        Update(update_id=35, message=make_message("The Equalizer")), context
+    )
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert [movie["title"] for movie in session.collection_movies] == [
+        "The Equalizer",
+        "The Equalizer 2",
+        "The Equalizer 3",
+    ]
+    assert [movie["release_date"] for movie in session.collection_movies] == [None, None, None]
+
+
+@pytest.mark.asyncio
+async def test_collection_lookup_rejects_future_year_only_titles(
+    mocker, context, make_callback_query, make_message
+):
+    class _FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 3, 12)
+
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    status_message = make_message(message_id=122)
+    edit_mock = AsyncMock()
+    logger_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.logger"
+    )
+    mocker.patch("telegram_bot.workflows.search_workflow.movie_collection_flow.date", _FixedDate)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
+        new=AsyncMock(return_value=status_message),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=edit_mock,
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
+        new=AsyncMock(
+            return_value=(
+                "Future Saga",
+                [
+                    {"title": "Future One", "year": 2030, "release_date": None},
+                    {"title": "Future Two", "year": 2031, "release_date": None},
+                ],
+            )
+        ),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=36,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_buttons(
+        Update(
+            update_id=37,
+            callback_query=make_callback_query("search_movie_scope_collection", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(Update(update_id=38, message=make_message("Future Saga")), context)
+
+    assert "no released titles" in edit_mock.await_args.kwargs["text"].lower()
+    logger_mock.info.assert_any_call(
+        "[COLLECTION] Franchise '%s' matched for '%s' has no released titles yet (%d unreleased entries).",
+        "Future Saga",
+        "Future Saga",
+        2,
+    )
+    session = SearchSession.from_user_data(context.user_data)
+    assert not session.collection_movies
+
+
+@pytest.mark.asyncio
+async def test_collection_lookup_rejects_entries_missing_all_release_metadata(
+    mocker, context, make_callback_query, make_message
+):
+    class _FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 3, 12)
+
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    status_message = make_message(message_id=123)
+    edit_mock = AsyncMock()
+    logger_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.logger"
+    )
+    mocker.patch("telegram_bot.workflows.search_workflow.movie_collection_flow.date", _FixedDate)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
+        new=AsyncMock(return_value=status_message),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=edit_mock,
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
+        new=AsyncMock(
+            return_value=(
+                "Metadata Void",
+                [
+                    {"title": "Unknown One", "year": None, "release_date": None},
+                    {"title": "Unknown Two"},
+                ],
+            )
+        ),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=39,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_buttons(
+        Update(
+            update_id=40,
+            callback_query=make_callback_query("search_movie_scope_collection", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(
+        Update(update_id=41, message=make_message("Metadata Void")), context
+    )
+
+    assert "contains no movies i can queue" in edit_mock.await_args.kwargs["text"].lower()
+    logger_mock.info.assert_any_call(
+        "[COLLECTION] Franchise '%s' matched for '%s' has no queueable titles (%d unreleased, %d missing release metadata).",
+        "Metadata Void",
+        "Metadata Void",
+        0,
+        2,
+    )
+    session = SearchSession.from_user_data(context.user_data)
+    assert not session.collection_movies
+
+
+def test_classify_collection_release_accepts_past_iso_date():
+    state, parsed_year, release_date = _classify_collection_release(
+        {"title": "Released", "year": 2020, "release_date": "2020-05-04"},
+        date(2026, 3, 12),
+    )
+
+    assert state == "released"
+    assert parsed_year == 2020
+    assert release_date == date(2020, 5, 4)
+
+
+def test_classify_collection_release_rejects_future_iso_date():
+    state, parsed_year, release_date = _classify_collection_release(
+        {"title": "Upcoming", "year": 2035, "release_date": "2035-01-01"},
+        date(2026, 3, 12),
+    )
+
+    assert state == "unreleased"
+    assert parsed_year == 2035
+    assert release_date == date(2035, 1, 1)
+
+
+def test_classify_collection_release_prefers_release_date_over_year():
+    state, parsed_year, release_date = _classify_collection_release(
+        {"title": "Conflicting", "year": 2020, "release_date": "2035-01-01"},
+        date(2026, 3, 12),
+    )
+
+    assert state == "unreleased"
+    assert parsed_year == 2020
+    assert release_date == date(2035, 1, 1)
+
+
+@pytest.mark.asyncio
+async def test_resolve_collection_release_accepts_current_year_movie_with_resolved_past_date(
+    mocker,
+):
+    resolve_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
+        new=AsyncMock(return_value=date(2026, 1, 15)),
+    )
+
+    state, parsed_year, release_date = await _resolve_collection_release(
+        {"title": "Now Playing", "year": 2026, "release_date": None},
+        date(2026, 3, 12),
+    )
+
+    assert state == "released"
+    assert parsed_year == 2026
+    assert release_date == date(2026, 1, 15)
+    resolve_mock.assert_awaited_once_with("Now Playing", 2026)
+
+
+@pytest.mark.asyncio
+async def test_resolve_collection_release_rejects_current_year_movie_with_resolved_future_date(
+    mocker,
+):
+    resolve_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
+        new=AsyncMock(return_value=date(2026, 12, 25)),
+    )
+
+    state, parsed_year, release_date = await _resolve_collection_release(
+        {"title": "Coming Later", "year": 2026, "release_date": None},
+        date(2026, 3, 12),
+    )
+
+    assert state == "unreleased"
+    assert parsed_year == 2026
+    assert release_date == date(2026, 12, 25)
+    resolve_mock.assert_awaited_once_with("Coming Later", 2026)
+
+
+@pytest.mark.asyncio
+async def test_resolve_collection_release_falls_back_when_current_year_date_not_found(mocker):
+    resolve_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
+        new=AsyncMock(return_value=None),
+    )
+
+    state, parsed_year, release_date = await _resolve_collection_release(
+        {"title": "TBD", "year": 2026, "release_date": None},
+        date(2026, 3, 12),
+    )
+
+    assert state == "released"
+    assert parsed_year == 2026
+    assert release_date is None
+    resolve_mock.assert_awaited_once_with("TBD", 2026)
+
+
+@pytest.mark.asyncio
+async def test_resolve_collection_release_skips_extra_lookup_for_non_current_year_movies(mocker):
+    resolve_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
+        new=AsyncMock(),
+    )
+
+    older_state, older_year, older_release_date = await _resolve_collection_release(
+        {"title": "Older Film", "year": 2025, "release_date": None},
+        date(2026, 3, 12),
+    )
+    future_state, future_year, future_release_date = await _resolve_collection_release(
+        {"title": "Future Film", "year": 2027, "release_date": None},
+        date(2026, 3, 12),
+    )
+
+    assert older_state == "released"
+    assert older_year == 2025
+    assert older_release_date is None
+    assert future_state == "unreleased"
+    assert future_year == 2027
+    assert future_release_date is None
+    resolve_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_collection_lookup_handles_mixed_current_year_release_resolution(
+    mocker, context, make_callback_query, make_message
+):
+    class _FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 3, 12)
+
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    status_message = make_message(message_id=124)
+    resolve_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
+        new=AsyncMock(side_effect=[date(2026, 1, 20), date(2026, 11, 1), None]),
+    )
+    mocker.patch("telegram_bot.workflows.search_workflow.movie_collection_flow.date", _FixedDate)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
+        new=AsyncMock(return_value=status_message),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
+        new=AsyncMock(
+            return_value=(
+                "Mixed Saga",
+                [
+                    {"title": "Earlier This Year", "year": 2026, "release_date": None},
+                    {"title": "Later This Year", "year": 2026, "release_date": None},
+                    {"title": "Still TBD", "year": 2026, "release_date": None},
+                    {"title": "Already Released", "year": 2024, "release_date": None},
+                ],
+            )
+        ),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=43,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_buttons(
+        Update(
+            update_id=44,
+            callback_query=make_callback_query("search_movie_scope_collection", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(Update(update_id=45, message=make_message("Mixed Saga")), context)
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert [movie["title"] for movie in session.collection_movies] == [
+        "Earlier This Year",
+        "Still TBD",
+        "Already Released",
+    ]
+    assert [movie["release_date"] for movie in session.collection_movies] == [
+        "2026-01-20",
+        None,
+        None,
+    ]
+    assert resolve_mock.await_count == 3
+    assert [call.args for call in resolve_mock.await_args_list] == [
+        ("Earlier This Year", 2026),
+        ("Later This Year", 2026),
+        ("Still TBD", 2026),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_collection_confirmation_logs_titles(mocker, context, make_message):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    logger_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.logger"
+    )
+    session = SearchSession(media_type="movie")
+    session.collection_name = "Saga"
+    session.collection_movies = [
+        {"title": "Movie One", "year": 2001},
+        {"title": "Movie Two", "year": 2002},
+    ]
+
+    await _prompt_collection_confirmation(make_message(), context, session)
+
+    logger_mock.info.assert_called_once_with(
+        "[COLLECTION] Prompting use/cancel confirmation for '%s' with titles: %s",
+        "Saga",
+        "Movie One (2001), Movie Two (2002)",
+    )
+    safe_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_collection_lookup_rejects_all_unreleased_titles(
     mocker, context, make_callback_query, make_message
 ):
     context.bot_data["SEARCH_CONFIG"] = {"websites": []}
     status_message = make_message(message_id=150)
     edit_mock = AsyncMock()
+    logger_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.logger"
+    )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
         new=AsyncMock(return_value=status_message),
@@ -343,6 +758,12 @@ async def test_collection_lookup_rejects_all_unreleased_titles(
     await handle_search_workflow(Update(update_id=42, message=make_message("Future Saga")), context)
 
     assert "no released titles" in edit_mock.await_args.kwargs["text"].lower()
+    logger_mock.info.assert_any_call(
+        "[COLLECTION] Franchise '%s' matched for '%s' has no released titles yet (%d unreleased entries).",
+        "Future Saga",
+        "Future Saga",
+        2,
+    )
     session = SearchSession.from_user_data(context.user_data)
     assert not session.collection_movies
 
