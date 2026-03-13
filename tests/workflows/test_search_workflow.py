@@ -14,6 +14,7 @@ from telegram_bot.workflows.search_workflow.movie_collection_flow import (
     _handle_collection_confirm,
     _prompt_collection_preferences,
     _prompt_collection_confirmation,
+    _resolve_current_year_release_date,
     _resolve_collection_release,
 )
 from telegram_bot.workflows.search_workflow.results import (
@@ -591,6 +592,9 @@ def test_classify_collection_release_prefers_release_date_over_year():
 async def test_resolve_collection_release_accepts_current_year_movie_with_resolved_past_date(
     mocker,
 ):
+    logger_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.logger"
+    )
     resolve_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
         new=AsyncMock(return_value=date(2026, 1, 15)),
@@ -605,12 +609,69 @@ async def test_resolve_collection_release_accepts_current_year_movie_with_resolv
     assert parsed_year == 2026
     assert release_date == date(2026, 1, 15)
     resolve_mock.assert_awaited_once_with("Now Playing", 2026)
+    logger_mock.info.assert_called_once_with(
+        "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> released",
+        "Now Playing",
+        2026,
+        "2026-01-15",
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_current_year_release_date_uses_plain_page_title_when_available(mocker):
+    fetch_years_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_years_from_wikipedia",
+        new=AsyncMock(return_value=([2026], None)),
+    )
+    page_mock = mocker.Mock()
+    page_mock.title = "The Mandalorian and Grogu"
+    wikipedia_page_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.wikipedia.page",
+        return_value=page_mock,
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._fetch_html_from_page",
+        new=AsyncMock(
+            return_value="""
+            <table class="infobox vevent">
+                <tr>
+                    <th scope="row" class="infobox-label">
+                        <div>Release date</div>
+                    </th>
+                    <td class="infobox-data">
+                        <div class="plainlist film-date">
+                            <ul>
+                                <li>May 22, 2026<span style="display: none;"> (<span class="bday dtstart published updated itvstart">2026-05-22</span>)</span></li>
+                            </ul>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+            """
+        ),
+    )
+
+    release_date = await _resolve_current_year_release_date(
+        "The Mandalorian and Grogu (2026)",
+        2026,
+    )
+
+    assert release_date == date(2026, 5, 22)
+    fetch_years_mock.assert_awaited_once_with("The Mandalorian and Grogu")
+    wikipedia_page_mock.assert_called_once_with(
+        "The Mandalorian and Grogu",
+        auto_suggest=False,
+        redirect=True,
+    )
 
 
 @pytest.mark.asyncio
 async def test_resolve_collection_release_rejects_current_year_movie_with_resolved_future_date(
     mocker,
 ):
+    logger_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.logger"
+    )
     resolve_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
         new=AsyncMock(return_value=date(2026, 12, 25)),
@@ -625,6 +686,12 @@ async def test_resolve_collection_release_rejects_current_year_movie_with_resolv
     assert parsed_year == 2026
     assert release_date == date(2026, 12, 25)
     resolve_mock.assert_awaited_once_with("Coming Later", 2026)
+    logger_mock.info.assert_called_once_with(
+        "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> unreleased",
+        "Coming Later",
+        2026,
+        "2026-12-25",
+    )
 
 
 @pytest.mark.asyncio

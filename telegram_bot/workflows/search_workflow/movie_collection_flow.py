@@ -104,9 +104,10 @@ def _extract_release_date_from_movie_html(html: str) -> date | None:
 
 async def _resolve_current_year_release_date(title: str, year: int) -> date | None:
     """Best-effort lookup for ambiguous current-year entries."""
+    lookup_title = _normalize_collection_movie_title(title, year)
     corrected_title: str | None = None
     try:
-        _, corrected_title = await scraping_service.fetch_movie_years_from_wikipedia(title)
+        _, corrected_title = await scraping_service.fetch_movie_years_from_wikipedia(lookup_title)
     except Exception as exc:  # noqa: BLE001
         logger.debug(
             "[COLLECTION] Could not refine current-year movie title '%s' (%s): %s",
@@ -116,10 +117,15 @@ async def _resolve_current_year_release_date(title: str, year: int) -> date | No
         )
 
     candidate_queries: list[str] = []
-    for base_title in (corrected_title, title):
+    for base_title in (corrected_title, lookup_title, title):
         if not base_title:
             continue
-        candidate_queries.append(f"{base_title} ({year} film)")
+        normalized_title = _normalize_collection_movie_title(base_title, year)
+        if not normalized_title:
+            continue
+        candidate_queries.append(normalized_title)
+        candidate_queries.append(f"{normalized_title} (film)")
+        candidate_queries.append(f"{normalized_title} ({year} film)")
 
     seen_queries: set[str] = set()
     for query in candidate_queries:
@@ -168,7 +174,19 @@ async def _resolve_collection_release(
     if resolved_release_date is None:
         return release_state, parsed_year, release_date
     if resolved_release_date > today:
+        logger.info(
+            "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> unreleased",
+            title,
+            parsed_year,
+            resolved_release_date.isoformat(),
+        )
         return "unreleased", parsed_year, resolved_release_date
+    logger.info(
+        "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> released",
+        title,
+        parsed_year,
+        resolved_release_date.isoformat(),
+    )
     return "released", parsed_year, resolved_release_date
 
 
