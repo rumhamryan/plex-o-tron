@@ -169,7 +169,7 @@ class GenericTorrentScraper:
         self.base_url = active_base_url
         self._last_successful_base_url = active_base_url
 
-        soup = BeautifulSoup(search_html, "lxml")
+        soup = BeautifulSoup(search_html, "html.parser")
 
         # Narrow the parsing scope to a configured results container. This avoids
         # scanning the entire document when only a specific section is relevant.
@@ -516,7 +516,7 @@ class GenericTorrentScraper:
         for (item, _), html in zip(tasks, responses):
             if not html:
                 continue
-            detail_soup = BeautifulSoup(html, "lxml")
+            detail_soup = BeautifulSoup(html, "html.parser")
 
             # 1. Resolve Magnet
             if not item.magnet_url:

@@ -66,6 +66,17 @@ COLLECTION_RESOLUTION_OPTIONS = (("1080p", "1080p"), ("2160p", "2160p / 4K"))
 COLLECTION_CODEC_OPTIONS = (("x264", "x264 / AVC"), ("x265", "x265 / HEVC"))
 
 
+def _format_collection_lookup_phase(title: str, phase: str) -> str:
+    escaped_title = escape_markdown(title, version=2)
+    if phase == "find":
+        return f"🧩 Wikipedia lookup: searching for *{escaped_title}* franchise…"
+    if phase == "review":
+        return "🧩 Wikipedia lookup: reviewing Wikipedia franchise candidates…"
+    if phase == "compare":
+        return "🧩 Wikipedia lookup: comparing likely franchise pages…"
+    return "🧩 Wikipedia lookup: validating collection entries and release dates…"
+
+
 def _classify_collection_release(
     raw_movie: dict[str, Any], today: date
 ) -> tuple[str, int | None, date | None]:
@@ -84,7 +95,7 @@ def _classify_collection_release(
 
 
 def _extract_release_date_from_movie_html(html: str) -> date | None:
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     infobox = soup.find("table", class_=re.compile(r"\binfobox\b"))
     if not isinstance(infobox, Tag):
         return None
@@ -204,15 +215,22 @@ async def _start_collection_lookup(
     status_message = await safe_send_message(
         context.bot,
         chat_id,
-        (
-            f"🧩 Searching Wikipedia for franchises that include "
-            f"*{escape_markdown(display_title, version=2)}*…"
-        ),
+        _format_collection_lookup_phase(display_title, "find"),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
+    async def _update_lookup_phase(phase: str) -> None:
+        await safe_edit_message(
+            status_message,
+            text=_format_collection_lookup_phase(display_title, phase),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
     try:
-        result = await scraping_service.fetch_movie_franchise_details(display_title)
+        result = await scraping_service.fetch_movie_franchise_details(
+            display_title,
+            progress_callback=_update_lookup_phase,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.error("Franchise lookup failed for '%s': %s", display_title, exc)
         result = None
@@ -235,6 +253,11 @@ async def _start_collection_lookup(
         return
 
     franchise_name, movies = result
+    await safe_edit_message(
+        status_message,
+        text=_format_collection_lookup_phase(display_title, "validate"),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
     normalized_movies: list[dict[str, Any]] = []
     today = date.today()
     unreleased_count = 0

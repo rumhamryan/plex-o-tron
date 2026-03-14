@@ -135,7 +135,7 @@ async def fetch_movie_years_from_wikipedia(
                     if page:
                         html = await _fetch_html_from_page(page)
                         if html:
-                            soup = BeautifulSoup(html, "lxml")
+                            soup = BeautifulSoup(html, "html.parser")
                             infobox = soup.find("table", class_=re.compile(r"\binfobox\b"))
                             if isinstance(infobox, Tag):
                                 for row in infobox.find_all("tr"):
@@ -179,7 +179,7 @@ async def fetch_movie_years_from_wikipedia(
             )
             html = await _fetch_html_from_page(disamb_page)
             if html:
-                soup = BeautifulSoup(html, "lxml")
+                soup = BeautifulSoup(html, "html.parser")
                 for a in soup.find_all("a", href=True):
                     if not isinstance(a, Tag):
                         continue
@@ -210,7 +210,7 @@ async def fetch_movie_years_from_wikipedia(
             )
             html = await _fetch_html_from_page(disamb_page)
             if html:
-                soup = BeautifulSoup(html, "lxml")
+                soup = BeautifulSoup(html, "html.parser")
                 for a in soup.find_all("a", href=True):
                     if not isinstance(a, Tag):
                         continue

@@ -108,7 +108,7 @@ async def fetch_episode_title_from_wikipedia(
             )
         return None, None
 
-    soup = BeautifulSoup(html_to_scrape, "lxml")
+    soup = BeautifulSoup(html_to_scrape, "html.parser")
     titles_map = await _extract_titles_for_season(soup, season)
     if titles_map:
         _WIKI_TITLES_CACHE[cache_key] = (titles_map, corrected_show_title)
@@ -207,7 +207,7 @@ async def fetch_episode_titles_for_season(
             return await fetch_episode_titles_for_season(qualified, season, _last_resort=True)
         return {}, corrected_show_title
 
-    soup = BeautifulSoup(html_to_scrape, "lxml")
+    soup = BeautifulSoup(html_to_scrape, "html.parser")
     titles_map = await _extract_titles_for_season(soup, season)
     if titles_map:
         logger.info(
@@ -285,7 +285,7 @@ async def fetch_total_seasons_from_wikipedia(
             return await fetch_total_seasons_from_wikipedia(qualified, _last_resort=True)
         return None
 
-    soup = BeautifulSoup(html_to_scrape, "lxml")
+    soup = BeautifulSoup(html_to_scrape, "html.parser")
 
     try:
         for table in soup.find_all("table", class_="wikitable"):
@@ -660,7 +660,7 @@ async def fetch_season_episode_count_from_wikipedia(
             )
         return None
 
-    soup = BeautifulSoup(html_to_scrape, "lxml")
+    soup = BeautifulSoup(html_to_scrape, "html.parser")
 
     count_from_titles: int | None = None
     try:

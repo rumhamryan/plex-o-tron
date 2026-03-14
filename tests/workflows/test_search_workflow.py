@@ -213,9 +213,16 @@ async def test_collection_lookup_handles_missing_franchise(
     mocker, context, make_callback_query, make_message
 ):
     context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+
+    async def fake_fetch_movie_franchise_details(_title, *, progress_callback=None):
+        if progress_callback is not None:
+            await progress_callback("review")
+            await progress_callback("compare")
+        return None
+
     mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
-        new=AsyncMock(return_value=None),
+        new=AsyncMock(side_effect=fake_fetch_movie_franchise_details),
     )
     send_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
@@ -243,6 +250,13 @@ async def test_collection_lookup_handles_missing_franchise(
     await handle_search_workflow(Update(update_id=22, message=make_message("Matrix")), context)
 
     send_mock.assert_awaited()
+    assert send_mock.await_args.args[2] == "🧩 Wikipedia lookup: searching for *Matrix* franchise…"
+    assert edit_mock.await_args_list[0].kwargs["text"] == (
+        "🧩 Wikipedia lookup: reviewing Wikipedia franchise candidates…"
+    )
+    assert edit_mock.await_args_list[1].kwargs["text"] == (
+        "🧩 Wikipedia lookup: comparing likely franchise pages…"
+    )
     assert "No franchise" in edit_mock.await_args.kwargs["text"]
 
 
@@ -252,33 +266,38 @@ async def test_collection_lookup_ignores_unreleased_titles(
 ):
     context.bot_data["SEARCH_CONFIG"] = {"websites": []}
     status_message = make_message(message_id=120)
-    mocker.patch(
+    send_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
         new=AsyncMock(return_value=status_message),
     )
-    mocker.patch(
+    edit_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
         new=AsyncMock(),
     )
+
+    async def fake_fetch_movie_franchise_details(_title, *, progress_callback=None):
+        if progress_callback is not None:
+            await progress_callback("review")
+            await progress_callback("compare")
+        return (
+            "Saga",
+            [
+                {
+                    "title": "Already Out",
+                    "year": 2020,
+                    "release_date": "2020-05-04",
+                },
+                {
+                    "title": "Coming Soon",
+                    "year": 2035,
+                    "release_date": "2035-01-01",
+                },
+            ],
+        )
+
     mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
-        new=AsyncMock(
-            return_value=(
-                "Saga",
-                [
-                    {
-                        "title": "Already Out",
-                        "year": 2020,
-                        "release_date": "2020-05-04",
-                    },
-                    {
-                        "title": "Coming Soon",
-                        "year": 2035,
-                        "release_date": "2035-01-01",
-                    },
-                ],
-            )
-        ),
+        new=AsyncMock(side_effect=fake_fetch_movie_franchise_details),
     )
 
     await handle_search_buttons(
@@ -297,6 +316,14 @@ async def test_collection_lookup_ignores_unreleased_titles(
     )
     await handle_search_workflow(Update(update_id=32, message=make_message("Saga Entry")), context)
 
+    assert (
+        send_mock.await_args.args[2] == "🧩 Wikipedia lookup: searching for *Saga Entry* franchise…"
+    )
+    assert [call.kwargs.get("text") for call in edit_mock.await_args_list[:3]] == [
+        "🧩 Wikipedia lookup: reviewing Wikipedia franchise candidates…",
+        "🧩 Wikipedia lookup: comparing likely franchise pages…",
+        "🧩 Wikipedia lookup: validating collection entries and release dates…",
+    ]
     session = SearchSession.from_user_data(context.user_data)
     assert session.collection_name == "Saga"
     assert len(session.collection_movies) == 1

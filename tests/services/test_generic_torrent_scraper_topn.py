@@ -33,7 +33,7 @@ def test_extract_data_from_row() -> None:
         '<td class="uploader"><a>Uploader</a></td>'
         "</tr>"
     )
-    row = BeautifulSoup(row_html, "lxml").select_one("tr")
+    row = BeautifulSoup(row_html, "html.parser").select_one("tr")
 
     data = scraper._extract_data_from_row(row)  # type: ignore[arg-type]
     assert data is not None
@@ -41,7 +41,7 @@ def test_extract_data_from_row() -> None:
     assert data.seeders == 5
     assert data.uploader == "Uploader"
 
-    malformed = BeautifulSoup("<tr><td></td></tr>", "lxml").select_one("tr")
+    malformed = BeautifulSoup("<tr><td></td></tr>", "html.parser").select_one("tr")
     assert scraper._extract_data_from_row(malformed) is None  # type: ignore[arg-type]
 
 
@@ -66,7 +66,7 @@ def test_parse_and_select_top_results() -> None:
         "</tr>"
         "</tbody>"
     )
-    search_area = BeautifulSoup(html, "lxml")
+    search_area = BeautifulSoup(html, "html.parser")
 
     top_results = scraper._parse_and_select_top_results(search_area, limit=2)
     assert len(top_results) == 2

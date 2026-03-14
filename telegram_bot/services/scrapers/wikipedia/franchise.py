@@ -1,5 +1,6 @@
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal, TypedDict
 
 import wikipedia
@@ -387,7 +388,7 @@ def _extract_movies_from_navbox_films(soup: BeautifulSoup) -> list[dict[str, Any
 
 
 def _extract_franchise_candidate_result(html: str) -> _FranchiseExtractionResult | None:
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     extractors: tuple[tuple[_FranchiseSourceKind, Any], ...] = (
         ("infobox", _extract_movies_from_infobox),
         ("film_series_section", _extract_movies_from_film_series_section),
@@ -654,6 +655,8 @@ def _select_best_franchise_candidate(
 
 async def fetch_movie_franchise_details_from_wikipedia(
     movie_title: str,
+    *,
+    progress_callback: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict[str, Any]]] | None:
     """Attempts to find a franchise page and enumerate its films."""
     search_title = movie_title.strip()
@@ -673,6 +676,9 @@ async def fetch_movie_franchise_details_from_wikipedia(
     ]
     gathered_candidates: list[str] = []
     seen_candidates: set[str] = set()
+
+    if progress_callback is not None:
+        await progress_callback("review")
 
     for term in search_variants:
         try:
@@ -704,6 +710,9 @@ async def fetch_movie_franchise_details_from_wikipedia(
             seen_candidates.add(candidate)
             gathered_candidates.append(candidate)
 
+    if progress_callback is not None and gathered_candidates:
+        await progress_callback("compare")
+
     evaluated_candidates: list[_FranchiseCandidateResult] = []
     for candidate in gathered_candidates:
         page = await _resolve_franchise_candidate(candidate)
@@ -716,7 +725,7 @@ async def fetch_movie_franchise_details_from_wikipedia(
         if not extraction:
             continue
 
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, "html.parser")
         resolved_name = _sanitize_wikipedia_title(page.title.strip())
         scoring = _score_franchise_candidate(
             candidate_title=candidate,

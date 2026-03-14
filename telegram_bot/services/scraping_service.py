@@ -5,8 +5,9 @@ from __future__ import annotations
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Hashable, TypedDict
+from typing import Any, Hashable, TypedDict
 
 from ..config import logger
 from .generic_torrent_scraper import GenericTorrentScraper, load_site_config
@@ -245,6 +246,8 @@ async def fetch_movie_years_from_wikipedia(
 
 async def fetch_movie_franchise_details(
     movie_title: str,
+    *,
+    progress_callback: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict[str, Any]]] | None:
     """Returns a franchise name and list of movies, when available."""
     normalized_title = _display_title(movie_title)
@@ -255,7 +258,7 @@ async def fetch_movie_franchise_details(
         return cached
 
     _log_cache_event(False, "movie_franchise", normalized_title)
-    result = await _raw_fetch_franchise_details(movie_title)
+    result = await _raw_fetch_franchise_details(movie_title, progress_callback=progress_callback)
     success = bool(result and isinstance(result, tuple) and len(result) == 2)
     _store_lookup_value(cache_key, result, success=success)
     return result

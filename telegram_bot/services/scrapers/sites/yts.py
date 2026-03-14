@@ -95,7 +95,7 @@ async def scrape_yts(
                 try:
                     resp = await client.get(url, headers=headers)
                     resp.raise_for_status()
-                    return BeautifulSoup(resp.text, "lxml")
+                    return BeautifulSoup(resp.text, "html.parser")
                 except Exception:
                     return None
 
@@ -341,7 +341,7 @@ async def scrape_yts(
             # Stage 2: Scrape the movie's page to get its API ID
             response = await client.get(best_page_url, headers=headers)
             response.raise_for_status()
-            soup = BeautifulSoup(response.text, "lxml")
+            soup = BeautifulSoup(response.text, "html.parser")
 
             movie_info_div = soup.select_one("#movie-info")
             if not (

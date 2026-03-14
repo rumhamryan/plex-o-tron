@@ -132,7 +132,7 @@ async def test_generic_scraper_populates_info_url():
     </table>
     """
 
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     row = soup.find("tr")
     assert row is not None
 

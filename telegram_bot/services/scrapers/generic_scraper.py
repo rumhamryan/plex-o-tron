@@ -27,7 +27,7 @@ async def find_magnet_link_on_page(url: str) -> list[str]:
         response = await fetch_page(url, timeout=30, follow_redirects=True)
         response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, "lxml")
+        soup = BeautifulSoup(response.text, "html.parser")
         magnet_link_tags = soup.find_all("a", href=re.compile(r"^magnet:"))
 
         for tag in magnet_link_tags:
@@ -61,7 +61,7 @@ async def scrape_generic_page(query: str, media_type: str, search_url: str) -> l
     if not html:
         return []
 
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     direct_links = _strategy_find_direct_links(soup)
     context_links = _strategy_contextual_search(soup, query)
     table_links_scored = _strategy_find_in_tables(soup, query)

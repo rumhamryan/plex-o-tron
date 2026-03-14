@@ -340,7 +340,7 @@ def test_extract_movies_from_table_allows_duplicate_titles():
         <tr><td>Dune: Part Two</td><td>March 1, 2024</td></tr>
     </table>
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     movies = wiki_module._extract_movies_from_table(soup.find("table"))
     assert len(movies) == 3
     dune_titles = [entry["title"] for entry in movies if "Dune" == entry["title"]]
@@ -357,13 +357,13 @@ def test_extract_movies_from_table_rejects_tv_season_box_sets():
         <tr><td>The Third Season</td><td>September 7, 2010</td></tr>
     </table>
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     movies = wiki_module._extract_movies_from_table(soup.find("table"))
     assert movies == []
 
 
 def test_extract_movies_from_infobox_parses_films_row_only():
-    soup = BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml")
+    soup = BeautifulSoup(FRANCHISE_INFOBOX_HTML, "html.parser")
 
     movies = wiki_module._extract_movies_from_infobox(soup)
 
@@ -376,7 +376,7 @@ def test_extract_movies_from_infobox_parses_films_row_only():
 
 
 def test_extract_movies_from_infobox_keeps_year_only_entries_without_fabricated_release_dates():
-    soup = BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml")
+    soup = BeautifulSoup(FRANCHISE_INFOBOX_HTML, "html.parser")
 
     movies = wiki_module._extract_movies_from_infobox(soup)
 
@@ -391,7 +391,7 @@ def test_extract_movies_from_table_preserves_real_release_dates_exactly():
         <tr><td>Movie Two</td><td>July 20, 2018</td></tr>
     </table>
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
 
     movies = wiki_module._extract_movies_from_table(soup.find("table"))
 
@@ -399,7 +399,7 @@ def test_extract_movies_from_table_preserves_real_release_dates_exactly():
 
 
 def test_extract_movies_from_film_series_section_parses_movie_headings():
-    soup = BeautifulSoup(FILM_SERIES_SECTION_HTML, "lxml")
+    soup = BeautifulSoup(FILM_SERIES_SECTION_HTML, "html.parser")
 
     movies = wiki_module._extract_movies_from_film_series_section(soup)
 
@@ -408,7 +408,7 @@ def test_extract_movies_from_film_series_section_parses_movie_headings():
 
 
 def test_extract_movies_from_navbox_films_uses_only_films_row():
-    soup = BeautifulSoup(NAVBOX_FILMS_HTML, "lxml")
+    soup = BeautifulSoup(NAVBOX_FILMS_HTML, "html.parser")
 
     movies = wiki_module._extract_movies_from_navbox_films(soup)
 
@@ -421,7 +421,7 @@ def test_extract_movies_from_navbox_films_uses_only_films_row():
 
 
 def test_extract_movies_from_navbox_films_ignores_soundtracks_only_row():
-    soup = BeautifulSoup(NAVBOX_SOUNDTRACKS_ONLY_HTML, "lxml")
+    soup = BeautifulSoup(NAVBOX_SOUNDTRACKS_ONLY_HTML, "html.parser")
 
     movies = wiki_module._extract_movies_from_navbox_films(soup)
 
@@ -429,9 +429,11 @@ def test_extract_movies_from_navbox_films_ignores_soundtracks_only_row():
 
 
 def test_score_franchise_candidate_prefers_franchise_page_over_soundtrack_page():
-    franchise_soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "lxml")
-    soundtrack_soup = BeautifulSoup(SOUNDTRACK_SCORING_HTML, "lxml")
-    movies = wiki_module._extract_movies_from_infobox(BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml"))
+    franchise_soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "html.parser")
+    soundtrack_soup = BeautifulSoup(SOUNDTRACK_SCORING_HTML, "html.parser")
+    movies = wiki_module._extract_movies_from_infobox(
+        BeautifulSoup(FRANCHISE_INFOBOX_HTML, "html.parser")
+    )
 
     franchise_score = wiki_module._score_franchise_candidate(
         candidate_title="The Equalizer",
@@ -454,8 +456,10 @@ def test_score_franchise_candidate_prefers_franchise_page_over_soundtrack_page()
 
 
 def test_score_franchise_candidate_rewards_structured_and_dated_evidence():
-    soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "lxml")
-    movies = wiki_module._extract_movies_from_infobox(BeautifulSoup(FRANCHISE_INFOBOX_HTML, "lxml"))
+    soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "html.parser")
+    movies = wiki_module._extract_movies_from_infobox(
+        BeautifulSoup(FRANCHISE_INFOBOX_HTML, "html.parser")
+    )
 
     score = wiki_module._score_franchise_candidate(
         candidate_title="The Equalizer",
@@ -473,7 +477,7 @@ def test_score_franchise_candidate_rewards_structured_and_dated_evidence():
 
 
 def test_score_franchise_candidate_rewards_dated_movies_over_title_only_entries():
-    soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "lxml")
+    soup = BeautifulSoup(FRANCHISE_SCORING_HTML, "html.parser")
     dated_movies = [
         {"title": "Movie One", "year": 2001, "release_date": None},
         {"title": "Movie Two", "year": 2004, "release_date": None},
@@ -1543,49 +1547,49 @@ async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
 
 def test_strategy_find_direct_links_magnet():
     html = '<a href="magnet:?xt=urn:btih:123">Magnet</a>'
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = scraping_service._strategy_find_direct_links(soup)
     assert links == {"magnet:?xt=urn:btih:123"}
 
 
 def test_strategy_find_direct_links_torrent():
     html = '<a href="https://example.com/file.torrent">Download</a>'
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = scraping_service._strategy_find_direct_links(soup)
     assert links == {"https://example.com/file.torrent"}
 
 
 def test_strategy_find_direct_links_none():
     html = '<a href="/other">Link</a>'
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = scraping_service._strategy_find_direct_links(soup)
     assert links == set()
 
 
 def test_strategy_contextual_search_keyword():
     html = '<a href="/download/123">Download Torrent</a>'
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = scraping_service._strategy_contextual_search(soup, "Query")
     assert "/download/123" in links
 
 
 def test_strategy_contextual_search_query_match():
     html = '<a href="/details.php?id=456">My Show S01E01 1080p</a>'
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = scraping_service._strategy_contextual_search(soup, "My Show")
     assert "/details.php?id=456" in links
 
 
 def test_strategy_contextual_search_unrelated_keyword():
     html = '<a href="/about">About our download policy</a>'
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = scraping_service._strategy_contextual_search(soup, "My Show")
     assert "/about" in links
 
 
 def test_strategy_find_in_tables_single_match():
     html = '<table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>'
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     results = scraping_service._strategy_find_in_tables(soup, "My Show")
     assert "/dl" in results
 
@@ -1597,7 +1601,7 @@ def test_strategy_find_in_tables_multiple_matches():
       <tr><td>My Show S01E02</td><td><a href="/e2">DL</a></td></tr>
     </table>
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     results = scraping_service._strategy_find_in_tables(soup, "My Show")
     assert {"/e1", "/e2"}.issubset(results.keys())
 
@@ -1607,7 +1611,7 @@ def test_strategy_find_in_tables_ignores_unrelated_tables():
     <table><tr><td>Other</td><td><a href="/x">X</a></td></tr></table>
     <table><tr><td>My Show</td><td><a href="/dl">Download</a></td></tr></table>
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     results = scraping_service._strategy_find_in_tables(soup, "My Show")
     assert "/dl" in results and "/x" not in results
 
@@ -1618,7 +1622,7 @@ def test_score_candidate_links_prefers_magnet():
         '<div><a href="/context">Download Torrent</a></div>'
         '<table><tr><td>My Show</td><td><a href="/table">Link</a></td></tr></table>'
     )
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = {"magnet:?xt=urn:btih:1", "/context", "/table"}
     table_links = {"/table": 80.0}
     best = scraping_service._score_candidate_links(links, "My Show", table_links, soup)
@@ -1630,7 +1634,7 @@ def test_score_candidate_links_penalizes_ads():
         '<div class="ad"><a href="/bad">My Show 1080p</a></div>'
         '<div><a href="/good">My Show 1080p</a></div>'
     )
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = {"/bad", "/good"}
     best = scraping_service._score_candidate_links(links, "My Show", {}, soup)
     assert best == "/good"
@@ -1640,7 +1644,7 @@ def test_score_candidate_links_prefers_better_match():
     html = (
         '<div><a href="/high">My Show Episode</a></div><div><a href="/low">Another Show</a></div>'
     )
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "html.parser")
     links = {"/high", "/low"}
     best = scraping_service._score_candidate_links(links, "My Show Episode", {}, soup)
     assert best == "/high"
