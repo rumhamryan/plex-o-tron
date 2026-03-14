@@ -98,6 +98,7 @@ async def _present_search_results(
     session: SearchSession | None = None,
     max_size_gib: float | None = None,
     initial_resolution: str | None = None,
+    initial_codec: str | None = None,
 ):
     """Persists result metadata on the session and renders the first page."""
     if session is None:
@@ -128,7 +129,7 @@ async def _present_search_results(
     session.results_query = query_str
     session.results_page = 0
     session.results_resolution_filter = resolution_filter
-    session.results_codec_filter = "all"
+    session.results_codec_filter = SearchSession.normalize_results_codec_filter(initial_codec)
     session.results_max_size_gib = (
         float(max_size_gib) if isinstance(max_size_gib, (int, float)) else None
     )

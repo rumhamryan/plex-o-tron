@@ -30,6 +30,8 @@ from .movie_collection_flow import _start_collection_lookup
 from .results import FOUR_K_SIZE_MULTIPLIER, _present_search_results
 from .state import _get_session, _save_session, _send_prompt
 
+MOVIE_FAST_PATH_RESOLUTIONS = {"1080p", "2160p"}
+
 
 async def _handle_movie_title_reply(
     chat_id: int, query: str, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
@@ -53,6 +55,17 @@ async def _handle_movie_title_reply(
 
     session.media_type = "movie"
     session.set_title(title)
+    session.resolution = None
+    session.results_codec_filter = "all"
+
+    if (
+        parsed_query.has_media_preferences
+        and parsed_query.resolution in MOVIE_FAST_PATH_RESOLUTIONS
+    ):
+        session.resolution = parsed_query.resolution
+        session.results_codec_filter = SearchSession.normalize_results_codec_filter(
+            parsed_query.codec
+        )
 
     if session.collection_mode:
         _save_session(context, session)
@@ -292,7 +305,24 @@ async def _search_movie_results(
         return
 
     display_title = escape_markdown(final_title, version=2)
-    progress_text = f"🔍 Searching all sources for *{display_title}* in 1080p and 4K\\.\\.\\."
+    preferred_resolution = (
+        session.resolution if session.resolution in MOVIE_FAST_PATH_RESOLUTIONS else None
+    )
+    preferred_codec = SearchSession.normalize_results_codec_filter(session.results_codec_filter)
+    search_resolutions = (preferred_resolution,) if preferred_resolution else ("1080p", "2160p")
+
+    if preferred_resolution:
+        codec_suffix = (
+            f" / *{escape_markdown(preferred_codec, version=2)}*"
+            if preferred_codec != "all"
+            else ""
+        )
+        progress_text = (
+            f"🔍 Searching all sources for *{display_title}* in "
+            f"*{escape_markdown(preferred_resolution, version=2)}*{codec_suffix}\\.\\.\\."
+        )
+    else:
+        progress_text = f"🔍 Searching all sources for *{display_title}* in 1080p and 4K\\.\\.\\."
 
     if isinstance(target, Message):
         status_message = target
@@ -315,7 +345,7 @@ async def _search_movie_results(
 
     combined_results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
-    for resolution in ("1080p", "2160p"):
+    for resolution in search_resolutions:
         # Allow size override for 4K
         max_size: float = float(MAX_TORRENT_SIZE_GIB)
         if resolution == "2160p":
@@ -341,10 +371,15 @@ async def _search_movie_results(
         status_message,
         context,
         combined_results,
-        f"{final_title} [All]",
+        (
+            f"{final_title} [{preferred_resolution}]"
+            if preferred_resolution
+            else f"{final_title} [All]"
+        ),
         session=session,
         max_size_gib=MAX_TORRENT_SIZE_GIB,
-        initial_resolution="all",
+        initial_resolution=preferred_resolution or "all",
+        initial_codec=preferred_codec,
     )
 
 

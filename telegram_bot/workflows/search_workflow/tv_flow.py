@@ -61,6 +61,7 @@ SIZE_DEVIATION_WEIGHT = 8.0
 TV_SEASON_RESOLUTION_CHOICES: tuple[str, ...] = ("720p", "1080p")
 TV_SEASON_RESOLUTION_OPTIONS = (("720p", "720p"), ("1080p", "1080p"))
 TV_SEASON_CODEC_OPTIONS = (("x264", "x264 / AVC"), ("x265", "x265 / HEVC"))
+TV_SINGLE_FAST_PATH_RESOLUTIONS = {"720p", "1080p"}
 
 
 @dataclass(slots=True)
@@ -130,6 +131,15 @@ async def _handle_tv_title_reply(
 
     session.media_type = "tv"
     session.set_title(sanitized_title)
+    session.resolution = None
+    session.tv_codec = None
+
+    if (
+        parsed_query.has_media_preferences
+        and parsed_query.resolution in TV_SINGLE_FAST_PATH_RESOLUTIONS
+    ):
+        session.resolution = parsed_query.resolution
+        session.tv_codec = SearchSession.normalize_results_codec_filter(parsed_query.codec)
 
     if parsed_query.title:
         if parsed_query.season and parsed_query.episode:
@@ -469,6 +479,7 @@ async def _handle_tv_change_details(
     session.episode = None
     session.tv_scope = None
     session.resolution = None
+    session.tv_codec = None
     session.prompt_message_id = None
     session.allow_detail_change = False
     session.advance(SearchStep.TV_SEASON)
@@ -997,12 +1008,27 @@ async def _search_tv_single_results(
 
     base_title = session.effective_title or session.title or ""
     display_title = escape_markdown(final_title, version=2)
+    preferred_resolution = (
+        session.resolution if session.resolution in TV_SINGLE_FAST_PATH_RESOLUTIONS else None
+    )
+    preferred_codec = SearchSession.normalize_results_codec_filter(session.tv_codec)
     status_lines = []
     if notice:
         status_lines.append(notice)
-    status_lines.append(
-        f"🔎 Searching all sources for *{display_title}* in 720p and 1080p\\.\\.\\."
-    )
+    if preferred_resolution:
+        codec_suffix = (
+            f" / *{escape_markdown(preferred_codec, version=2)}*"
+            if preferred_codec != "all"
+            else ""
+        )
+        status_lines.append(
+            f"🔎 Searching all sources for *{display_title}* in "
+            f"*{escape_markdown(preferred_resolution, version=2)}*{codec_suffix}\\.\\.\\."
+        )
+    else:
+        status_lines.append(
+            f"🔎 Searching all sources for *{display_title}* in 720p and 1080p\\.\\.\\."
+        )
     progress_text = "\n".join(status_lines)
 
     if isinstance(target, Message):
@@ -1020,8 +1046,17 @@ async def _search_tv_single_results(
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
+    search_query = final_title
+    query_tokens: list[str] = []
+    if preferred_resolution:
+        query_tokens.append(preferred_resolution)
+    if preferred_codec != "all":
+        query_tokens.append(preferred_codec)
+    if query_tokens:
+        search_query = f"{final_title} {' '.join(query_tokens)}"
+
     results = await search_logic.orchestrate_searches(
-        final_title,
+        search_query,
         "tv",
         context,
         base_query_for_filter=base_title or None,
@@ -1031,9 +1066,14 @@ async def _search_tv_single_results(
         status_message,
         context,
         results,
-        f"{final_title} [All]",
+        (
+            f"{final_title} [{preferred_resolution}]"
+            if preferred_resolution
+            else f"{final_title} [All]"
+        ),
         session=session,
-        initial_resolution="all",
+        initial_resolution=preferred_resolution or "all",
+        initial_codec=preferred_codec,
     )
 
 

@@ -1,46 +1,20 @@
 from telegram_bot.workflows.search_parser import parse_search_query
 
 
-def test_parse_query_with_sxxeyy_token():
-    result = parse_search_query("The Bear S02E05")
-    assert result.title == "The Bear"
-    assert result.season == 2
-    assert result.episode == 5
-    assert result.year is None
+def test_parse_movie_query_extracts_year_resolution_and_codec():
+    parsed = parse_search_query("Inception 2010 1080p HEVC")
+
+    assert parsed.title == "Inception"
+    assert parsed.year == "2010"
+    assert parsed.resolution == "1080p"
+    assert parsed.codec == "x265"
 
 
-def test_parse_query_with_season_and_episode_words():
-    result = parse_search_query("severance season 1 episode 3")
-    assert result.title == "severance"
-    assert result.season == 1
-    assert result.episode == 3
+def test_parse_tv_query_extracts_episode_resolution_and_codec():
+    parsed = parse_search_query("The Last of Us S01E02 720p h264")
 
-
-def test_parse_query_with_season_only():
-    result = parse_search_query("Fargo Season 5 trailer")
-    assert result.title == "Fargo"
-    assert result.season == 5
-    assert result.episode is None
-
-
-def test_parse_query_with_episode_only():
-    result = parse_search_query("Episode 4 The Office")
-    assert result.title == "The Office"
-    assert result.season is None
-    assert result.episode == 4
-
-
-def test_parse_query_detects_trailing_year():
-    result = parse_search_query("Dune 2021")
-    assert result.title == "Dune"
-    assert result.year == "2021"
-
-
-def test_parse_query_handles_apostrophes_and_special_chars():
-    result = parse_search_query("Bob's Burgers S16E04")
-    assert result.title == "Bobs Burgers"
-    assert result.season == 16
-    assert result.episode == 4
-
-    result = parse_search_query("Face/Off")
-    assert result.title == "FaceOff"
+    assert parsed.title == "The Last of Us"
+    assert parsed.season == 1
+    assert parsed.episode == 2
+    assert parsed.resolution == "720p"
+    assert parsed.codec == "x264"

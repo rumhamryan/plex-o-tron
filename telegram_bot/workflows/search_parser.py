@@ -10,6 +10,8 @@ SEASON_WITH_OPTIONAL_EPISODE_PATTERN = re.compile(
 )
 SEASON_ONLY_PATTERN = re.compile(r"(?i)\bS(\d{1,2})\b")
 EPISODE_ONLY_PATTERN = re.compile(r"(?i)\b(?:Episode|Ep)\.?\s*(\d{1,2})\b")
+RESOLUTION_PATTERN = re.compile(r"(?i)\b(2160p|1080p|720p|4k|uhd)\b")
+CODEC_PATTERN = re.compile(r"(?i)\b(x265|h265|hevc|x264|h264|avc)\b")
 SANITIZE_PATTERN = re.compile(r"[^\w\s-]")
 
 
@@ -21,6 +23,8 @@ class ParsedSearchQuery:
     year: str | None = None
     season: int | None = None
     episode: int | None = None
+    resolution: str | None = None
+    codec: str | None = None
 
     @property
     def has_season(self) -> bool:
@@ -29,6 +33,10 @@ class ParsedSearchQuery:
     @property
     def has_episode(self) -> bool:
         return self.episode is not None
+
+    @property
+    def has_media_preferences(self) -> bool:
+        return bool(self.resolution and self.codec)
 
 
 def parse_search_query(query: str) -> ParsedSearchQuery:
@@ -47,6 +55,8 @@ def parse_search_query(query: str) -> ParsedSearchQuery:
     season: int | None = None
     episode: int | None = None
     year: str | None = None
+    resolution: str | None = None
+    codec: str | None = None
 
     def _consume_span(span: tuple[int, int], *, track_token: bool = True) -> None:
         nonlocal working_text
@@ -88,6 +98,16 @@ def parse_search_query(query: str) -> ParsedSearchQuery:
         year = year_match.group(1)
         removal_spans.append(year_match.span())
 
+    resolution_match = RESOLUTION_PATTERN.search(working_text)
+    if resolution_match:
+        resolution = _normalize_resolution_hint(resolution_match.group(1))
+        _consume_span(resolution_match.span())
+
+    codec_match = CODEC_PATTERN.search(working_text)
+    if codec_match:
+        codec = _normalize_codec_hint(codec_match.group(1))
+        _consume_span(codec_match.span())
+
     cleaned_title = _strip_spans(raw_text, removal_spans)
 
     prioritized_source: str | None = None
@@ -99,6 +119,7 @@ def parse_search_query(query: str) -> ParsedSearchQuery:
         prioritized_source = prefix or suffix or None
 
     target_title = prioritized_source or cleaned_title
+    target_title = _strip_known_hints(target_title)
     target_title = SANITIZE_PATTERN.sub("", target_title)
     target_title = re.sub(r"\s+", " ", target_title).strip(" _.-")
 
@@ -107,6 +128,8 @@ def parse_search_query(query: str) -> ParsedSearchQuery:
         year=year,
         season=season,
         episode=episode,
+        resolution=resolution,
+        codec=codec,
     )
 
 
@@ -123,3 +146,32 @@ def _strip_spans(value: str, spans: list[tuple[int, int]]) -> str:
         last_index = end
     parts.append(value[last_index:])
     return "".join(parts)
+
+
+def _normalize_resolution_hint(value: str) -> str | None:
+    lowered = value.strip().lower()
+    if lowered in {"4k", "uhd", "2160p"}:
+        return "2160p"
+    if lowered in {"1080p", "720p"}:
+        return lowered
+    return None
+
+
+def _normalize_codec_hint(value: str) -> str | None:
+    lowered = value.strip().lower()
+    if lowered in {"x265", "h265", "hevc"}:
+        return "x265"
+    if lowered in {"x264", "h264", "avc"}:
+        return "x264"
+    return None
+
+
+def _strip_known_hints(value: str) -> str:
+    cleaned = YEAR_PATTERN.sub(" ", value)
+    cleaned = SXXEYY_PATTERN.sub(" ", cleaned)
+    cleaned = SEASON_WITH_OPTIONAL_EPISODE_PATTERN.sub(" ", cleaned)
+    cleaned = SEASON_ONLY_PATTERN.sub(" ", cleaned)
+    cleaned = EPISODE_ONLY_PATTERN.sub(" ", cleaned)
+    cleaned = RESOLUTION_PATTERN.sub(" ", cleaned)
+    cleaned = CODEC_PATTERN.sub(" ", cleaned)
+    return cleaned

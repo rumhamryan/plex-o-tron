@@ -113,6 +113,65 @@ async def test_search_movie_happy_path(mocker, context, make_callback_query, mak
 
 
 @pytest.mark.asyncio
+async def test_movie_query_with_resolution_and_codec_skips_prompt(
+    mocker, context, make_callback_query, make_message
+):
+    orchestrate_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_flow.search_logic.orchestrate_searches",
+        new=AsyncMock(
+            return_value=[
+                {
+                    "title": "Inception 2010 1080p x265",
+                    "page_url": "movie-1080p-x265",
+                    "codec": "x265",
+                    "seeders": 50,
+                    "size_gib": 7.5,
+                    "source": "YTS",
+                }
+            ]
+        ),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_flow.safe_send_message",
+        new=AsyncMock(return_value=make_message(message_id=30)),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.results.safe_edit_message",
+        new=AsyncMock(),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=40,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_buttons(
+        Update(
+            update_id=41,
+            callback_query=make_callback_query("search_movie_scope_single", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(
+        Update(update_id=42, message=make_message("Inception 2010 1080p x265")),
+        context,
+    )
+
+    orchestrate_mock.assert_awaited_once()
+    assert orchestrate_mock.await_args.args[:3] == ("Inception", "movie", context)
+    assert orchestrate_mock.await_args.kwargs["year"] == "2010"
+    assert orchestrate_mock.await_args.kwargs["resolution"] == "1080p"
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.CONFIRMATION
+    assert session.final_title == "Inception (2010)"
+    assert session.results_resolution_filter == "1080p"
+    assert session.results_codec_filter == "x265"
+
+
+@pytest.mark.asyncio
 async def test_movie_search_uses_cached_year_without_config(
     mocker, context, make_callback_query, make_message
 ):
@@ -1512,6 +1571,62 @@ async def test_handle_tv_scope_selection_single(mocker, context, make_callback_q
     session = SearchSession.from_user_data(context.user_data)
     assert session.step == SearchStep.TV_EPISODE
     send_prompt.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_tv_query_with_resolution_and_codec_skips_prompt(
+    mocker, context, make_callback_query, make_message
+):
+    orchestrate_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.search_logic.orchestrate_searches",
+        new=AsyncMock(
+            return_value=[
+                {
+                    "title": "Show S01E02 720p x265",
+                    "page_url": "show-0102-720p-x265",
+                    "codec": "x265",
+                    "seeders": 35,
+                    "size_gib": 1.1,
+                    "source": "EZTV",
+                }
+            ]
+        ),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow._validate_episode_released",
+        new=AsyncMock(return_value=True),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.safe_send_message",
+        new=AsyncMock(return_value=make_message(message_id=60)),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.results.safe_edit_message",
+        new=AsyncMock(),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=70,
+            callback_query=make_callback_query("search_start_tv", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(
+        Update(update_id=71, message=make_message("Show S01E02 720p x265")),
+        context,
+    )
+
+    orchestrate_mock.assert_awaited_once()
+    assert orchestrate_mock.await_args.args[:3] == ("Show S01E02 720p x265", "tv", context)
+    assert orchestrate_mock.await_args.kwargs["base_query_for_filter"] == "Show"
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.CONFIRMATION
+    assert session.final_title == "Show S01E02"
+    assert session.results_resolution_filter == "720p"
+    assert session.results_codec_filter == "x265"
+    assert session.allow_detail_change is True
 
 
 @pytest.mark.asyncio
