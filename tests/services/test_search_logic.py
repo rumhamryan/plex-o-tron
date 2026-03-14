@@ -1,5 +1,5 @@
 import pytest
-from telegram_bot.services.search_logic import _parse_size_to_gb
+from telegram_bot.services.search_logic import _parse_size_to_gib
 from telegram_bot.utils import parse_codec, score_torrent_result
 
 
@@ -35,8 +35,8 @@ def testparse_codec(title, expected):
         ("invalid", 0.0),
     ],
 )
-def test_parse_size_to_gb(size_str, expected):
-    assert _parse_size_to_gb(size_str) == pytest.approx(expected)
+def test_parse_size_to_gib(size_str, expected):
+    assert _parse_size_to_gib(size_str) == pytest.approx(expected)
 
 
 def test_score_torrent_result():

@@ -5,7 +5,7 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 from telegram.ext import ContextTypes
 
-from ....config import MAX_TORRENT_SIZE_GB, logger
+from ....config import MAX_TORRENT_SIZE_GIB, logger
 from ....utils import parse_codec, parse_torrent_name, score_torrent_result
 from ...generic_torrent_scraper import GenericTorrentScraper, load_site_config
 
@@ -69,7 +69,7 @@ async def scrape_yaml_site(
         query, media_type, base_query_for_filter=base_query_for_filter, limit=limit
     )
 
-    max_size_gb = kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GB)
+    max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GIB))
 
     results: list[dict[str, Any]] = []
     for item in raw_results:
@@ -85,8 +85,8 @@ async def scrape_yaml_site(
         if score < 6:
             continue
 
-        size_gb = item.size_bytes / (1024**3)
-        if size_gb > max_size_gb:
+        size_gib = item.size_bytes / (1024**3)
+        if size_gib > max_size_gib:
             continue
 
         parsed_name = parse_torrent_name(item.name)
@@ -103,7 +103,7 @@ async def scrape_yaml_site(
                 "score": score,
                 "source": item.source_site,
                 "uploader": item.uploader or "Anonymous",
-                "size_gb": item.size_bytes / (1024**3),
+                "size_gib": size_gib,
                 "codec": parse_codec(item.name),
                 "seeders": item.seeders,
                 "leechers": item.leechers,

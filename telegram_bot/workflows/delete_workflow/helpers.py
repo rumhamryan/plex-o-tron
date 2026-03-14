@@ -26,7 +26,7 @@ def _get_display_name(path: str) -> str:
 
 
 def _format_size_label(path: str) -> str:
-    """Return a short size label (in GB) for display purposes."""
+    """Return a short size label (in GiB) for display purposes."""
     try:
         size_bytes = _calculate_path_size(path)
     except OSError as exc:
@@ -34,12 +34,12 @@ def _format_size_label(path: str) -> str:
         return UNKNOWN_SIZE_LABEL
 
     if size_bytes <= 0:
-        return "0 GB"
+        return "0 GiB"
 
-    size_in_gb = round(size_bytes / (1024**3), 2)
-    if size_in_gb == 0:
+    size_in_gib = round(size_bytes / (1024**3), 2)
+    if size_in_gib == 0:
         return format_bytes(size_bytes)
-    return f"{size_in_gb} GB"
+    return f"{size_in_gib} GiB"
 
 
 def _calculate_path_size(path: str) -> int:

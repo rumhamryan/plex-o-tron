@@ -7,7 +7,7 @@ from typing import Any, Iterable
 from telegram.ext import ContextTypes
 from thefuzz import fuzz
 
-from ....config import MAX_TORRENT_SIZE_GB, logger
+from ....config import MAX_TORRENT_SIZE_GIB, logger
 from ....utils import parse_codec, parse_torrent_name, score_torrent_result
 from ..adapters import fetch_page
 
@@ -75,7 +75,7 @@ async def scrape_tpb(
     except Exception:
         limit_value = _DEFAULT_LIMIT
 
-    max_size_gb = kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GB)
+    max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GIB))
 
     try:
         response = await fetch_page(
@@ -118,7 +118,7 @@ async def scrape_tpb(
         media_type_key=media_type_key,
         preferences=preferences,
         limit=limit_value,
-        max_size_gb=max_size_gb,
+        max_size_gib=max_size_gib,
     )
     logger.info(
         "[SCRAPER] TPB: Found %d torrents for query '%s' from %s.",
@@ -138,7 +138,7 @@ def _transform_results(
     media_type_key: str,
     preferences: dict[str, Any],
     limit: int,
-    max_size_gb: float,
+    max_size_gib: float,
 ) -> list[dict[str, Any]]:
     target_info = parse_torrent_name(base_filter or query)
     target_title = target_info.get("title") or base_filter or query
@@ -190,8 +190,8 @@ def _transform_results(
         size_bytes = _safe_int(entry.get("size"))
         if size_bytes <= 0:
             continue
-        size_gb = size_bytes / (1024**3)
-        if size_gb > max_size_gb:
+        size_gib = size_bytes / (1024**3)
+        if size_gib > max_size_gib:
             continue
 
         seeders = _safe_int(entry.get("seeders"))
@@ -217,7 +217,7 @@ def _transform_results(
                 "score": score,
                 "source": "tpb",
                 "uploader": uploader,
-                "size_gb": size_gb,
+                "size_gib": size_gib,
                 "codec": parse_codec(raw_title),
                 "seeders": seeders,
                 "leechers": leechers,

@@ -1221,7 +1221,7 @@ async def test_codec_filter_buttons_toggle_state(
             "page_url": "x",
             "codec": "x264",
             "seeders": 10,
-            "size_gb": 5,
+            "size_gib": 5,
             "source": "site",
         },
         {
@@ -1229,7 +1229,7 @@ async def test_codec_filter_buttons_toggle_state(
             "page_url": "y",
             "codec": "x265",
             "seeders": 15,
-            "size_gb": 6,
+            "size_gib": 6,
             "source": "site",
         },
     ]
@@ -1268,7 +1268,7 @@ async def test_results_pagination_callback_updates_page(
             "page_url": f"https://example.com/{i}",
             "codec": "H264",
             "seeders": i + 1,
-            "size_gb": 5.0,
+            "size_gib": 5.0,
             "source": "site",
         }
         for i in range(7)
@@ -1303,14 +1303,14 @@ async def test_results_filter_callback_updates_state(
             "page_url": "a",
             "codec": "X",
             "seeders": 5,
-            "size_gb": 2,
+            "size_gib": 2,
         },
         {
             "title": "Show 1080p",
             "page_url": "b",
             "codec": "X",
             "seeders": 10,
-            "size_gb": 4,
+            "size_gib": 4,
         },
     ]
     session.results_query = "Show"
@@ -1339,7 +1339,7 @@ def test_size_filter_allows_large_when_filtering_for_4k():
             "page_url": "a",
             "codec": "X",
             "seeders": 50,
-            "size_gb": 8,
+            "size_gib": 8,
             "source": "site",
         },
         {
@@ -1347,12 +1347,12 @@ def test_size_filter_allows_large_when_filtering_for_4k():
             "page_url": "b",
             "codec": "X",
             "seeders": 20,
-            "size_gb": 18,
+            "size_gib": 18,
             "source": "site",
         },
     ]
     session.results_query = "Movie"
-    session.results_max_size_gb = 10
+    session.results_max_size_gib = 10
 
     session.results_resolution_filter = "all"
     filtered_default = _compute_filtered_results(session)
@@ -1371,7 +1371,7 @@ def test_compute_filtered_results_filters_by_codec():
             "page_url": "a",
             "codec": "x264",
             "seeders": 20,
-            "size_gb": 5,
+            "size_gib": 5,
             "source": "site",
         },
         {
@@ -1379,14 +1379,14 @@ def test_compute_filtered_results_filters_by_codec():
             "page_url": "b",
             "codec": "x265",
             "seeders": 25,
-            "size_gb": 6,
+            "size_gib": 6,
             "source": "site",
         },
         {
             "title": "No Codec",
             "page_url": "c",
             "seeders": 10,
-            "size_gb": 4,
+            "size_gib": 4,
             "source": "site",
         },
     ]
@@ -1411,7 +1411,7 @@ async def test_results_callbacks_respect_expiration(
             "page_url": "a",
             "codec": "X",
             "seeders": 1,
-            "size_gb": 5,
+            "size_gib": 5,
             "source": "site",
         }
     ]
@@ -1834,7 +1834,7 @@ def _make_candidate(
     episode: int,
     uploader: str,
     *,
-    size_gb: float,
+    size_gib: float,
     resolution: str = "1080p",
     source: str = "1337x",
     seeders: int = 150,
@@ -1845,7 +1845,7 @@ def _make_candidate(
         title=f"Show S01E{episode:02d} {resolution} {uploader}",
         source=source,
         uploader=uploader,
-        size_gb=size_gb,
+        size_gib=size_gib,
         seeders=seeders,
         resolution=resolution,
         score=seeders,
@@ -1856,8 +1856,8 @@ def test_consistent_episode_selection_prefers_uniform_release():
     candidates: dict[int, list[EpisodeCandidate]] = {}
     for ep in range(1, 4):
         candidates[ep] = [
-            _make_candidate(ep, "SceneGroup", size_gb=1.0 + ep * 0.02),
-            _make_candidate(ep, "Scatter", size_gb=1.9 + ep * 0.3, seeders=500),
+            _make_candidate(ep, "SceneGroup", size_gib=1.0 + ep * 0.02),
+            _make_candidate(ep, "Scatter", size_gib=1.9 + ep * 0.3, seeders=500),
         ]
 
     selection, summary = _select_consistent_episode_set(candidates)
@@ -1874,14 +1874,14 @@ def test_consistent_episode_selection_handles_4k_target():
             _make_candidate(
                 ep,
                 "UHDVision",
-                size_gb=4.4 + ep * 0.1,
+                size_gib=4.4 + ep * 0.1,
                 resolution="2160p",
                 source="EZTV",
             ),
             _make_candidate(
                 ep,
                 "HDGroup",
-                size_gb=1.0 + ep * 0.5,
+                size_gib=1.0 + ep * 0.5,
                 resolution="1080p",
                 source="EZTV",
                 seeders=400,

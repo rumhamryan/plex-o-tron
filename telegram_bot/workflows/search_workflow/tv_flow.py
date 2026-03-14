@@ -50,7 +50,7 @@ from .state import (
 )
 
 EPISODE_CANDIDATE_LIMIT = 3
-DEFAULT_SIZE_TARGET_GB = 1.05
+DEFAULT_SIZE_TARGET_GIB = 1.05
 RESOLUTION_SIZE_TARGETS = {
     "720p": 0.9,
     "1080p": 1.3,
@@ -71,7 +71,7 @@ class EpisodeCandidate:
     source: str
     uploader: str
     info_url: str | None = None
-    size_gb: float | None = None
+    size_gib: float | None = None
     seeders: int | None = None
     resolution: str | None = None
     codec: str | None = None
@@ -88,8 +88,8 @@ class EpisodeCandidate:
 class SeasonConsistencySummary:
     release_source: str | None
     release_uploader: str | None
-    avg_size_gb: float | None
-    size_spread_gb: float | None
+    avg_size_gib: float | None
+    size_spread_gib: float | None
     matched_count: int
     total_count: int
     fallback_episodes: list[int] = field(default_factory=list)
@@ -799,8 +799,8 @@ async def _present_season_download_confirmation(
 
 def _target_size_for_resolution(resolution: str | None) -> float:
     if not resolution:
-        return DEFAULT_SIZE_TARGET_GB
-    return RESOLUTION_SIZE_TARGETS.get(resolution, DEFAULT_SIZE_TARGET_GB)
+        return DEFAULT_SIZE_TARGET_GIB
+    return RESOLUTION_SIZE_TARGETS.get(resolution, DEFAULT_SIZE_TARGET_GIB)
 
 
 def _select_consistent_episode_set(
@@ -844,8 +844,8 @@ def _select_consistent_episode_set(
             if matched_candidate is None:
                 continue
             matched.append(matched_candidate)
-            if matched_candidate.size_gb is not None:
-                sizes.append(matched_candidate.size_gb)
+            if matched_candidate.size_gib is not None:
+                sizes.append(matched_candidate.size_gib)
             if matched_candidate.resolution:
                 resolution_counter[matched_candidate.resolution] += 1
 
@@ -923,8 +923,8 @@ def _select_consistent_episode_set(
     summary = SeasonConsistencySummary(
         release_source=release_key[0],
         release_uploader=release_key[1],
-        avg_size_gb=avg_size,
-        size_spread_gb=spread,
+        avg_size_gib=avg_size,
+        size_spread_gib=spread,
         matched_count=len(matched),
         total_count=total_eps,
         fallback_episodes=fallback_eps,
@@ -945,13 +945,15 @@ def _format_consistency_summary(
     details: list[str] = []
     if summary.resolution:
         details.append("\nResolution: " + escape_markdown(summary.resolution.lower(), version=2))
-    if summary.avg_size_gb is not None:
-        details.append(escape_markdown(f"\nAverage size: {summary.avg_size_gb:.2f} GB", version=2))
+    if summary.avg_size_gib is not None:
+        details.append(
+            escape_markdown(f"\nAverage size: {summary.avg_size_gib:.2f} GiB", version=2)
+        )
         total_size = escape_markdown(
-            str(round(float(summary.avg_size_gb) * float(summary.matched_count), 2)),
+            str(round(float(summary.avg_size_gib) * float(summary.matched_count), 2)),
             version=2,
         )
-        details.append(escape_markdown(f"\nTotal Size: {total_size} GB"))
+        details.append(escape_markdown(f"\nTotal Size: {total_size} GiB"))
     base_line = f"Consistency: {label} \\({escape_markdown(coverage, version=2)}\\)"
     if details:
         base_line += " ".join(details)
@@ -1232,7 +1234,7 @@ async def _perform_tv_season_search(
                     source=_normalize_release_field(raw.get("source"), "Unknown"),
                     uploader=_normalize_release_field(raw.get("uploader"), "Anonymous"),
                     info_url=raw.get("info_url"),
-                    size_gb=_coerce_float(raw.get("size_gb")),
+                    size_gib=_coerce_float(raw.get("size_gib", raw.get("size_gb"))),
                     seeders=_coerce_int(raw.get("seeders")),
                     resolution=_infer_resolution_from_title(raw.get("title")),
                     codec=raw.get("codec"),
@@ -1307,7 +1309,7 @@ async def _perform_tv_season_search(
                 "info_url": candidate.info_url,
                 "source": candidate.source,
                 "uploader": candidate.uploader,
-                "size_gb": candidate.size_gb,
+                "size_gib": candidate.size_gib,
                 "resolution": candidate.resolution,
             }
         )

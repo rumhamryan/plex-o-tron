@@ -124,7 +124,7 @@ async def test_confirm_delete_skip_due_to_name_twin(
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.handlers._format_size_label",
-        return_value="4.5 GB",
+        return_value="4.5 GiB",
     )
 
     context.user_data["path_to_delete"] = "/downloads/movie.mkv"
@@ -139,7 +139,7 @@ async def test_confirm_delete_skip_due_to_name_twin(
     fs_mock.assert_awaited_once_with("/downloads/movie.mkv")
     final_text = safe_edit_mock.await_args.kwargs["text"]
     assert "Plex Skipped" in final_text
-    assert "\nSize: 4\\.5 GB" in final_text
+    assert "\nSize: 4\\.5 GiB" in final_text
 
 
 @pytest.mark.asyncio
@@ -160,7 +160,7 @@ async def test_confirm_delete_placeholder_token_uses_manual_delete(
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.handlers._format_size_label",
-        return_value="1.0 GB",
+        return_value="1.0 GiB",
     )
 
     context.user_data["path_to_delete"] = "/downloads/movie.mkv"
@@ -249,7 +249,7 @@ async def test_confirm_delete_manual_fallback_on_connection_error(
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.handlers._format_size_label",
-        return_value="3.0 GB",
+        return_value="3.0 GiB",
     )
 
     context.user_data["path_to_delete"] = "/downloads/show"
@@ -293,7 +293,7 @@ async def test_collection_delete_triggers_plex_cleanup(
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.handlers._format_size_label",
-        return_value="1.0 GB",
+        return_value="1.0 GiB",
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.filesystem.os.path.exists", return_value=False
@@ -310,7 +310,7 @@ async def test_collection_delete_triggers_plex_cleanup(
     collection_mock.assert_not_awaited()
     final_text = safe_edit_mock.await_args.kwargs["text"]
     assert "Successfully Deleted from Plex" in final_text
-    assert "\nSize: 1\\.0 GB" in final_text
+    assert "\nSize: 1\\.0 GiB" in final_text
 
 
 @pytest.mark.asyncio
@@ -321,7 +321,7 @@ async def test_present_delete_results_lists_show_sizes(mocker, context, make_mes
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.helpers._format_size_label",
-        side_effect=lambda path: "1.0 GB" if path.endswith("a.mkv") else "2.0 GB",
+        side_effect=lambda path: "1.0 GiB" if path.endswith("a.mkv") else "2.0 GiB",
     )
     context.user_data.clear()
 
@@ -339,8 +339,8 @@ async def test_present_delete_results_lists_show_sizes(mocker, context, make_mes
 
     reply_markup = safe_edit_mock.await_args.kwargs["reply_markup"]
     buttons = reply_markup.inline_keyboard
-    assert "movie_a.mkv | 1.0 GB" in buttons[0][0].text
-    assert "movie_b.mkv | 2.0 GB" in buttons[1][0].text
+    assert "movie_a.mkv | 1.0 GiB" in buttons[0][0].text
+    assert "movie_b.mkv | 2.0 GiB" in buttons[1][0].text
 
 
 @pytest.mark.asyncio
@@ -366,7 +366,7 @@ async def test_success_message_includes_extension_and_size(
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.handlers._format_size_label",
-        return_value="4.0 GB",
+        return_value="4.0 GiB",
     )
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.filesystem.os.path.exists", return_value=False
@@ -382,7 +382,7 @@ async def test_success_message_includes_extension_and_size(
 
     final_text = safe_edit_mock.await_args.kwargs["text"]
     escaped_name = escape_markdown("movie.mkv", version=2)
-    assert f"{escaped_name}\nSize: 4\\.0 GB" in final_text
+    assert f"{escaped_name}\nSize: 4\\.0 GiB" in final_text
     assert "Successfully Deleted from Plex" in final_text
 
 

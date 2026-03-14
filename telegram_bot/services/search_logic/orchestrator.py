@@ -200,7 +200,7 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
         "score",
         "source",
         "uploader",
-        "size_gb",
+        "size_gib",
         "codec",
         "seeders",
         "leechers",

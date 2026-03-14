@@ -14,7 +14,7 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
-from ...config import MAX_TORRENT_SIZE_GB, logger
+from ...config import MAX_TORRENT_SIZE_GIB, logger
 from ...services import search_logic, torrent_service
 from ...services.media_manager import validate_and_enrich_torrent
 from ...ui.views import send_confirmation_prompt
@@ -389,7 +389,7 @@ async def _handle_resolution_button(
         search_title = final_title.split("(")[0].strip()
 
         # Allow size override for 4K
-        max_size: float = float(MAX_TORRENT_SIZE_GB)
+        max_size: float = float(MAX_TORRENT_SIZE_GIB)
         if resolution == "2160p":
             max_size *= FOUR_K_SIZE_MULTIPLIER
 
@@ -399,7 +399,7 @@ async def _handle_resolution_button(
             context,
             year=year,
             resolution=resolution,
-            max_size_gb=max_size,
+            max_size_gib=max_size,
         )
         await _present_search_results(
             query.message,
@@ -407,7 +407,7 @@ async def _handle_resolution_button(
             results,
             f"{final_title} [{resolution}]",
             session=session,
-            max_size_gb=MAX_TORRENT_SIZE_GB,
+            max_size_gib=MAX_TORRENT_SIZE_GIB,
             initial_resolution=resolution,
         )
         return
@@ -464,7 +464,7 @@ async def _handle_movie_scope_button(
     session.collection_exclusions = []
     session.collection_resolution = None
     session.collection_codec = None
-    session.collection_seed_size_gb = None
+    session.collection_seed_size_gib = None
     session.collection_seed_uploader = None
     session.collection_owned_count = 0
 

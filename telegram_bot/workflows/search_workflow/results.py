@@ -70,7 +70,7 @@ def _log_aggregated_results(query_str: str, results: list[dict[str, Any]]) -> No
         "score",
         "source",
         "uploader",
-        "size_gb",
+        "size_gib",
         "codec",
         "seeders",
         "leechers",
@@ -96,7 +96,7 @@ async def _present_search_results(
     query_str,
     *,
     session: SearchSession | None = None,
-    max_size_gb: float | None = None,
+    max_size_gib: float | None = None,
     initial_resolution: str | None = None,
 ):
     """Persists result metadata on the session and renders the first page."""
@@ -129,8 +129,8 @@ async def _present_search_results(
     session.results_page = 0
     session.results_resolution_filter = resolution_filter
     session.results_codec_filter = "all"
-    session.results_max_size_gb = (
-        float(max_size_gb) if isinstance(max_size_gb, (int, float)) else None
+    session.results_max_size_gib = (
+        float(max_size_gib) if isinstance(max_size_gib, (int, float)) else None
     )
     session.results_generated_at = time.time()
     _save_session(context, session)
@@ -181,10 +181,14 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _result_size_gib(result: dict[str, Any]) -> float | None:
+    return _safe_float(result.get("size_gib", result.get("size_gb")))
+
+
 def _determine_size_cap(
     session: SearchSession, resolution_filter: str | None = None
 ) -> float | None:
-    cap = session.results_max_size_gb
+    cap = session.results_max_size_gib
     if cap is None:
         return None
     active = _normalize_resolution_filter(resolution_filter or session.results_resolution_filter)
@@ -215,7 +219,7 @@ def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
     if size_cap is not None:
         limited: list[dict[str, Any]] = []
         for item in working:
-            size_value = _safe_float(item.get("size_gb"))
+            size_value = _result_size_gib(item)
             if size_value is None or size_value <= size_cap:
                 limited.append(item)
         working = limited
@@ -226,8 +230,8 @@ def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
 def _format_result_button_label(result: dict[str, Any]) -> str:
     codec = result.get("codec") or "N/A"
     seeders = _safe_int(result.get("seeders"))
-    size_value = _safe_float(result.get("size_gb"))
-    size_text = f"{size_value:.2f} GB" if size_value is not None else "? GB"
+    size_value = _result_size_gib(result)
+    size_text = f"{size_value:.2f} GiB" if size_value is not None else "? GiB"
     source_site = result.get("source") or "source"
     source_name = source_site.split(".")[0]
     return f"{codec} | S:{seeders} | {size_text} | [{source_name}]"

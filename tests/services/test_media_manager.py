@@ -54,7 +54,7 @@ def test_format_media_summary_with_icons():
     result = format_media_summary(
         prefix="🗑️ *Removed*",
         title="Movie (2024)",
-        size_label="2.5 GB",
+        size_label="2.5 GiB",
         destination_label="/movies/Movie (2024)",
         disk_usage_percent=62,
         title_icon="🎬",
@@ -65,7 +65,7 @@ def test_format_media_summary_with_icons():
     lines = result.split("\n")
     assert lines[0] == "🗑️ *Removed*"
     assert lines[1] == "🎬 Movie \\(2024\\)"
-    assert lines[2] == "📦 Size: 2\\.5 GB"
+    assert lines[2] == "📦 Size: 2\\.5 GiB"
     assert lines[3] == "📁 Destination: `/movies/Movie \\(2024\\)`"
     assert lines[4] == "💽 Disk Usage: 62%"
 
@@ -152,7 +152,7 @@ async def test_handle_successful_download(mocker):
     size_mock.assert_called_once_with(expected_dest_path)
     disk_usage_mock.assert_called_once_with(expected_dest_path)
     assert "Successfully Added to Plex" in result
-    assert "📦 Size: 1\\.0 KB" in result
+    assert "📦 Size: 1\\.0 KiB" in result
     assert "📁 Destination: `/final/Sample \\(2023\\)\\.mkv`" in result
     assert "💽 Disk Usage: 62%" in result
 
@@ -230,7 +230,7 @@ async def test_handle_successful_download_prefers_main_movie_over_sample(mocker)
     move_mock.assert_called_once_with(expected_source_path, expected_dest_path)
     size_mock.assert_called_once_with(expected_dest_path)
     disk_usage_mock.assert_called_once_with(expected_dest_path)
-    assert "📦 Size: 14\\.0 GB" in result
+    assert "📦 Size: 14\\.0 GiB" in result
     assert "⚠️ Disk Usage: *91%*" in result
 
 
@@ -307,7 +307,7 @@ async def test_handle_successful_download_season_pack(mocker):
     assert size_mock.call_count == 2
     disk_usage_mock.assert_called_once_with("/final")
     assert "Successfully Added to Plex" in result
-    assert "📦 Size: 3\\.0 KB" in result
+    assert "📦 Size: 3\\.0 KiB" in result
     assert "💽 Disk Usage: 40%" in result
     assert "Processed and moved 2 episodes from the season pack\\." in result
 

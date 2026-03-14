@@ -10,7 +10,7 @@ from telegram.helpers import escape_markdown
 from telegram_bot.config import (
     ALLOWED_EXTENSIONS,
     MAX_TORRENT_SIZE_BYTES,
-    MAX_TORRENT_SIZE_GB,
+    MAX_TORRENT_SIZE_GIB,
     logger,
 )
 from telegram_bot.services.scraping_service import fetch_episode_title_from_wikipedia
@@ -129,12 +129,12 @@ async def validate_and_enrich_torrent(
     if ti.total_size() > MAX_TORRENT_SIZE_BYTES:
         # Escape the dynamic parts of the string that might contain special characters.
         torrent_size_str = escape_markdown(format_bytes(ti.total_size()), version=2)
-        size_limit_str = escape_markdown(str(MAX_TORRENT_SIZE_GB), version=2)
+        size_limit_str = escape_markdown(str(MAX_TORRENT_SIZE_GIB), version=2)
 
         # Construct the final message using the escaped parts, also escaping the final period.
         error_msg = (
             f"This torrent is *{torrent_size_str}*, which is larger than the "
-            f"*{size_limit_str} GB* limit\\."
+            f"*{size_limit_str} GiB* limit\\."
         )
 
         await safe_edit_message(

@@ -81,7 +81,7 @@ async def scrape_generic_page(query: str, media_type: str, search_url: str) -> l
                 "score": 100,  # Generic scraper implies we found something relevant manually
                 "source": "generic",
                 "uploader": None,
-                "size_gb": 0.0,
+                "size_gib": 0.0,
                 "codec": None,
                 "seeders": seeders,
                 "leechers": leechers,

@@ -62,7 +62,7 @@ class ScraperResult(TypedDict):
     score: int
     source: str
     uploader: str | None
-    size_gb: float
+    size_gib: float
     codec: str | None
     seeders: int
     leechers: int

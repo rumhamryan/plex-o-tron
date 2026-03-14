@@ -3,8 +3,8 @@
 import re
 
 
-def _parse_size_to_gb(size_str: str) -> float:
-    """Converts size strings like '1.5 GB' or '500 MB' to a float in GB."""
+def _parse_size_to_gib(size_str: str) -> float:
+    """Converts size strings like '1.5 GB' or '500 MB' to a float in GiB."""
     size_str = size_str.lower().replace(",", "")
     try:
         size_match = re.search(r"([\d.]+)", size_str)
@@ -22,3 +22,8 @@ def _parse_size_to_gb(size_str: str) -> float:
     except (ValueError, TypeError):
         return 0.0
     return 0.0
+
+
+def _parse_size_to_gb(size_str: str) -> float:
+    """Backward-compatible alias for legacy imports using GB nomenclature."""
+    return _parse_size_to_gib(size_str)

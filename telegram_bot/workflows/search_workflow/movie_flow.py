@@ -12,7 +12,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
-from ...config import MAX_TORRENT_SIZE_GB, logger
+from ...config import MAX_TORRENT_SIZE_GIB, logger
 from ...services import scraping_service, search_logic
 from ...utils import (
     safe_edit_message,
@@ -317,7 +317,7 @@ async def _search_movie_results(
     seen_keys: set[str] = set()
     for resolution in ("1080p", "2160p"):
         # Allow size override for 4K
-        max_size: float = float(MAX_TORRENT_SIZE_GB)
+        max_size: float = float(MAX_TORRENT_SIZE_GIB)
         if resolution == "2160p":
             max_size *= FOUR_K_SIZE_MULTIPLIER
 
@@ -327,7 +327,7 @@ async def _search_movie_results(
             context,
             year=year,
             resolution=resolution,
-            max_size_gb=max_size,
+            max_size_gib=max_size,
         )
         for item in results or []:
             key = item.get("page_url") or item.get("magnet") or item.get("title")
@@ -343,7 +343,7 @@ async def _search_movie_results(
         combined_results,
         f"{final_title} [All]",
         session=session,
-        max_size_gb=MAX_TORRENT_SIZE_GB,
+        max_size_gib=MAX_TORRENT_SIZE_GIB,
         initial_resolution="all",
     )
 

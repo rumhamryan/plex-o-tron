@@ -24,14 +24,14 @@ async def main():
                     "keywords_included": [],
                     "keywords_excluded": [],
                     "min_seeders": 1,
-                    "max_size_gb": 100,
+                    "max_size_gib": 100,
                 },
                 "tv": {
                     "quality": ["1080p", "720p"],
                     "keywords_included": [],
                     "keywords_excluded": [],
                     "min_seeders": 1,
-                    "max_size_gb": 100,
+                    "max_size_gib": 100,
                 },
             }
         }

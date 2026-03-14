@@ -12,10 +12,10 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
     [
         (0, "0B"),
         (1023, "1023.0 B"),
-        (1024, "1.0 KB"),
-        (1536, "1.5 KB"),
-        (1048576, "1.0 MB"),
-        (1610612736, "1.5 GB"),
+        (1024, "1.0 KiB"),
+        (1536, "1.5 KiB"),
+        (1048576, "1.0 MiB"),
+        (1610612736, "1.5 GiB"),
     ],
 )
 def test_format_bytes(size_bytes, expected_str):

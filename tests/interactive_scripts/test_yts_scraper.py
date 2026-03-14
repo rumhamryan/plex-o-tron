@@ -18,7 +18,7 @@ class MockContext:
                         "keywords_included": [],
                         "keywords_excluded": [],
                         "min_seeders": 1,
-                        "max_size_gb": 100,
+                        "max_size_gib": 100,
                     }
                 }
             }

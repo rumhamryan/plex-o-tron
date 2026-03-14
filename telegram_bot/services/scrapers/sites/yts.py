@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup, Tag
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
-from ....config import MAX_TORRENT_SIZE_GB, logger
+from ....config import MAX_TORRENT_SIZE_GIB, logger
 from ....utils import parse_codec, score_torrent_result
 from .. import adapters
 
@@ -27,7 +27,7 @@ async def scrape_yts(
     if year_str == "":
         year_str = None
 
-    max_size_gb = kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GB)
+    max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GIB))
 
     preferences = context.bot_data.get("SEARCH_CONFIG", {}).get("preferences", {}).get("movies", {})
     if not preferences:
@@ -169,8 +169,8 @@ async def scrape_yts(
                                     and resolution.lower() not in quality
                                 ):
                                     continue
-                                size_gb = (tor.get("size_bytes", 0) or 0) / (1024**3)
-                                if size_gb > max_size_gb:
+                                size_gib = (tor.get("size_bytes", 0) or 0) / (1024**3)
+                                if size_gib > max_size_gib:
                                     continue
                                 info_hash = tor.get("hash")
                                 if not info_hash:
@@ -212,7 +212,7 @@ async def scrape_yts(
                                         "score": score,
                                         "source": "yts.lt",
                                         "uploader": "YTS",
-                                        "size_gb": size_gb,
+                                        "size_gib": size_gib,
                                         "codec": parsed_codec,
                                         "seeders": seeders_count,
                                         "leechers": leechers_count,
@@ -433,8 +433,8 @@ async def scrape_yts(
                 if not resolution or (
                     resolution and isinstance(resolution, str) and resolution.lower() in quality
                 ):
-                    size_gb = torrent.get("size_bytes", 0) / (1024**3)
-                    if size_gb > max_size_gb:
+                    size_gib = torrent.get("size_bytes", 0) / (1024**3)
+                    if size_gib > max_size_gib:
                         continue
 
                     full_title = (
@@ -479,7 +479,7 @@ async def scrape_yts(
                                 "score": score,
                                 "source": "yts.lt",
                                 "uploader": "YTS",
-                                "size_gb": size_gb,
+                                "size_gib": size_gib,
                                 "codec": parsed_codec,
                                 "seeders": seeders_count,
                                 "leechers": leechers_count,

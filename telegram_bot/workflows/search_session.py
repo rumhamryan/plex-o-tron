@@ -48,7 +48,7 @@ class SearchSession:
     collection_exclusions: list[str] = field(default_factory=list)
     collection_resolution: str | None = None
     collection_codec: str | None = None
-    collection_seed_size_gb: float | None = None
+    collection_seed_size_gib: float | None = None
     collection_seed_uploader: str | None = None
     collection_owned_count: int = 0
     season: int | None = None
@@ -65,7 +65,7 @@ class SearchSession:
     results_page: int = 0
     results_resolution_filter: str = "all"
     results_codec_filter: CodecFilter = "all"
-    results_max_size_gb: float | None = None
+    results_max_size_gib: float | None = None
     results_generated_at: float | None = None
     allow_detail_change: bool = False
 
@@ -103,7 +103,10 @@ class SearchSession:
             collection_exclusions=list(payload.get("collection_exclusions") or []),
             collection_resolution=payload.get("collection_resolution"),
             collection_codec=payload.get("collection_codec"),
-            collection_seed_size_gb=payload.get("collection_seed_size_gb"),
+            collection_seed_size_gib=payload.get(
+                "collection_seed_size_gib",
+                payload.get("collection_seed_size_gb"),
+            ),
             collection_seed_uploader=payload.get("collection_seed_uploader"),
             collection_owned_count=int(payload.get("collection_owned_count") or 0),
             season=payload.get("season"),
@@ -122,7 +125,10 @@ class SearchSession:
             results_codec_filter=cls.normalize_results_codec_filter(
                 payload.get("results_codec_filter")
             ),
-            results_max_size_gb=payload.get("results_max_size_gb"),
+            results_max_size_gib=payload.get(
+                "results_max_size_gib",
+                payload.get("results_max_size_gb"),
+            ),
             results_generated_at=payload.get("results_generated_at"),
             allow_detail_change=bool(payload.get("allow_detail_change")),
         )
@@ -182,6 +188,24 @@ class SearchSession:
         self.prompt_message_id = None
         return message_id
 
+    @property
+    def collection_seed_size_gb(self) -> float | None:
+        """Backward-compatible alias for legacy GB-named session data."""
+        return self.collection_seed_size_gib
+
+    @collection_seed_size_gb.setter
+    def collection_seed_size_gb(self, value: float | None) -> None:
+        self.collection_seed_size_gib = value
+
+    @property
+    def results_max_size_gb(self) -> float | None:
+        """Backward-compatible alias for legacy GB-named session data."""
+        return self.results_max_size_gib
+
+    @results_max_size_gb.setter
+    def results_max_size_gb(self, value: float | None) -> None:
+        self.results_max_size_gib = value
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "step": self.step.value,
@@ -197,7 +221,7 @@ class SearchSession:
             "collection_exclusions": list(self.collection_exclusions),
             "collection_resolution": self.collection_resolution,
             "collection_codec": self.collection_codec,
-            "collection_seed_size_gb": self.collection_seed_size_gb,
+            "collection_seed_size_gib": self.collection_seed_size_gib,
             "collection_seed_uploader": self.collection_seed_uploader,
             "collection_owned_count": int(self.collection_owned_count or 0),
             "season": self.season,
@@ -218,7 +242,7 @@ class SearchSession:
             "results_page": int(self.results_page or 0),
             "results_resolution_filter": self.results_resolution_filter,
             "results_codec_filter": self.results_codec_filter,
-            "results_max_size_gb": self.results_max_size_gb,
+            "results_max_size_gib": self.results_max_size_gib,
             "results_generated_at": self.results_generated_at,
             "allow_detail_change": self.allow_detail_change,
         }

@@ -58,10 +58,10 @@ def get_site_name_from_url(url: str) -> str:
 
 
 def format_bytes(size_bytes: int) -> str:
-    """Converts bytes into a human-readable string (e.g., KB, MB, GB)."""
+    """Converts bytes into a human-readable binary string (e.g., KiB, MiB, GiB)."""
     if size_bytes <= 0:
         return "0B"
-    size_name = ("B", "KB", "MB", "GB", "TB")
+    size_name = ("B", "KiB", "MiB", "GiB", "TiB")
     i = int(math.floor(math.log(size_bytes, 1024))) if size_bytes > 0 else 0
     p = math.pow(1024, i)
     s = round(size_bytes / p, 2)

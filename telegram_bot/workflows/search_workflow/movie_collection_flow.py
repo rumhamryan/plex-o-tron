@@ -18,7 +18,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
-from ...config import LOG_SCRAPER_STATS, MAX_TORRENT_SIZE_GB, logger
+from ...config import LOG_SCRAPER_STATS, MAX_TORRENT_SIZE_GIB, logger
 from ...services import scraping_service, search_logic
 from ...services.media_manager import _get_path_size_bytes
 from ...services.scrapers.wikipedia.dates import _extract_release_date_iso
@@ -307,7 +307,7 @@ async def _start_collection_lookup(
     session.collection_exclusions = []
     session.collection_resolution = None
     session.collection_codec = None
-    session.collection_seed_size_gb = None
+    session.collection_seed_size_gib = None
     session.collection_seed_uploader = None
     session.collection_owned_count = 0
     session.prompt_message_id = status_message.message_id
@@ -934,12 +934,12 @@ async def _collect_collection_torrents(
         year_kw = str(year_value) if isinstance(year_value, int) else None
 
         # Allow size override for 4K
-        max_size: float = float(MAX_TORRENT_SIZE_GB)
+        max_size: float = float(MAX_TORRENT_SIZE_GIB)
         if session.collection_resolution == "2160p":
             max_size *= FOUR_K_SIZE_MULTIPLIER
 
         results = await search_logic.orchestrate_searches(
-            label, "movie", context, year=year_kw, max_size_gb=max_size
+            label, "movie", context, year=year_kw, max_size_gib=max_size
         )
 
         if LOG_SCRAPER_STATS:
@@ -949,7 +949,7 @@ async def _collect_collection_torrents(
             results,
             session.collection_resolution,
             session.collection_codec,
-            session.collection_seed_size_gb,
+            session.collection_seed_size_gib,
             session.collection_seed_uploader,
         )
         if not candidate:
@@ -960,9 +960,9 @@ async def _collect_collection_torrents(
             missing.append(label)
             continue
 
-        size_value = _coerce_float(candidate.get("size_gb"))
-        if session.collection_seed_size_gb is None and size_value is not None:
-            session.collection_seed_size_gb = size_value
+        size_value = _coerce_float(candidate.get("size_gib", candidate.get("size_gb")))
+        if session.collection_seed_size_gib is None and size_value is not None:
+            session.collection_seed_size_gib = size_value
         uploader_value = _normalize_release_field(candidate.get("uploader"), "Anonymous")
         if (
             session.collection_seed_uploader is None
@@ -990,7 +990,7 @@ async def _collect_collection_torrents(
                 "info_url": candidate.get("info_url"),
                 "source": candidate.get("source"),
                 "uploader": candidate.get("uploader"),
-                "size_gb": candidate.get("size_gb"),
+                "size_gib": candidate.get("size_gib", candidate.get("size_gb")),
                 "resolution": session.collection_resolution,
                 "movie": {
                     "title": movie.get("title"),
@@ -1066,7 +1066,7 @@ def _pick_collection_candidate(
             base_score += 15
 
         # Reward size consistency
-        size_val = _coerce_float(item.get("size_gb"))
+        size_val = _coerce_float(item.get("size_gib", item.get("size_gb")))
         if template_size and size_val:
             try:
                 deviation = abs(size_val - template_size) / template_size
