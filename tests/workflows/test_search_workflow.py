@@ -216,10 +216,10 @@ async def test_collection_lookup_handles_missing_franchise(
 
     async def fake_fetch_movie_franchise_details(_title, *, progress_callback=None):
         if progress_callback is not None:
-            await progress_callback("review")
-            await progress_callback("compare")
-            await progress_callback("inspect")
-            await progress_callback("score")
+            await progress_callback("review", None)
+            await progress_callback("compare", None)
+            await progress_callback("inspect", None)
+            await progress_callback("score", "Matrix film series")
         return None
 
     mocker.patch(
@@ -263,7 +263,7 @@ async def test_collection_lookup_handles_missing_franchise(
         "🧩 Wikipedia lookup: opening likely franchise pages…"
     )
     assert edit_mock.await_args_list[3].kwargs["text"] == (
-        "🧩 Wikipedia lookup: extracting and scoring franchise film lists…"
+        "🧩 Wikipedia lookup: extracting films from *Matrix film series* and scoring the franchise match…"
     )
     assert "No franchise" in edit_mock.await_args.kwargs["text"]
 
@@ -285,10 +285,10 @@ async def test_collection_lookup_ignores_unreleased_titles(
 
     async def fake_fetch_movie_franchise_details(_title, *, progress_callback=None):
         if progress_callback is not None:
-            await progress_callback("review")
-            await progress_callback("compare")
-            await progress_callback("inspect")
-            await progress_callback("score")
+            await progress_callback("review", None)
+            await progress_callback("compare", None)
+            await progress_callback("inspect", None)
+            await progress_callback("score", "Saga film series")
         return (
             "Saga",
             [
@@ -333,7 +333,7 @@ async def test_collection_lookup_ignores_unreleased_titles(
         "🧩 Wikipedia lookup: reviewing Wikipedia franchise candidates…",
         "🧩 Wikipedia lookup: comparing likely franchise pages…",
         "🧩 Wikipedia lookup: opening likely franchise pages…",
-        "🧩 Wikipedia lookup: extracting and scoring franchise film lists…",
+        "🧩 Wikipedia lookup: extracting films from *Saga film series* and scoring the franchise match…",
         "🧩 Wikipedia lookup: validating collection entries and release dates…",
     ]
     session = SearchSession.from_user_data(context.user_data)

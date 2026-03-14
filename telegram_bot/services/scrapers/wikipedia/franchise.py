@@ -656,7 +656,7 @@ def _select_best_franchise_candidate(
 async def fetch_movie_franchise_details_from_wikipedia(
     movie_title: str,
     *,
-    progress_callback: Callable[[str], Awaitable[None]] | None = None,
+    progress_callback: Callable[[str, str | None], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict[str, Any]]] | None:
     """Attempts to find a franchise page and enumerate its films."""
     search_title = movie_title.strip()
@@ -678,7 +678,7 @@ async def fetch_movie_franchise_details_from_wikipedia(
     seen_candidates: set[str] = set()
 
     if progress_callback is not None:
-        await progress_callback("review")
+        await progress_callback("review", None)
 
     for term in search_variants:
         try:
@@ -711,17 +711,16 @@ async def fetch_movie_franchise_details_from_wikipedia(
             gathered_candidates.append(candidate)
 
     if progress_callback is not None and gathered_candidates:
-        await progress_callback("compare")
+        await progress_callback("compare", None)
 
     evaluated_candidates: list[_FranchiseCandidateResult] = []
     opened_candidate_page = False
-    scored_candidate_page = False
     for candidate in gathered_candidates:
         page = await _resolve_franchise_candidate(candidate)
         if not page:
             continue
         if progress_callback is not None and not opened_candidate_page:
-            await progress_callback("inspect")
+            await progress_callback("inspect", None)
             opened_candidate_page = True
         html = await _fetch_html_from_page(page)
         if not html:
@@ -729,9 +728,9 @@ async def fetch_movie_franchise_details_from_wikipedia(
         extraction = _extract_franchise_candidate_result(html)
         if not extraction:
             continue
-        if progress_callback is not None and not scored_candidate_page:
-            await progress_callback("score")
-            scored_candidate_page = True
+        if progress_callback is not None:
+            resolved_name = _sanitize_wikipedia_title(page.title.strip())
+            await progress_callback("score", resolved_name)
 
         soup = BeautifulSoup(html, "html.parser")
         resolved_name = _sanitize_wikipedia_title(page.title.strip())

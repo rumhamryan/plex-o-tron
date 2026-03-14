@@ -66,7 +66,7 @@ COLLECTION_RESOLUTION_OPTIONS = (("1080p", "1080p"), ("2160p", "2160p / 4K"))
 COLLECTION_CODEC_OPTIONS = (("x264", "x264 / AVC"), ("x265", "x265 / HEVC"))
 
 
-def _format_collection_lookup_phase(title: str, phase: str) -> str:
+def _format_collection_lookup_phase(title: str, phase: str, detail: str | None = None) -> str:
     escaped_title = escape_markdown(title, version=2)
     if phase == "find":
         return f"🧩 Wikipedia lookup: searching for *{escaped_title}* franchise…"
@@ -77,7 +77,13 @@ def _format_collection_lookup_phase(title: str, phase: str) -> str:
     if phase == "inspect":
         return "🧩 Wikipedia lookup: opening likely franchise pages…"
     if phase == "score":
-        return "🧩 Wikipedia lookup: extracting and scoring franchise film lists…"
+        if detail:
+            escaped_detail = escape_markdown(detail, version=2)
+            return (
+                "🧩 Wikipedia lookup: extracting films from "
+                f"*{escaped_detail}* and scoring the franchise match…"
+            )
+        return "🧩 Wikipedia lookup: extracting film lists and scoring franchise candidates…"
     return "🧩 Wikipedia lookup: validating collection entries and release dates…"
 
 
@@ -223,10 +229,10 @@ async def _start_collection_lookup(
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-    async def _update_lookup_phase(phase: str) -> None:
+    async def _update_lookup_phase(phase: str, detail: str | None = None) -> None:
         await safe_edit_message(
             status_message,
-            text=_format_collection_lookup_phase(display_title, phase),
+            text=_format_collection_lookup_phase(display_title, phase, detail),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 

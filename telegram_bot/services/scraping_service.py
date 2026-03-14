@@ -247,7 +247,7 @@ async def fetch_movie_years_from_wikipedia(
 async def fetch_movie_franchise_details(
     movie_title: str,
     *,
-    progress_callback: Callable[[str], Awaitable[None]] | None = None,
+    progress_callback: Callable[[str, str | None], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict[str, Any]]] | None:
     """Returns a franchise name and list of movies, when available."""
     normalized_title = _display_title(movie_title)
