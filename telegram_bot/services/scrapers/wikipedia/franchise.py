@@ -714,16 +714,24 @@ async def fetch_movie_franchise_details_from_wikipedia(
         await progress_callback("compare")
 
     evaluated_candidates: list[_FranchiseCandidateResult] = []
+    opened_candidate_page = False
+    scored_candidate_page = False
     for candidate in gathered_candidates:
         page = await _resolve_franchise_candidate(candidate)
         if not page:
             continue
+        if progress_callback is not None and not opened_candidate_page:
+            await progress_callback("inspect")
+            opened_candidate_page = True
         html = await _fetch_html_from_page(page)
         if not html:
             continue
         extraction = _extract_franchise_candidate_result(html)
         if not extraction:
             continue
+        if progress_callback is not None and not scored_candidate_page:
+            await progress_callback("score")
+            scored_candidate_page = True
 
         soup = BeautifulSoup(html, "html.parser")
         resolved_name = _sanitize_wikipedia_title(page.title.strip())

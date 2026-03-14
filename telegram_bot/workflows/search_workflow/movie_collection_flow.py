@@ -74,6 +74,10 @@ def _format_collection_lookup_phase(title: str, phase: str) -> str:
         return "🧩 Wikipedia lookup: reviewing Wikipedia franchise candidates…"
     if phase == "compare":
         return "🧩 Wikipedia lookup: comparing likely franchise pages…"
+    if phase == "inspect":
+        return "🧩 Wikipedia lookup: opening likely franchise pages…"
+    if phase == "score":
+        return "🧩 Wikipedia lookup: extracting and scoring franchise film lists…"
     return "🧩 Wikipedia lookup: validating collection entries and release dates…"
 
 

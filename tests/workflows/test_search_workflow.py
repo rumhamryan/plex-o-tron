@@ -218,6 +218,8 @@ async def test_collection_lookup_handles_missing_franchise(
         if progress_callback is not None:
             await progress_callback("review")
             await progress_callback("compare")
+            await progress_callback("inspect")
+            await progress_callback("score")
         return None
 
     mocker.patch(
@@ -257,6 +259,12 @@ async def test_collection_lookup_handles_missing_franchise(
     assert edit_mock.await_args_list[1].kwargs["text"] == (
         "🧩 Wikipedia lookup: comparing likely franchise pages…"
     )
+    assert edit_mock.await_args_list[2].kwargs["text"] == (
+        "🧩 Wikipedia lookup: opening likely franchise pages…"
+    )
+    assert edit_mock.await_args_list[3].kwargs["text"] == (
+        "🧩 Wikipedia lookup: extracting and scoring franchise film lists…"
+    )
     assert "No franchise" in edit_mock.await_args.kwargs["text"]
 
 
@@ -279,6 +287,8 @@ async def test_collection_lookup_ignores_unreleased_titles(
         if progress_callback is not None:
             await progress_callback("review")
             await progress_callback("compare")
+            await progress_callback("inspect")
+            await progress_callback("score")
         return (
             "Saga",
             [
@@ -319,9 +329,11 @@ async def test_collection_lookup_ignores_unreleased_titles(
     assert (
         send_mock.await_args.args[2] == "🧩 Wikipedia lookup: searching for *Saga Entry* franchise…"
     )
-    assert [call.kwargs.get("text") for call in edit_mock.await_args_list[:3]] == [
+    assert [call.kwargs.get("text") for call in edit_mock.await_args_list[:5]] == [
         "🧩 Wikipedia lookup: reviewing Wikipedia franchise candidates…",
         "🧩 Wikipedia lookup: comparing likely franchise pages…",
+        "🧩 Wikipedia lookup: opening likely franchise pages…",
+        "🧩 Wikipedia lookup: extracting and scoring franchise film lists…",
         "🧩 Wikipedia lookup: validating collection entries and release dates…",
     ]
     session = SearchSession.from_user_data(context.user_data)
