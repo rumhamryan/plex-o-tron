@@ -77,8 +77,14 @@ _TRAILING_YEAR_QUALIFIER_PATTERN = re.compile(
     r"\s*\((?:18|19|20|21)\d{2}[^)]*\)\s*$",
     re.IGNORECASE,
 )
+_SINGLE_FILM_QUALIFIER_PATTERN = re.compile(
+    r"\(\s*(?:(?:18|19|20|21)\d{2}\s+film|film)\s*\)\s*$",
+    re.IGNORECASE,
+)
 _NEGATIVE_CANDIDATE_KEYWORDS = ("soundtrack", "album", "score", "song", "discography")
 _POSITIVE_CANDIDATE_KEYWORDS = ("franchise", "film series")
+_TITLE_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+_MAX_FRANCHISE_CANDIDATES = 6
 
 
 class _FranchiseScoreSignals(TypedDict):
@@ -101,6 +107,13 @@ class _FranchiseCandidateResult(TypedDict):
     source_kind: _FranchiseSourceKind
     score: float
     signals: _FranchiseScoreSignals
+
+
+class _RankedFranchiseSearchCandidate(TypedDict):
+    title: str
+    strong_match: bool
+    has_keyword: bool
+    title_score: int
 
 
 _SOURCE_KIND_SCORE_BONUS: dict[_FranchiseSourceKind, float] = {
@@ -129,12 +142,106 @@ def _compose_movie_key(
     return f"{base}-{fallback_idx}"
 
 
-def _candidate_match_flags(candidate_title: str, normalized_query: str) -> tuple[bool, bool]:
-    candidate_norm = _normalize_for_comparison(candidate_title)
-    matches_query = bool(normalized_query) and normalized_query in candidate_norm
-    lowered = candidate_title.casefold()
-    has_keyword = any(keyword in lowered for keyword in _FRANCHISE_KEYWORDS)
-    return matches_query, has_keyword
+def _title_tokens(value: str) -> tuple[str, ...]:
+    return tuple(_TITLE_TOKEN_PATTERN.findall((value or "").casefold()))
+
+
+def _exact_franchise_title_variants(search_title: str) -> set[str]:
+    base = search_title.strip()
+    if not base:
+        return set()
+    return {
+        _normalize_for_comparison(variant)
+        for variant in (
+            base,
+            f"{base} film series",
+            f"{base} franchise",
+            f"{base} cinematic universe",
+            f"{base} film universe",
+            f"List of {base} films",
+        )
+    }
+
+
+def _rank_franchise_search_candidates(
+    search_title: str, candidates: list[str]
+) -> list[_RankedFranchiseSearchCandidate]:
+    query_norm = _normalize_for_comparison(search_title)
+    query_tokens = _title_tokens(search_title)
+    exact_variants = _exact_franchise_title_variants(search_title)
+    if not query_norm or not query_tokens:
+        return []
+
+    ranked: list[_RankedFranchiseSearchCandidate] = []
+    seen_titles: set[str] = set()
+    for raw_candidate in candidates:
+        candidate_title = raw_candidate.strip()
+        if not candidate_title or candidate_title in seen_titles:
+            continue
+
+        candidate_norm = _normalize_for_comparison(candidate_title)
+        candidate_tokens = _title_tokens(candidate_title)
+        if not candidate_norm or not candidate_tokens:
+            continue
+
+        token_set = set(candidate_tokens)
+        if (
+            not all(token in token_set for token in query_tokens)
+            and candidate_norm not in exact_variants
+        ):
+            continue
+
+        lowered = candidate_title.casefold()
+        has_keyword = any(keyword in lowered for keyword in _FRANCHISE_KEYWORDS)
+        strong_match = candidate_norm in exact_variants
+        has_negative_keyword = any(keyword in lowered for keyword in _NEGATIVE_CANDIDATE_KEYWORDS)
+        single_film_candidate = bool(_SINGLE_FILM_QUALIFIER_PATTERN.search(candidate_title))
+
+        if (has_negative_keyword or single_film_candidate) and not strong_match:
+            continue
+
+        title_score = 0
+        if strong_match:
+            title_score += 120
+        elif candidate_tokens[: len(query_tokens)] == query_tokens:
+            title_score += 70
+        elif candidate_norm.startswith(query_norm):
+            title_score += 50
+        else:
+            title_score += 30
+
+        if has_keyword:
+            title_score += 25
+        if has_negative_keyword:
+            title_score -= 60
+        if single_film_candidate:
+            title_score -= 40
+
+        extra_tokens = max(0, len(candidate_tokens) - len(query_tokens) - 2)
+        title_score -= extra_tokens * 5
+        if title_score <= 0:
+            continue
+
+        seen_titles.add(candidate_title)
+        ranked.append(
+            {
+                "title": candidate_title,
+                "strong_match": strong_match,
+                "has_keyword": has_keyword,
+                "title_score": title_score,
+            }
+        )
+
+    return sorted(
+        ranked,
+        key=lambda item: (
+            item["strong_match"],
+            item["title_score"],
+            item["has_keyword"],
+            -len(_title_tokens(item["title"])),
+        ),
+        reverse=True,
+    )
 
 
 def _looks_like_season_release(label: str) -> bool:
@@ -667,14 +774,13 @@ async def fetch_movie_franchise_details_from_wikipedia(
     if cache_key in _WIKI_FRANCHISE_CACHE:
         return _WIKI_FRANCHISE_CACHE[cache_key]
 
-    normalized_query = _normalize_for_comparison(search_title)
     search_variants = [
         f"{search_title} film series",
         f"{search_title} franchise",
         f"List of {search_title} films",
         search_title,
     ]
-    gathered_candidates: list[str] = []
+    raw_candidates: list[str] = []
     seen_candidates: set[str] = set()
 
     if progress_callback is not None:
@@ -686,29 +792,19 @@ async def fetch_movie_franchise_details_from_wikipedia(
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"[WIKI] Franchise search failed for '{term}': {exc}")
             search_results = []
-        filtered: list[tuple[str, bool]] = []
         for candidate in search_results or []:
             if candidate in seen_candidates:
                 continue
-            matches_query, has_keyword = _candidate_match_flags(candidate, normalized_query)
-            if not matches_query:
-                continue
-            filtered.append((candidate, has_keyword))
-
-        if not filtered:
-            continue
-
-        prioritized = [item for item in filtered if item[1]]
-        fallbacks = [item for item in filtered if not item[1]]
-        ordered_candidates = prioritized if prioritized else filtered
-        if prioritized and fallbacks:
-            ordered_candidates = prioritized + fallbacks
-
-        for candidate, _ in ordered_candidates:
-            if candidate in seen_candidates:
-                continue
             seen_candidates.add(candidate)
-            gathered_candidates.append(candidate)
+            raw_candidates.append(candidate)
+
+    ranked_candidates = _rank_franchise_search_candidates(search_title, raw_candidates)
+    strong_candidates = [candidate for candidate in ranked_candidates if candidate["strong_match"]]
+    if strong_candidates:
+        ranked_candidates = strong_candidates
+    gathered_candidates = [
+        candidate["title"] for candidate in ranked_candidates[:_MAX_FRANCHISE_CANDIDATES]
+    ]
 
     if progress_callback is not None and gathered_candidates:
         await progress_callback("compare", None)

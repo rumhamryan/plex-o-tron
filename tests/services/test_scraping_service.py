@@ -9,6 +9,7 @@ import wikipedia
 from bs4 import BeautifulSoup
 from telegram_bot.services import scraping_service
 from telegram_bot.services.scrapers import wikipedia as wiki_module
+from telegram_bot.services.scrapers.wikipedia import franchise as wiki_franchise_module
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -509,6 +510,50 @@ def test_score_franchise_candidate_rewards_dated_movies_over_title_only_entries(
     assert "movies:dated=3" not in title_only_score["signals"]["positive"]
 
 
+def test_rank_franchise_search_candidates_prefers_franchise_variants_and_filters_noise():
+    ranked = wiki_franchise_module._rank_franchise_search_candidates(
+        "The Equalizer",
+        [
+            "The Equalizer (2014 film)",
+            "The Equalizer (film series)",
+            "The Equalizer franchise",
+            "The Equalizer soundtrack",
+            "Equalizer",
+            "The Equalizer anthology collection",
+        ],
+    )
+
+    ranked_titles = [candidate["title"] for candidate in ranked]
+    assert set(ranked_titles[:2]) == {
+        "The Equalizer (film series)",
+        "The Equalizer franchise",
+    }
+    assert "The Equalizer (2014 film)" not in ranked_titles
+    assert "The Equalizer soundtrack" not in ranked_titles
+    assert "Equalizer" not in ranked_titles
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_caps_page_resolution_to_top_candidates(mocker):
+    candidates = [f"Movie Saga anthology volume {idx}" for idx in range(1, 11)]
+
+    search_mock = mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        side_effect=[candidates, [], [], []],
+    )
+    resolve_mock = mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(return_value=None),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia("Movie Saga")
+
+    assert result is None
+    assert search_mock.call_count == 4
+    assert resolve_mock.await_count == 6
+    assert [call.args[0] for call in resolve_mock.await_args_list] == candidates[:6]
+
+
 @pytest.mark.asyncio
 async def test_fetch_movie_franchise_details_accepts_infobox_only_page(mocker):
     page = mocker.Mock()
@@ -543,8 +588,6 @@ async def test_fetch_movie_franchise_details_accepts_infobox_only_page(mocker):
 
 @pytest.mark.asyncio
 async def test_fetch_movie_franchise_details_prefers_higher_scoring_later_candidate(mocker):
-    soundtrack_page = mocker.Mock()
-    soundtrack_page.title = "The Equalizer Ranking Test (soundtrack)"
     franchise_page = mocker.Mock()
     franchise_page.title = "The Equalizer Ranking Test (film series)"
 
@@ -555,13 +598,13 @@ async def test_fetch_movie_franchise_details_prefers_higher_scoring_later_candid
             "The Equalizer Ranking Test (film series)",
         ],
     )
-    mocker.patch(
+    resolve_mock = mocker.patch(
         "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
-        new=AsyncMock(side_effect=[soundtrack_page, franchise_page]),
+        new=AsyncMock(return_value=franchise_page),
     )
     mocker.patch(
         "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
-        new=AsyncMock(side_effect=[SOUNDTRACK_WITH_FILM_TABLE_HTML, FRANCHISE_SCORING_HTML]),
+        new=AsyncMock(return_value=FRANCHISE_SCORING_HTML),
     )
 
     result = await wiki_module.fetch_movie_franchise_details_from_wikipedia(
@@ -571,6 +614,7 @@ async def test_fetch_movie_franchise_details_prefers_higher_scoring_later_candid
     assert result is not None
     franchise_name, movies = result
     assert franchise_name == "The Equalizer Ranking Test (film series)"
+    resolve_mock.assert_awaited_once_with("The Equalizer Ranking Test (film series)")
     assert [movie["title"] for movie in movies] == [
         "The Equalizer",
         "The Equalizer 2",
@@ -663,8 +707,6 @@ async def test_fetch_movie_franchise_details_accepts_navbox_films_only_page(mock
 
 @pytest.mark.asyncio
 async def test_fetch_movie_franchise_details_skips_tv_season_release_tables(mocker):
-    tv_page = mocker.Mock()
-    tv_page.title = "The Equalizer (TV series)"
     film_page = mocker.Mock()
     film_page.title = "The Equalizer (film series)"
 
@@ -676,31 +718,23 @@ async def test_fetch_movie_franchise_details_skips_tv_season_release_tables(mock
         <tr><td>The Equalizer 3</td><td>September 1, 2023</td></tr>
     </table>
     """
-    season_html = """
-    <table class="wikitable">
-        <tr><th>Title</th><th>Release date</th></tr>
-        <tr><td>The First Season</td><td>September 23, 2008</td></tr>
-        <tr><td>The Second Season</td><td>September 1, 2009</td></tr>
-        <tr><td>The Third Season</td><td>September 7, 2010</td></tr>
-    </table>
-    """
-
     mocker.patch(
         "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
         return_value=["The Equalizer (TV series)", "The Equalizer (film series)"],
     )
-    mocker.patch(
+    resolve_mock = mocker.patch(
         "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
-        new=AsyncMock(side_effect=[tv_page, film_page]),
+        new=AsyncMock(return_value=film_page),
     )
     mocker.patch(
         "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
-        new=AsyncMock(side_effect=[season_html, movie_html]),
+        new=AsyncMock(return_value=movie_html),
     )
 
     result = await wiki_module.fetch_movie_franchise_details_from_wikipedia("The Equalizer")
 
     assert result is not None
+    resolve_mock.assert_awaited_once_with("The Equalizer (film series)")
     franchise_name, movies = result
     assert franchise_name == "The Equalizer (film series)"
     assert [movie["title"] for movie in movies] == [
