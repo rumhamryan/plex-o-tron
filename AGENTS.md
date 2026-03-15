@@ -3,29 +3,29 @@
 > A concise, agent-oriented guide to hacking on this project.
 > Format reference: AGENTS.md open format.
 
-SITUATION: You are an expert Python developer tasked with optimizing and maintaining a generic web scraper
-CHALLENGE: Implement based on INSTRUCTIONS.md if it exists, otherwise from the user prompt that prioritizes maintainability and readability
-AUDIENCE: Developers who will maintain this code in the future, including those who were not involved in initial development
+SITUATION: You are an expert Python developer maintaining a Telegram bot that searches, downloads, and organizes media for Plex.
+CHALLENGE: Implement based on INSTRUCTIONS.md if it exists, otherwise from the user prompt, with maintainability and readability first.
+AUDIENCE: Developers who will maintain this code in the future, including those who were not involved in initial development.
 FORMAT:
-- Use clear, descriptive naming conventions
-- Include meaningful comments explaining the "why" behind complex logic
-- Follow the principle of least surprise
-- Implement appropriate error handling with informative messages
-- Organize code with logical separation of concerns
+- Use clear, descriptive naming conventions.
+- Include meaningful comments explaining the "why" behind complex logic.
+- Follow the principle of least surprise.
+- Implement appropriate error handling with informative messages.
+- Organize code with logical separation of concerns.
 FOUNDATIONS:
-- Prioritize readability over clever optimizations
-- Include comprehensive input validation
-- Implement proper exception handling
-- Use consistent patterns throughout
-- Create modular components with clear responsibilities
-- Include unit tests that document expected behavior
+- Prioritize readability over clever optimizations.
+- Include comprehensive input validation.
+- Implement proper exception handling.
+- Use consistent patterns throughout.
+- Create modular components with clear responsibilities.
+- Include unit tests that document expected behavior.
 
 ## Project snapshot
 
-- Name: **plex-o-tron-bot** (Telegram bot that searches, downloads, organizes media for Plex).
-- Primary entrypoint: 'telegram_bot/__main__.py' (registers handlers, loads config, starts polling).
-- Python: **3.12**.
-- Key libs: 'python-telegram-bot', 'libtorrent', 'beautifulsoup4', 'httpx', 'plexapi', 'thefuzz'.
+- Name: **plex-o-tron-bot** (Telegram bot that searches, downloads, organizes media, and integrates with Plex).
+- Primary entrypoint: `__main__.py` at the repository root (builds app, loads config, registers handlers, starts polling).
+- Python: **3.12+** (`requires-python = ">=3.12"`).
+- Key libs: `python-telegram-bot`, `libtorrent`, `beautifulsoup4`, `httpx`, `plexapi`, `thefuzz`, `PyYAML`, `wikipedia`.
 
 ## Setup commands
 
@@ -38,11 +38,12 @@ uv venv && .\.venv\Scripts\activate
 # 2) System deps (Linux, for libtorrent)
 sudo apt-get update && sudo apt-get install -y libtorrent-rasterbar-dev
 
-# 3) Sync dependencies from lockfile
+# 3) Sync dependencies from lockfile/project metadata
 uv pip sync pyproject.toml --extra dev
 
-# 4) Install pre-commit
+# 4) Install pre-commit hooks
 pre-commit install
+pre-commit install --hook-type commit-msg --hook-type post-commit
 ```
 
 Linux libtorrent headers are required for the Python package to function.
@@ -54,35 +55,42 @@ Linux libtorrent headers are required for the Python package to function.
 uv run __main__.py
 ```
 
-- The bot reads **'config.ini'** (see 'Configuration'). It will exit if required fields are missing.
-- Handlers are registered in 'register_handlers' and polling begins.
+- The bot reads **`config.ini`** from the repo root and exits if required fields are missing.
+- App startup wires `post_init`/`post_shutdown` for download resume + persistence.
 
 ## Tests
 
 ```bash
 uv run pre-commit run --all-files
 ```
-- Code quality hooks and unit tests.
-- Unit tests cover handlers, services (download, scraping, torrent, Plex), workflows, and utilities.
+
+- This runs lint/format/type/test hooks (`ruff`, `ruff-format`, `mypy`, `pytest`, etc.).
+- You can run `uv run pytest` directly for faster feedback during iteration.
 
 ## Code style & tooling
 
-- **Ruff** (lint + format, line length 100).
-- **Pyright** configured for Python 3.12.
-- **pre-commit** is used to enforce style and quality. Hooks are configured for tools like ruff, mypy, and pytest.
-- All pre-commit hooks must pass before code is submitted.
+- **Ruff** for lint + format (`line-length = 100`).
+- **Mypy** is configured in `pyproject.toml` and enforced by pre-commit.
+- **pre-commit** is the quality gate and also runs `uv-lock`.
+- `pyright` exists as a dev dependency, but the enforced type-check hook is mypy.
 
 ## Project structure (agent-relevant)
 
-- 'telegram_bot/config.py' — Loads/validates config, creates save paths, logging, constants. **Do not** hardcode secrets.
-- 'telegram_bot/state.py' — Persists/resumes active & queued downloads to 'persistence.json'. Avoid serializing non-JSON objects; helper does this already.
-- 'telegram_bot/handlers/' — Commands ('help', 'search', 'status', 'restart', 'delete'), callbacks, errors, message routing. Keep UI text minimal and use MarkdownV2/HTML as coded.
-- 'telegram_bot/services/' — Auth, torrent/download/media/plex/scraping/search logic. Maintain separation: parsing/scraping vs. orchestration vs. UI.
-- 'telegram_bot/utils.py' — Helpers (byte formatting, safe message editing, torrent name parsing). Reuse instead of duplicating.
+- `__main__.py` — Application bootstrap and handler registration.
+- `telegram_bot/config.py` — Loads/validates config, creates save paths, logging, constants. **Do not** hardcode secrets.
+- `telegram_bot/state.py` — Persists/resumes active and queued downloads to `persistence.json`.
+- `telegram_bot/handlers/` — Command/callback/message/error handlers.
+- `telegram_bot/workflows/` — User interaction flows (`search_workflow`, `delete_workflow`) and parsing/session state.
+- `telegram_bot/ui/` — Bot-facing messages/views/confirmation prompts.
+- `telegram_bot/services/` — Auth, torrent/download/media/plex/search/scraping logic (mostly package-based modules).
+- `telegram_bot/services/scrapers/` — Site scrapers and shared generic scraping strategies.
+- `telegram_bot/domain/types.py` — Shared domain-level types.
+- `telegram_bot/utils.py` — Common helpers (formatting, message edit/send safety, torrent parsing).
+- `telegram_bot/utility_scripts/` — Setup/restart/config-generation scripts.
 
 ## Configuration
 
-Create **'config.ini'** (values shown here are placeholders):
+Create **`config.ini`** (values shown here are placeholders):
 
 ```ini
 [telegram]
@@ -99,46 +107,61 @@ movies_save_path = /path/to/movies
 tv_shows_save_path = /path/to/tv
 
 [search]
-# JSON blobs (websites, preferences); see template
+# JSON blobs (websites, preferences); see config.ini.template
 ```
 
 Notes for agents:
-- The '[search]' section embeds multi-line JSON for 'websites' and 'preferences'; **do not break the JSON**. Parsing is custom in 'config.py::_parse_search_section'.
-- 'get_configuration()' will **mkdir** any missing save paths.
+- The `[search]` section embeds multi-line JSON for `websites` and `preferences`; **do not break JSON formatting**.
+- Parsing is custom in `config.py::_parse_search_section`.
+- `get_configuration()` creates missing save directories automatically.
+- If `[search]` is missing/empty, search features are disabled.
 
 ## Commands & UX (what the bot exposes)
 
-- '/search' → interactive flow: choose Movie/TV → collect fields → present scored results.
-- Sending a **magnet/URL** triggers link ingestion → parse/validate torrent → confirmation prompt.
-- '/status' checks Plex connectivity. '/delete' opens guided deletion flow (movie / tv / season / episode) with confirmation.
+Commands are case-insensitive and work with or without a leading slash:
+- `help` / `start` — Help and command list.
+- `search` — Interactive Movie/TV flow (includes movie collection/franchise paths).
+- `delete` — Guided deletion flow with confirmation.
+- `status` — Plex connectivity check.
+- `restart` — Plex service restart attempt.
+- `links` — Shows known torrent/tracker source links.
+
+Additional behavior:
+- Sending a magnet link or URL triggers link ingestion, parsing/validation, and confirmation prompts.
+- Workflow routing depends on `context.user_data["active_workflow"]`.
 
 ## Scraping & search (important behaviors)
 
-- Sites & preferences are configured in 'config.ini' under '[search]':
-  - Example sites: YTS (movies JSON API), 1337x/EZTV (HTML).
-- The codebase includes a **generic HTML scraping path** (strategies for tables/contextual search) and dedicated scrapers (e.g., YTS via JSON). Preserve consistent result shape and scoring.
+- Search sources and preferences are configured in `config.ini` under `[search]`.
+- The project uses both site-specific scrapers (`yts`, `tpb`, `1337x`, YAML-configured sites) and generic HTML strategies.
+- Preserve consistent result shape/scoring behavior when adding or changing scrapers.
 
 ## Persistence & shutdown
 
-- Active downloads and queues persist to **'persistence.json'** on shutdown and resume on startup via 'post_init'. Avoid storing unserializable objects; helpers strip them.
+- Active downloads and queues persist to **`persistence.json`** on shutdown and resume on startup via `post_init`/`post_shutdown`.
+- Avoid storing non-JSON objects in persisted structures; state helpers strip known non-serializable runtime fields.
 
 ## Security checklist (please follow)
 
-- **Do not commit secrets.** This repo currently includes a 'secrets.txt' with real tokens — **remove from VCS and rotate** all exposed tokens immediately.
-- Only allowlisted Telegram User IDs may interact (see 'ALLOWED_USER_IDS').
-- Keep logs free of tokens/PII; current logging is INFO-level and suppresses 'httpx' noise.
+- **Do not commit secrets** (tokens, IDs, local paths that expose private infrastructure).
+- Only allowlisted Telegram User IDs may interact (see `ALLOWED_USER_IDS` in bot data).
+- Keep logs free of tokens/PII; logging is INFO-level with noisy `httpx` logs suppressed.
+- If any credential-bearing file is discovered, remove it from VCS and rotate affected credentials.
 
 ## Conventions & gotchas
 
-- Prefer **MarkdownV2** or **HTML** exactly as implemented for messages; escaping matters.
-- Handler routing depends on 'context.user_data["active_workflow"]' being set ('search', 'delete'). Don’t forget to clear/cancel flows appropriately.
-- Large downloads: 'MAX_TORRENT_SIZE_GB = 10'. Respect 'ALLOWED_EXTENSIONS'.
+- Respect MarkdownV2/HTML parse modes; escaping errors break bot output.
+- Clear or reset workflow state when canceling/completing multi-step flows.
+- Size/format constraints are centralized:
+  - `MAX_TORRENT_SIZE_GIB = 21` (`MAX_TORRENT_SIZE_GB` remains as compatibility alias).
+  - `ALLOWED_EXTENSIONS = [".mkv", ".mp4"]`.
 
 ## What to do when adding features
 
-1. Add tests (look at existing test modules for patterns).
-2. Keep configurations in 'config.ini' (extend parser if you add new JSON blobs).
-3. Reuse utilities and UI helpers; don’t duplicate parsing or formatting.
-4. Ensure all pre-commit hooks pass before submitting your changes.
+1. Add or update tests (unit + workflow integration where relevant).
+2. Keep new user-facing behavior inside workflows/handlers and business logic inside services.
+3. Extend `config.ini` parsing only when necessary; preserve backward compatibility for existing keys.
+4. Reuse utilities/UI helpers instead of duplicating parsing/formatting/retry logic.
+5. Ensure `uv run pre-commit run --all-files` passes before submitting changes.
 
 ---
