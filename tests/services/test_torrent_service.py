@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock
 import pytest
 from telegram import InlineKeyboardMarkup
 from telegram_bot.services.torrent_service import fetch_metadata_from_magnet, process_user_input
-from telegram_bot.services.torrent_service.input_handlers import _handle_webpage_url
+from telegram_bot.services.torrent_service.input_handlers import (
+    _fetch_and_parse_magnet_details,
+    _handle_webpage_url,
+)
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -81,6 +84,7 @@ async def test_handle_webpage_url_no_links(mocker, context, make_message):
 async def test_handle_webpage_url_multiple_links(mocker, context, make_message):
     url = "https://example.com"
     progress = make_message()
+    context.user_data["link_prompt_message_id"] = 55
     magnet_links = ["magnet1", "magnet2"]
     mocker.patch(
         "telegram_bot.services.torrent_service.input_handlers.find_magnet_link_on_page",
@@ -124,6 +128,30 @@ async def test_handle_webpage_url_multiple_links(mocker, context, make_message):
     markup = kwargs["reply_markup"]
     assert isinstance(markup, InlineKeyboardMarkup)
     assert len(markup.inline_keyboard) == len(parsed_choices) + 1  # + Cancel button
+    context.bot.delete_message.assert_awaited_once_with(chat_id=progress.chat_id, message_id=55)
+    assert "link_prompt_message_id" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_fetch_and_parse_magnet_details_escapes_status_message(mocker, context, make_message):
+    progress = make_message()
+    context.bot_data["TORRENT_SESSION"] = object()
+    safe_mock = mocker.patch(
+        "telegram_bot.services.torrent_service.input_handlers.safe_edit_message",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.torrent_service.input_handlers._blocking_fetch_metadata",
+        return_value=None,
+    )
+
+    result = await _fetch_and_parse_magnet_details(["magnet1", "magnet2"], context, progress)
+
+    assert result == []
+    safe_mock.assert_awaited_once()
+    kwargs = safe_mock.await_args.kwargs
+    assert kwargs["parse_mode"] == "MarkdownV2"
+    assert kwargs["text"] == "Found 2 links\\. Fetching details\\.\\.\\."
 
 
 # -------- fetch_metadata_from_magnet ---------

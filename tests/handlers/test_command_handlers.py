@@ -27,6 +27,9 @@ async def test_launch_link_workflow_sets_active_state(context):
     assert context.user_data.get("active_workflow") == "link"
     assert context.user_data.get("link_prompt_message_id") is not None
     context.bot.send_message.assert_awaited_once()
+    sent_text = context.bot.send_message.await_args.kwargs["text"]
+    assert "\\.torrent" in sent_text
+    assert context.bot.send_message.await_args.kwargs["parse_mode"] == "MarkdownV2"
 
 
 @pytest.mark.asyncio

@@ -27,6 +27,27 @@ async def test_idle_dm_text_renders_home_menu(mocker, make_message, context):
 
 
 @pytest.mark.asyncio
+async def test_idle_dm_text_with_active_home_menu_is_ignored(mocker, make_message, context):
+    msg = make_message("hello")
+    update = Update(update_id=1, message=msg)
+    context.bot_data["home_menu_messages"] = {msg.chat_id: 42}
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    show_home_menu_mock.assert_not_called()
+    msg.get_bot().delete_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_active_search_text_routes_to_search_workflow(mocker, make_message, context):
     msg = make_message("query")
     update = Update(update_id=1, message=msg)
@@ -149,6 +170,7 @@ async def test_link_workflow_message_processes_input_waits_for_download_start_or
     msg = make_message("magnet:?xt=urn:btih:abcdef")
     update = Update(update_id=1, message=msg)
     context.user_data["active_workflow"] = "link"
+    context.user_data["link_prompt_message_id"] = 1234
 
     reply_msg = make_message(message_id=77)
     mocker.patch.object(Message, "reply_text", AsyncMock(return_value=reply_msg))
@@ -179,6 +201,8 @@ async def test_link_workflow_message_processes_input_waits_for_download_start_or
     validate_mock.assert_awaited_once_with("ti", reply_msg)
     confirm_mock.assert_awaited_once_with(reply_msg, context, "ti", {"type": "movie"})
     show_home_menu_mock.assert_not_called()
+    context.bot.delete_message.assert_awaited_once_with(chat_id=msg.chat_id, message_id=1234)
+    assert "link_prompt_message_id" not in context.user_data
     assert context.user_data.get("active_workflow") == "link"
 
 
@@ -214,6 +238,7 @@ async def test_non_link_text_inside_link_workflow_stays_in_workflow(mocker, make
 async def test_handle_link_message_direct_invocation(mocker, make_message, context):
     msg = make_message("magnet:?xt=urn:btih:abcdef")
     update = Update(update_id=1, message=msg)
+    context.user_data["link_prompt_message_id"] = 2222
 
     reply_msg = make_message(message_id=79)
     mocker.patch.object(Message, "reply_text", AsyncMock(return_value=reply_msg))
@@ -237,4 +262,5 @@ async def test_handle_link_message_direct_invocation(mocker, make_message, conte
     await handle_link_message(update, context)
 
     process_mock.assert_awaited_once_with("magnet:?xt=urn:btih:abcdef", context, reply_msg)
+    context.bot.delete_message.assert_awaited_once_with(chat_id=msg.chat_id, message_id=2222)
     show_home_menu_mock.assert_not_called()

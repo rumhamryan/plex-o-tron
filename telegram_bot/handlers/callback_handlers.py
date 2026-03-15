@@ -1,3 +1,4 @@
+import libtorrent as lt
 from telegram import Message, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -12,12 +13,14 @@ from ..services.download_manager import (
     handle_cancel_request,
     handle_pause_resume,
 )
+from ..services.media_manager import validate_and_enrich_torrent
 from ..ui.home_menu import (
     delete_home_menu_message,
     get_home_menu_message_id,
     set_home_menu_message_id,
     show_home_menu,
 )
+from ..ui.views import send_confirmation_prompt
 from ..workflows.delete_workflow import handle_delete_buttons
 from ..workflows.navigation import return_to_home
 from ..workflows.search_workflow import handle_reject_season_pack, handle_search_buttons
@@ -43,6 +46,74 @@ HOME_ACTIONS = {
 
 def _is_private_message(message: Message | None) -> bool:
     return bool(message and message.chat and message.chat.type == "private")
+
+
+async def _handle_select_magnet_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query or not isinstance(query.message, Message):
+        return
+
+    if context.user_data is None:
+        context.user_data = {}
+    user_data = context.user_data
+    raw_choices = user_data.get("temp_magnet_choices_details")
+    if not isinstance(raw_choices, list):
+        await query.edit_message_text(
+            text="This action has expired\\. Please send the link again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    try:
+        selected_index = int((query.data or "").split("_")[2])
+    except (ValueError, IndexError):
+        await query.edit_message_text(
+            text="❌ Invalid selection\\. Please send the link again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    selected_choice = next(
+        (
+            item
+            for item in raw_choices
+            if isinstance(item, dict) and int(item.get("index", -1)) == selected_index
+        ),
+        None,
+    )
+    if not isinstance(selected_choice, dict):
+        await query.edit_message_text(
+            text="This selection has expired\\. Please send the link again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    bencoded_metadata = selected_choice.get("bencoded_metadata")
+    magnet_link = selected_choice.get("magnet_link")
+    if not isinstance(bencoded_metadata, (bytes, bytearray)) or not isinstance(magnet_link, str):
+        await query.edit_message_text(
+            text="❌ Unable to use that selection\\. Please send the link again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    user_data.pop("temp_magnet_choices_details", None)
+    user_data["pending_magnet_link"] = magnet_link
+
+    try:
+        ti = lt.torrent_info(bytes(bencoded_metadata))  # type: ignore[arg-type]
+    except Exception:
+        await query.edit_message_text(
+            text="❌ Could not read torrent metadata\\. Please send the link again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    error_message, parsed_info = await validate_and_enrich_torrent(ti, query.message)
+    if error_message or not parsed_info:
+        return
+
+    await send_confirmation_prompt(query.message, context, ti, parsed_info)
 
 
 async def _route_home_action(
@@ -136,6 +207,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         started = await add_collection_to_queue(update, context)
         if started and isinstance(query.message, Message):
             await show_home_menu(context, query.message.chat_id)
+    elif action.startswith("select_magnet_"):
+        await _handle_select_magnet_choice(update, context)
     elif action == "reject_season_pack":
         await handle_reject_season_pack(update, context)
 

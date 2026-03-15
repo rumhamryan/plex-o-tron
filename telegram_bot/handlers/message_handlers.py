@@ -8,7 +8,7 @@ from ..config import logger
 from ..services.auth_service import is_user_authorized
 from ..services.media_manager import validate_and_enrich_torrent
 from ..services.torrent_service import process_user_input
-from ..ui.home_menu import show_home_menu
+from ..ui.home_menu import get_home_menu_message_id, show_home_menu
 from ..ui.views import send_confirmation_prompt
 from ..workflows.delete_workflow import handle_delete_workflow
 from ..workflows.navigation import clear_all_workflow_state, get_user_data_store
@@ -27,6 +27,25 @@ async def _delete_user_message_before_menu(message: Message) -> None:
         await message.delete()
     except TelegramError:
         pass
+
+
+async def _delete_link_example_prompt(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int) -> None:
+    """Best-effort removal of the Link workflow example prompt message."""
+    user_data = get_user_data_store(context)
+    prompt_message_id = user_data.pop("link_prompt_message_id", None)
+    if not isinstance(prompt_message_id, int):
+        return
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+    except TelegramError:
+        pass
+
+
+def _has_active_home_menu(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
+    application = getattr(context, "application", None)
+    if application is None:
+        return False
+    return get_home_menu_message_id(application, chat_id) is not None
 
 
 async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -59,6 +78,8 @@ async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     ti = await process_user_input(text, context, progress_message)
     if not ti:
         return
+
+    await _delete_link_example_prompt(context, chat_id=chat.id)
 
     error_message, parsed_info = await validate_and_enrich_torrent(ti, progress_message)
     if error_message or not parsed_info:
@@ -123,6 +144,9 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     clear_all_workflow_state(user_data)
+    if _has_active_home_menu(context, chat.id):
+        await _delete_user_message_before_menu(message)
+        return
     await _delete_user_message_before_menu(message)
     await show_home_menu(context, chat.id)
 

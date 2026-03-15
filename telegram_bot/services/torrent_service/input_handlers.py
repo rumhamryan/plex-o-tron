@@ -149,6 +149,16 @@ async def _handle_webpage_url(
         )
         return None
 
+    prompt_message_id = context.user_data.pop("link_prompt_message_id", None)
+    if isinstance(prompt_message_id, int):
+        try:
+            await context.bot.delete_message(
+                chat_id=progress_message.chat_id,
+                message_id=prompt_message_id,
+            )
+        except Exception:
+            pass
+
     context.user_data["temp_magnet_choices_details"] = parsed_choices
 
     first_choice_name = parsed_choices[0]["name"]
@@ -182,9 +192,13 @@ async def _fetch_and_parse_magnet_details(
 ) -> list[dict[str, Any]]:
     """Fetches metadata for multiple magnet links in parallel and parses their details."""
     ses = context.bot_data["TORRENT_SESSION"]
+    status_text = escape_markdown(
+        f"Found {len(magnet_links)} links. Fetching details...",
+        version=2,
+    )
     await safe_edit_message(
         progress_message,
-        text=f"Found {len(magnet_links)} links. Fetching details\\.\\.\\.",
+        text=status_text,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 

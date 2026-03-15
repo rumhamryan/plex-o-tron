@@ -316,3 +316,46 @@ async def test_confirm_download_does_not_rerender_home_when_queued_only(
 
     queue_mock.assert_awaited_once_with(update, context)
     show_home_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_select_magnet_callback_routes_to_confirmation(
+    mocker, make_callback_query, context, make_message
+):
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    message = make_message(message_id=41)
+    query = make_callback_query("select_magnet_0", message)
+    update = Update(update_id=1, callback_query=query)
+
+    context.user_data["temp_magnet_choices_details"] = [
+        {
+            "index": 0,
+            "magnet_link": "magnet:?xt=urn:btih:abc",
+            "bencoded_metadata": b"meta",
+        }
+    ]
+
+    mocker.patch(
+        "telegram_bot.handlers.callback_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    torrent_info_mock = mocker.patch(
+        "telegram_bot.handlers.callback_handlers.lt.torrent_info",
+        return_value="ti",
+    )
+    validate_mock = mocker.patch(
+        "telegram_bot.handlers.callback_handlers.validate_and_enrich_torrent",
+        AsyncMock(return_value=(None, {"type": "movie"})),
+    )
+    confirm_mock = mocker.patch(
+        "telegram_bot.handlers.callback_handlers.send_confirmation_prompt",
+        AsyncMock(),
+    )
+
+    await button_handler(update, context)
+
+    torrent_info_mock.assert_called_once_with(b"meta")
+    validate_mock.assert_awaited_once_with("ti", message)
+    confirm_mock.assert_awaited_once_with(message, context, "ti", {"type": "movie"})
+    assert context.user_data.get("pending_magnet_link") == "magnet:?xt=urn:btih:abc"
+    assert "temp_magnet_choices_details" not in context.user_data

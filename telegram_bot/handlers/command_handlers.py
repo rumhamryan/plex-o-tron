@@ -85,13 +85,15 @@ async def launch_link_workflow(
     store["active_workflow"] = "link"
 
     keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+    prompt_text = escape_markdown(
+        "🔗 Send a magnet link, a .torrent URL, or a webpage URL and I'll analyze it.\n\n"
+        "Example: magnet:?xt=urn:btih:...",
+        version=2,
+    )
     prompt = await safe_send_message(
         context.bot,
         chat_id=chat_id,
-        text=(
-            "🔗 Send a magnet link, a `.torrent` URL, or a webpage URL and I'll analyze it.\n\n"
-            "Example: `magnet:?xt=urn:btih:...`"
-        ),
+        text=prompt_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
