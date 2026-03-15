@@ -61,11 +61,6 @@ async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await send_confirmation_prompt(progress_message, context, ti, parsed_info)
 
-    # Handoff complete: keep pending download context, but leave link workflow mode.
-    user_data.pop("active_workflow", None)
-    user_data.pop("link_prompt_message_id", None)
-    await show_home_menu(context, chat.id)
-
 
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """

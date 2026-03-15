@@ -99,7 +99,7 @@ async def test_idle_magnet_text_does_not_bypass_home_menu(mocker, make_message, 
 
 
 @pytest.mark.asyncio
-async def test_link_workflow_message_processes_input_and_returns_home(
+async def test_link_workflow_message_processes_input_waits_for_download_start_or_cancel(
     mocker, make_message, context
 ):
     msg = make_message("magnet:?xt=urn:btih:abcdef")
@@ -134,8 +134,8 @@ async def test_link_workflow_message_processes_input_and_returns_home(
     process_mock.assert_awaited_once_with("magnet:?xt=urn:btih:abcdef", context, reply_msg)
     validate_mock.assert_awaited_once_with("ti", reply_msg)
     confirm_mock.assert_awaited_once_with(reply_msg, context, "ti", {"type": "movie"})
-    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
-    assert context.user_data.get("active_workflow") is None
+    show_home_menu_mock.assert_not_called()
+    assert context.user_data.get("active_workflow") == "link"
 
 
 @pytest.mark.asyncio
@@ -193,4 +193,4 @@ async def test_handle_link_message_direct_invocation(mocker, make_message, conte
     await handle_link_message(update, context)
 
     process_mock.assert_awaited_once_with("magnet:?xt=urn:btih:abcdef", context, reply_msg)
-    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+    show_home_menu_mock.assert_not_called()

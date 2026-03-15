@@ -13,6 +13,7 @@ from ..services.download_manager import (
     handle_pause_resume,
 )
 from ..ui.home_menu import (
+    delete_home_menu_message,
     get_home_menu_message_id,
     set_home_menu_message_id,
     show_home_menu,
@@ -72,6 +73,7 @@ async def _route_home_action(
         set_home_menu_message_id(application, chat_id, query.message.message_id)
 
     await query.answer()
+    await delete_home_menu_message(context, chat_id)
 
     if action == "home_search":
         await launch_search_workflow(context, chat_id)
@@ -79,10 +81,13 @@ async def _route_home_action(
         await launch_delete_workflow(context, chat_id)
     elif action == "home_status":
         await launch_plex_status(context, chat_id)
+        await show_home_menu(context, chat_id)
     elif action == "home_restart":
         await launch_plex_restart(context, chat_id)
+        await show_home_menu(context, chat_id)
     elif action == "home_help":
         await launch_help(context, chat_id)
+        await show_home_menu(context, chat_id)
     elif action == "home_link":
         await launch_link_workflow(context, chat_id)
     elif action == "home_refresh":
@@ -120,11 +125,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await handle_delete_buttons(update, context)
 
     elif action == "confirm_download":
-        await add_download_to_queue(update, context)
+        started = await add_download_to_queue(update, context)
+        if started and isinstance(query.message, Message):
+            await show_home_menu(context, query.message.chat_id)
     elif action == "confirm_season_download":
-        await add_season_to_queue(update, context)
+        started = await add_season_to_queue(update, context)
+        if started and isinstance(query.message, Message):
+            await show_home_menu(context, query.message.chat_id)
     elif action == "confirm_collection_download":
-        await add_collection_to_queue(update, context)
+        started = await add_collection_to_queue(update, context)
+        if started and isinstance(query.message, Message):
+            await show_home_menu(context, query.message.chat_id)
     elif action == "reject_season_pack":
         await handle_reject_season_pack(update, context)
 

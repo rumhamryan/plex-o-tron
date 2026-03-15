@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, cast
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -95,7 +95,7 @@ async def _start_download_task(download_data: DownloadData, application) -> None
     )
 
 
-async def add_download_to_queue(update, context):
+async def add_download_to_queue(update, context) -> bool:
     """Adds a confirmed download to the user's queue."""
     from . import process_queue_for_user, safe_edit_message, save_state
 
@@ -109,7 +109,7 @@ async def add_download_to_queue(update, context):
             text=MSG_ACTION_EXPIRED_SEND_LINK,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return False
 
     active_downloads = require_active_downloads(context.bot_data)
     download_queues = require_download_queues(context.bot_data)
@@ -142,6 +142,7 @@ async def add_download_to_queue(update, context):
     is_truly_active = chat_id_str in active_downloads and not active_downloads[chat_id_str].get(
         "requeued"
     )
+    started_download = not is_truly_active
     if is_truly_active:
         message_text = format_download_queue_position(position)
     else:
@@ -155,9 +156,10 @@ async def add_download_to_queue(update, context):
     )
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
     await process_queue_for_user(chat_id, context.application)
+    return started_download
 
 
-async def add_season_to_queue(update, context):
+async def add_season_to_queue(update, context) -> bool:
     """Adds an entire season's torrents to the queue."""
     from . import process_queue_for_user, safe_edit_message, save_state
 
@@ -171,11 +173,14 @@ async def add_season_to_queue(update, context):
             text=MSG_ACTION_EXPIRED_START_OVER,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return False
 
     active_downloads = require_active_downloads(context.bot_data)
     download_queues = require_download_queues(context.bot_data)
     chat_id_str = str(chat_id)
+    had_active_download = chat_id_str in active_downloads and not active_downloads[chat_id_str].get(
+        "requeued"
+    )
 
     if chat_id_str in active_downloads and active_downloads[chat_id_str].get("is_paused"):
         active_data = active_downloads[chat_id_str]
@@ -244,9 +249,10 @@ async def add_season_to_queue(update, context):
     )
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
     await process_queue_for_user(chat_id, context.application)
+    return (not had_active_download) and added > 0
 
 
-async def add_collection_to_queue(update, context):
+async def add_collection_to_queue(update, context) -> bool:
     """Queues all pending collection downloads."""
     from . import process_queue_for_user, safe_edit_message, save_state
 
@@ -260,10 +266,13 @@ async def add_collection_to_queue(update, context):
             text=MSG_ACTION_EXPIRED_RESTART_COLLECTION,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return False
 
     items = pending_payload.get("items") or []
-    franchise_meta = pending_payload.get("franchise") or {}
+    franchise_raw = pending_payload.get("franchise")
+    franchise_meta = (
+        cast(BatchCollectionMeta, franchise_raw) if isinstance(franchise_raw, dict) else None
+    )
     owned_summaries = list(pending_payload.get("owned_summaries") or [])
     if not items and not owned_summaries:
         await safe_edit_message(
@@ -271,11 +280,14 @@ async def add_collection_to_queue(update, context):
             text=MSG_NO_MOVIES_SELECTED,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return False
 
     active_downloads = require_active_downloads(context.bot_data)
     download_queues = require_download_queues(context.bot_data)
     chat_id_str = str(chat_id)
+    had_active_download = chat_id_str in active_downloads and not active_downloads[chat_id_str].get(
+        "requeued"
+    )
 
     if chat_id_str in active_downloads and active_downloads[chat_id_str].get("is_paused"):
         active_data = active_downloads[chat_id_str]
@@ -290,20 +302,22 @@ async def add_collection_to_queue(update, context):
     batch_id = f"collection-{int(time.time())}-{chat_id}"
     batches: dict[str, BatchMeta] = get_or_create_download_batches(context.bot_data)
     initial_summaries = list(owned_summaries)
-    batches[batch_id] = {
+    batch_meta: BatchMeta = {
         "total": len(items),
         "done": 0,
         "media_type": "movie",
         "scanned": False,
-        "collection": franchise_meta,
         "summaries": initial_summaries,
     }
+    if franchise_meta is not None:
+        batch_meta["collection"] = franchise_meta
+    batches[batch_id] = batch_meta
 
     if not items:
         await _finalize_owned_collection_batch(
             query, context, batch_id, franchise_meta, initial_summaries
         )
-        return
+        return False
 
     for entry in items:
         link = entry.get("link")
@@ -343,6 +357,7 @@ async def add_collection_to_queue(update, context):
     )
     save_state(PERSISTENCE_FILE, active_downloads, download_queues)
     await process_queue_for_user(chat_id, context.application)
+    return (not had_active_download) and len(items) > 0
 
 
 async def _finalize_owned_collection_batch(
