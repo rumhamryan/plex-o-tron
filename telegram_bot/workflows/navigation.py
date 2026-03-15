@@ -9,7 +9,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from ..config import logger
-from ..ui.home_menu import show_home_menu
+from ..ui.home_menu import delete_home_menu_message, show_home_menu
 from ..utils import safe_send_message
 from .search_session import clear_search_session
 
@@ -70,6 +70,7 @@ async def return_to_home(
     source_message: Message | None = None,
     message_text: str | None = None,
     message_parse_mode: str | None = ParseMode.MARKDOWN_V2,
+    replace_home_menu: bool = False,
 ) -> None:
     """
     Resets conversational workflow state and renders the shared home menu.
@@ -84,6 +85,9 @@ async def return_to_home(
             await source_message.delete()
         except TelegramError:
             pass
+
+    if replace_home_menu:
+        await delete_home_menu_message(context, chat_id)
 
     if message_text:
         await safe_send_message(

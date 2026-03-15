@@ -7,6 +7,7 @@ from telegram.error import BadRequest
 from telegram_bot.ui.home_menu import (
     build_home_menu_markup,
     clear_home_menu_message_id,
+    delete_home_menu_message,
     get_home_menu_message_id,
     set_home_menu_message_id,
     show_home_menu,
@@ -65,3 +66,26 @@ async def test_show_home_menu_replaces_id_after_target_edit_failure(mocker, cont
 
     assert rendered.message_id == 33
     assert context.bot_data["home_menu_messages"][456] == 33
+
+
+@pytest.mark.asyncio
+async def test_delete_home_menu_message_clears_stored_message_id(context):
+    context.bot_data["home_menu_messages"] = {456: 12}
+    context.application = SimpleNamespace(bot_data=context.bot_data)
+    context.bot.delete_message = AsyncMock()
+
+    await delete_home_menu_message(context, 456)
+
+    context.bot.delete_message.assert_awaited_once_with(chat_id=456, message_id=12)
+    assert 456 not in context.bot_data["home_menu_messages"]
+
+
+@pytest.mark.asyncio
+async def test_delete_home_menu_message_clears_id_even_when_delete_fails(context):
+    context.bot_data["home_menu_messages"] = {456: 12}
+    context.application = SimpleNamespace(bot_data=context.bot_data)
+    context.bot.delete_message = AsyncMock(side_effect=BadRequest("Message to delete not found"))
+
+    await delete_home_menu_message(context, 456)
+
+    assert 456 not in context.bot_data["home_menu_messages"]

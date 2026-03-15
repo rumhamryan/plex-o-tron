@@ -53,6 +53,16 @@ def _get_bot_data_from_application(application: Any) -> MutableMapping[str, Any]
     return bot_data
 
 
+def _get_application_from_context(context: ContextTypes.DEFAULT_TYPE) -> Any:
+    application = getattr(context, "application", None)
+    if application is not None:
+        return application
+
+    fallback = type("ApplicationFallback", (), {})()
+    setattr(fallback, "bot_data", getattr(context, "bot_data", {}))
+    return fallback
+
+
 def get_home_menu_message_id(application: Any, chat_id: int) -> int | None:
     """Returns the canonical home-menu message id for a chat, if known."""
     bot_data = _get_bot_data_from_application(application)
@@ -77,6 +87,21 @@ def clear_home_menu_message_id(application: Any, chat_id: int) -> None:
 
 def _is_message_not_modified(error: BadRequest) -> bool:
     return "message is not modified" in str(error).lower()
+
+
+async def delete_home_menu_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    """Deletes the canonical home menu message for a chat, if it exists."""
+    application = _get_application_from_context(context)
+    message_id = get_home_menu_message_id(application, chat_id)
+    if message_id is None:
+        return
+
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except TelegramError as exc:
+        logger.info("Failed to delete canonical home menu for chat %s: %s", chat_id, exc)
+    finally:
+        clear_home_menu_message_id(application, chat_id)
 
 
 async def _try_edit_target_message(
@@ -112,12 +137,7 @@ async def show_home_menu(
     2. Otherwise try editing the canonical stored home-menu message.
     3. If editing fails, send a fresh launcher and make it canonical.
     """
-    application = getattr(context, "application", None)
-    if application is None:
-        # Test doubles and lightweight contexts may not expose `application`.
-        # Fall back to context.bot_data to preserve canonical-menu tracking.
-        application = type("ApplicationFallback", (), {})()
-        setattr(application, "bot_data", getattr(context, "bot_data", {}))
+    application = _get_application_from_context(context)
 
     text = get_home_menu_text()
     reply_markup = build_home_menu_markup()

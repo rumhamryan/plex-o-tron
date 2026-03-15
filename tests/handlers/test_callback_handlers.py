@@ -107,6 +107,7 @@ async def test_cancel_operation_routes_return_to_home(
     return_home_mock.assert_awaited_once()
     kwargs = return_home_mock.await_args.kwargs
     assert kwargs["message_text"] == "Operation cancelled\\."
+    assert kwargs["replace_home_menu"] is True
 
 
 @pytest.mark.asyncio

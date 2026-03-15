@@ -140,6 +140,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     source_message=query.message,
                     message_text="Operation cancelled\\.",
                     message_parse_mode=ParseMode.MARKDOWN_V2,
+                    replace_home_menu=True,
                 )
             else:
                 await query.answer(text="Operation cancelled.", show_alert=False)
