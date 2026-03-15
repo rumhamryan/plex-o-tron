@@ -264,3 +264,5 @@ class SearchSession:
 def clear_search_session(user_data: MutableMapping[str, Any] | None) -> None:
     if isinstance(user_data, MutableMapping):
         user_data.pop(SearchSession._SESSION_KEY, None)
+        if user_data.get("active_workflow") == "search":
+            user_data.pop("active_workflow", None)

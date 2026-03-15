@@ -1,137 +1,39 @@
-# telegram_bot/handlers/command_handlers.py
+from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.constants import ParseMode
-from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
 from ..config import logger
 from ..services.auth_service import is_user_authorized
 from ..services.plex_service import get_plex_server_status, restart_plex_server
+from ..utils import safe_send_message
+from ..workflows.navigation import clear_all_workflow_state, get_user_data_store
 
 
 def get_help_message_text() -> str:
-    """Returns the formatted help message string."""
-    return r"""*Plex\-o\-Tron Bot Commands*
-
-`search`  \- Start a search for Movies or TV Shows\. Supports Movie Collections\!
-`delete`  \- Interactively delete media from your Plex library\.
-`status`  \- Check the connection to your Plex Media Server\.
-`restart` \- Restart the Plex Server service\.
-`links`   \- Show links to popular torrent and tracker sites\.
-`help`    \- Display this list of available commands\.
-
-*Pro\-tip:* You can also just paste a magnet link or torrent site URL directly into the chat\!
-"""
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Sends a formatted list of available commands."""
-    if not await is_user_authorized(update, context):
-        return
-    if not isinstance(update.message, Message):
-        return
-
-    try:
-        await update.message.delete()
-    except TelegramError:
-        # Network errors, timeouts, bad requests, or permission issues
-        pass
-
-    chat = update.effective_chat
-    if not chat:
-        logger.warning("help_command was triggered but could not find an effective_chat.")
-        return
-
-    message_text = get_help_message_text()
-    await context.bot.send_message(
-        chat_id=chat.id, text=message_text, parse_mode=ParseMode.MARKDOWN_V2
+    """Returns the formatted help text for the home-menu UX."""
+    return (
+        "*Plex\\-o\\-Tron Home Menu*\n\n"
+        "Use the buttons to:\n"
+        "\\- Search for movies or TV shows\n"
+        "\\- Delete media from your library\n"
+        "\\- Check Plex status\n"
+        "\\- Restart Plex\n"
+        "\\- Start the guided link intake flow\n\n"
+        "Send any DM message anytime to recover the home menu\\."
     )
 
 
-async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Sends a message with a list of popular torrent sites."""
-    if not await is_user_authorized(update, context):
-        return
-    if not isinstance(update.message, Message):
-        return
-
-    try:
-        await update.message.delete()
-    except TelegramError:
-        pass
-
-    chat = update.effective_chat
-    if not chat:
-        logger.warning("links_command was triggered but could not find an effective_chat.")
-        return
-
-    message_text = (
-        "I can scrape webpages for magnet and torrent links. Send me a URL!\n\n"
-        "**For Movies:**\n"
-        "https://yts.lt/\n"
-        "https://1337x.to/\n"
-        "https://thepiratebay.org/\n\n"
-        "**For TV Shows:**\n"
-        "https://eztvx.to/\n"
-        "https://1337x.to/"
-    )
-    await context.bot.send_message(chat_id=chat.id, text=message_text, parse_mode=ParseMode.HTML)
-
-
-async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Starts the conversation to delete media from the library."""
-    if not await is_user_authorized(update, context):
-        return
-    if not isinstance(update.message, Message) or context.user_data is None:
-        return
-
-    try:
-        await update.message.delete()
-    except TelegramError:
-        pass
-
-    # Set the active workflow to 'delete' to route future text messages correctly
-    context.user_data["active_workflow"] = "delete"
-
-    keyboard = [
-        [
-            InlineKeyboardButton("🎬 Movie", callback_data="delete_start_movie"),
-            InlineKeyboardButton("📺 TV Show", callback_data="delete_start_tv"),
-        ],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    message_text = "What type of media do you want to delete?"
-
-    await update.message.reply_text(text=message_text, reply_markup=reply_markup)
-
-
-async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Starts the conversation to search for new media."""
-    if not await is_user_authorized(update, context):
-        return
-
-    # --- Refactored Guard Clause: Ensure all required objects exist before use ---
-    user = update.effective_user
-    message = update.message
-    user_data = context.user_data
-
-    if not user or not isinstance(message, Message) or user_data is None:
-        logger.warning("search_command cannot proceed without user, message, or user_data.")
-        return
-
-    # With the guard clause, `user.id` is now safe to access, resolving the IDE error.
-    logger.info(f"User {user.id} initiated /search command.")
-
-    try:
-        await message.delete()
-    except TelegramError:
-        pass
-
-    # Set the active workflow to 'search' to route future text messages correctly
-    user_data["active_workflow"] = "search"
+async def launch_search_workflow(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> Message:
+    """Starts the top-level search launcher prompt."""
+    store = get_user_data_store(context)
+    clear_all_workflow_state(store)
+    store["active_workflow"] = "search"
 
     keyboard = [
         [
@@ -140,69 +42,170 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    # --- FIX: Use a raw string (r"...") to prevent the warning for `\?` ---
-    message_text = r"What type of media do you want to search for\?"
-
-    await message.reply_text(
-        text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2
+    return await safe_send_message(
+        context.bot,
+        chat_id=chat_id,
+        text=r"What type of media do you want to search for\?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN_V2,
     )
 
 
-async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Checks and reports the connection status to the Plex Media Server."""
-    if not await is_user_authorized(update, context):
-        return
-    if not isinstance(update.message, Message):
-        return
+async def launch_delete_workflow(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> Message:
+    """Starts the top-level delete launcher prompt."""
+    store = get_user_data_store(context)
+    clear_all_workflow_state(store)
+    store["active_workflow"] = "delete"
 
-    try:
-        await update.message.delete()
-    except TelegramError:
-        pass
-
-    chat = update.effective_chat
-    if not chat:
-        logger.warning("plex_status_command was triggered but could not find an effective_chat.")
-        return
-
-    status_message = await context.bot.send_message(
-        chat_id=chat.id, text="Plex Status: 🟡 Checking connection..."
+    keyboard = [
+        [
+            InlineKeyboardButton("🎬 Movie", callback_data="delete_start_movie"),
+            InlineKeyboardButton("📺 TV Show", callback_data="delete_start_tv"),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+    ]
+    return await safe_send_message(
+        context.bot,
+        chat_id=chat_id,
+        text="What type of media do you want to delete?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-    # Delegate the logic to the plex_service module
+
+async def launch_link_workflow(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> Message:
+    """Starts the guided link-ingestion workflow."""
+    store = get_user_data_store(context)
+    clear_all_workflow_state(store)
+    store["active_workflow"] = "link"
+
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+    prompt = await safe_send_message(
+        context.bot,
+        chat_id=chat_id,
+        text=(
+            "🔗 Send a magnet link, a `.torrent` URL, or a webpage URL and I'll analyze it.\n\n"
+            "Example: `magnet:?xt=urn:btih:...`"
+        ),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    store["link_prompt_message_id"] = prompt.message_id
+    return prompt
+
+
+async def launch_help(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> Message:
+    """Sends help as a transient message without mutating the home menu."""
+    return await safe_send_message(
+        context.bot,
+        chat_id=chat_id,
+        text=get_help_message_text(),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def launch_plex_status(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> None:
+    """Reports Plex connectivity using transient status messages."""
+    status_message = await safe_send_message(
+        context.bot,
+        chat_id=chat_id,
+        text="Plex Status: 🟡 Checking connection...",
+    )
     message_text = await get_plex_server_status(context)
-
     await status_message.edit_text(text=message_text, parse_mode=ParseMode.MARKDOWN_V2)
 
 
-async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Restarts the Plex server using a predefined shell script."""
-    if not await is_user_authorized(update, context):
-        return
-    if not isinstance(update.message, Message):
-        return
-
-    try:
-        await update.message.delete()
-    except TelegramError:
-        pass
-
-    chat = update.effective_chat
-    if not chat:
-        logger.warning("plex_restart_command was triggered but could not find an effective_chat.")
-        return
-
-    status_message = await context.bot.send_message(
-        chat_id=chat.id, text="Plex Restart: 🟡 Sending restart command..."
+async def launch_plex_restart(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> None:
+    """Attempts Plex restart and reports result as a transient message."""
+    status_message = await safe_send_message(
+        context.bot,
+        chat_id=chat_id,
+        text="Plex Restart: 🟡 Sending restart command...",
     )
-
-    # Delegate the restart logic to the plex_service module
     success, message = await restart_plex_server()
-
     final_text = (
         "✅ *Plex Restart Successful*"
         if success
-        else f"❌ *Plex Restart Failed*\n\n{escape_markdown(message)}"
+        else f"❌ *Plex Restart Failed*\n\n{escape_markdown(message, version=2)}"
     )
     await status_message.edit_text(text=final_text, parse_mode=ParseMode.MARKDOWN_V2)
+
+
+def _get_message_chat_id(update: Update) -> int | None:
+    if not isinstance(update.message, Message):
+        return None
+    return update.message.chat_id
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_user_authorized(update, context):
+        return
+    chat_id = _get_message_chat_id(update)
+    if chat_id is None:
+        logger.warning("help_command could not resolve chat id.")
+        return
+    await launch_help(context, chat_id)
+
+
+async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_user_authorized(update, context):
+        return
+    chat_id = _get_message_chat_id(update)
+    if chat_id is None:
+        logger.warning("links_command could not resolve chat id.")
+        return
+    await launch_link_workflow(context, chat_id)
+
+
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_user_authorized(update, context):
+        return
+    chat_id = _get_message_chat_id(update)
+    if chat_id is None:
+        logger.warning("delete_command could not resolve chat id.")
+        return
+    await launch_delete_workflow(context, chat_id)
+
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_user_authorized(update, context):
+        return
+    chat_id = _get_message_chat_id(update)
+    if chat_id is None:
+        logger.warning("search_command could not resolve chat id.")
+        return
+    await launch_search_workflow(context, chat_id)
+
+
+async def plex_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_user_authorized(update, context):
+        return
+    chat_id = _get_message_chat_id(update)
+    if chat_id is None:
+        logger.warning("plex_status_command could not resolve chat id.")
+        return
+    await launch_plex_status(context, chat_id)
+
+
+async def plex_restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await is_user_authorized(update, context):
+        return
+    chat_id = _get_message_chat_id(update)
+    if chat_id is None:
+        logger.warning("plex_restart_command could not resolve chat id.")
+        return
+    await launch_plex_restart(context, chat_id)

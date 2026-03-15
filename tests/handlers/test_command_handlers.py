@@ -1,45 +1,51 @@
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock
+
 import pytest
-from telegram import Update, Message
-from telegram_bot.handlers.command_handlers import search_command, plex_status_command
 
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+from telegram_bot.handlers.command_handlers import (
+    get_help_message_text,
+    launch_link_workflow,
+    launch_plex_status,
+    launch_search_workflow,
+)
 
 
 @pytest.mark.asyncio
-async def test_search_command_starts_workflow(mocker, make_message, context):
-    update = Update(update_id=1, message=make_message("/search"))
+async def test_launch_search_workflow_sets_active_state(context):
+    await launch_search_workflow(context, chat_id=456)
 
-    mocker.patch(
-        "telegram_bot.handlers.command_handlers.is_user_authorized",
-        AsyncMock(return_value=True),
-    )
-    reply_mock = mocker.patch.object(Message, "reply_text", AsyncMock())
-
-    await search_command(update, context)
-
-    reply_mock.assert_awaited_once()
     assert context.user_data.get("active_workflow") == "search"
+    context.bot.send_message.assert_awaited_once()
+    sent_text = context.bot.send_message.await_args.kwargs["text"]
+    assert "search for" in sent_text.lower()
 
 
 @pytest.mark.asyncio
-async def test_plex_status_command_calls_service(mocker, make_message, context):
-    status_msg = make_message()
+async def test_launch_link_workflow_sets_active_state(context):
+    await launch_link_workflow(context, chat_id=456)
+
+    assert context.user_data.get("active_workflow") == "link"
+    assert context.user_data.get("link_prompt_message_id") is not None
+    context.bot.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_launch_plex_status_calls_service(mocker, context):
+    status_msg = AsyncMock()
     context.bot.send_message.return_value = status_msg
 
-    update = Update(update_id=1, message=make_message("/status"))
-
-    mocker.patch(
-        "telegram_bot.handlers.command_handlers.is_user_authorized",
-        AsyncMock(return_value=True),
-    )
     service_mock = mocker.patch(
         "telegram_bot.handlers.command_handlers.get_plex_server_status",
         AsyncMock(return_value="All good"),
     )
 
-    await plex_status_command(update, context)
+    await launch_plex_status(context, chat_id=456)
 
     service_mock.assert_awaited_once_with(context)
+    status_msg.edit_text.assert_awaited_once_with(text="All good", parse_mode="MarkdownV2")
+
+
+def test_help_text_does_not_advertise_command_or_idle_link_entrypoints():
+    message = get_help_message_text().lower()
+    assert "/search" not in message
+    assert "just paste a magnet" not in message

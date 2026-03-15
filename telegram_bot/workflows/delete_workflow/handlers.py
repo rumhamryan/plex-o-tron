@@ -25,6 +25,7 @@ from ...services.search_logic import (
 )
 from ...ui.messages import format_media_summary
 from ...utils import safe_edit_message, safe_send_message
+from ..navigation import return_to_home
 
 if TYPE_CHECKING:
     pass
@@ -249,6 +250,7 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _handle_start_buttons(query, context):
     """Handles 'Movie' or 'TV Show' selection."""
+    context.user_data["active_workflow"] = "delete"
     if query.data == "delete_start_movie":
         message_text = "Delete a full movie collection \\(folder\\) or a single movie file\\?"
         keyboard = [
@@ -510,24 +512,16 @@ async def _handle_confirm_delete_button(query, context):
             else:
                 message_text = _format_manual_delete_failure(manual_detail)
 
-    # Clear the user's conversational context
-    keys_to_clear = [
-        "show_path_to_delete",
-        "next_action",
-        "prompt_message_id",
-        "season_to_delete_num",
-        "selection_choices",
-        "selection_target_kind",
-        "active_workflow",
-        "path_to_delete",
-        "delete_target_kind",
-    ]
-    for key in keys_to_clear:
-        context.user_data.pop(key, None)
-
     await safe_edit_message(
         query.message,
         text=message_text,
         reply_markup=None,
         parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+    await return_to_home(
+        context,
+        query.message.chat_id,
+        message_text=None,
+        message_parse_mode=ParseMode.MARKDOWN_V2,
     )

@@ -689,6 +689,8 @@ async def _handle_collection_confirm(
         query.message, context, session, pending, missing
     )
     clear_search_session(context.user_data)
+    if context.user_data is not None:
+        context.user_data.pop("active_workflow", None)
 
 
 async def _prepare_collection_directory(

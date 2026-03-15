@@ -1,7 +1,5 @@
 # telegram_bot/__main__.py
 
-import re
-
 # Ensure PTB env flags are set before importing python-telegram-bot
 from telegram_bot import _ptb_env  # noqa: F401
 import libtorrent as lt
@@ -15,23 +13,11 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
-# --- Refactored Imports ---
 from telegram_bot.config import get_configuration, logger
 from telegram_bot.handlers.callback_handlers import button_handler
-from telegram_bot.handlers.command_handlers import (
-    delete_command,
-    help_command,
-    links_command,
-    plex_restart_command,
-    plex_status_command,
-    search_command,
-)
-from telegram_bot.handlers.message_handlers import (
-    handle_link_message,
-    handle_search_message,
-)
-from telegram_bot.state import post_init, post_shutdown
 from telegram_bot.handlers.error_handler import global_error_handler
+from telegram_bot.handlers.message_handlers import handle_user_message
+from telegram_bot.state import post_init, post_shutdown
 
 
 def register_handlers(application: Application) -> None:
@@ -39,42 +25,13 @@ def register_handlers(application: Application) -> None:
     Registers all the command, message, and callback handlers for the bot.
     This keeps the main function clean and focused on initialization.
     """
-    # Command Handlers are registered with a case-insensitive regex filter
-    # to catch commands with or without a leading slash.
-    application.add_handler(
-        MessageHandler(filters.Regex(re.compile(r"^/?search$", re.IGNORECASE)), search_command)
-    )
-    application.add_handler(
-        MessageHandler(filters.Regex(re.compile(r"^/?links$", re.IGNORECASE)), links_command)
-    )
-    application.add_handler(
-        MessageHandler(filters.Regex(re.compile(r"^/?help$", re.IGNORECASE)), help_command)
-    )
-    application.add_handler(
-        MessageHandler(filters.Regex(re.compile(r"^/?start$", re.IGNORECASE)), help_command)
-    )  # /start redirects to help
-    application.add_handler(
-        MessageHandler(filters.Regex(re.compile(r"^/?status$", re.IGNORECASE)), plex_status_command)
-    )
-    application.add_handler(
-        MessageHandler(
-            filters.Regex(re.compile(r"^/?restart$", re.IGNORECASE)),
-            plex_restart_command,
-        )
-    )
-    application.add_handler(
-        MessageHandler(filters.Regex(re.compile(r"^/?delete$", re.IGNORECASE)), delete_command)
-    )
-
-    # Callback Query Handler for all button presses
+    # Callback query router for all inline button interactions.
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    # Message Handler specifically for magnet/http links, ensuring commands are ignored
-    link_filter = filters.Regex(r"^(magnet:|https?://)")
-    application.add_handler(MessageHandler(link_filter & ~filters.COMMAND, handle_link_message))
-
-    # General Text Handler for conversational workflows (e.g., search/delete replies)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_search_message))
+    # Single text handler:
+    # - routes active workflow input
+    # - bootstraps/recover home menu for idle DM messages (including /start-like first contact)
+    application.add_handler(MessageHandler(filters.TEXT, handle_user_message))
 
     application.add_error_handler(global_error_handler)
 

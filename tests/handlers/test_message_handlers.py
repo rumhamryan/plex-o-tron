@@ -1,18 +1,81 @@
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock
-import pytest
-from telegram import Update, Message
-from telegram_bot.handlers.message_handlers import (
-    handle_link_message,
-    handle_search_message,
-)
 
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+import pytest
+from telegram import Message, Update
+
+from telegram_bot.handlers.message_handlers import handle_link_message, handle_user_message
 
 
 @pytest.mark.asyncio
-async def test_handle_link_message_processes_input(mocker, make_message, context):
+async def test_idle_dm_text_renders_home_menu(mocker, make_message, context):
+    msg = make_message("hello")
+    update = Update(update_id=1, message=msg)
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+
+
+@pytest.mark.asyncio
+async def test_active_search_text_routes_to_search_workflow(mocker, make_message, context):
+    msg = make_message("query")
+    update = Update(update_id=1, message=msg)
+
+    context.user_data["active_workflow"] = "search"
+    context.user_data["search_session"] = {"media_type": "movie", "step": "title"}
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    search_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.handle_search_workflow",
+        AsyncMock(),
+    )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    search_mock.assert_awaited_once_with(update, context)
+    show_home_menu_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_active_delete_text_routes_to_delete_workflow(mocker, make_message, context):
+    msg = make_message("query")
+    update = Update(update_id=1, message=msg)
+
+    context.user_data["active_workflow"] = "delete"
+    context.user_data["next_action"] = "delete_tv_show_search"
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    delete_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.handle_delete_workflow",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    delete_mock.assert_awaited_once_with(update, context)
+
+
+@pytest.mark.asyncio
+async def test_idle_magnet_text_does_not_bypass_home_menu(mocker, make_message, context):
     msg = make_message("magnet:?xt=urn:btih:abcdef")
     update = Update(update_id=1, message=msg)
 
@@ -20,8 +83,31 @@ async def test_handle_link_message_processes_input(mocker, make_message, context
         "telegram_bot.handlers.message_handlers.is_user_authorized",
         AsyncMock(return_value=True),
     )
-    reply_msg = make_message()
-    reply_mock = mocker.patch.object(Message, "reply_text", AsyncMock(return_value=reply_msg))
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+    process_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.process_user_input",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+    process_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_link_workflow_message_processes_input_and_returns_home(
+    mocker, make_message, context
+):
+    msg = make_message("magnet:?xt=urn:btih:abcdef")
+    update = Update(update_id=1, message=msg)
+    context.user_data["active_workflow"] = "link"
+
+    reply_msg = make_message(message_id=77)
+    mocker.patch.object(Message, "reply_text", AsyncMock(return_value=reply_msg))
     process_mock = mocker.patch(
         "telegram_bot.handlers.message_handlers.process_user_input",
         AsyncMock(return_value="ti"),
@@ -34,50 +120,77 @@ async def test_handle_link_message_processes_input(mocker, make_message, context
         "telegram_bot.handlers.message_handlers.send_confirmation_prompt",
         AsyncMock(),
     )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
 
-    await handle_link_message(update, context)
+    await handle_user_message(update, context)
 
-    reply_mock.assert_awaited_once()
     process_mock.assert_awaited_once_with("magnet:?xt=urn:btih:abcdef", context, reply_msg)
     validate_mock.assert_awaited_once_with("ti", reply_msg)
     confirm_mock.assert_awaited_once_with(reply_msg, context, "ti", {"type": "movie"})
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+    assert context.user_data.get("active_workflow") is None
 
 
 @pytest.mark.asyncio
-async def test_handle_search_message_routes_search(mocker, make_message, context):
-    msg = make_message("query")
+async def test_non_link_text_inside_link_workflow_stays_in_workflow(mocker, make_message, context):
+    msg = make_message("not-a-link")
     update = Update(update_id=1, message=msg)
+    context.user_data["active_workflow"] = "link"
 
+    reply_msg = make_message(message_id=78)
+    mocker.patch.object(Message, "reply_text", AsyncMock(return_value=reply_msg))
+    process_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.process_user_input",
+        AsyncMock(return_value=None),
+    )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
     mocker.patch(
         "telegram_bot.handlers.message_handlers.is_user_authorized",
         AsyncMock(return_value=True),
     )
-    handler_mock = mocker.patch(
-        "telegram_bot.handlers.message_handlers.handle_search_workflow",
-        AsyncMock(),
-    )
-    context.user_data["active_workflow"] = "search"
 
-    await handle_search_message(update, context)
+    await handle_user_message(update, context)
 
-    handler_mock.assert_awaited_once_with(update, context)
+    process_mock.assert_awaited_once_with("not-a-link", context, reply_msg)
+    show_home_menu_mock.assert_not_called()
+    assert context.user_data.get("active_workflow") == "link"
 
 
 @pytest.mark.asyncio
-async def test_handle_search_message_routes_delete(mocker, make_message, context):
-    msg = make_message("query")
+async def test_handle_link_message_direct_invocation(mocker, make_message, context):
+    msg = make_message("magnet:?xt=urn:btih:abcdef")
     update = Update(update_id=1, message=msg)
 
-    mocker.patch(
-        "telegram_bot.handlers.message_handlers.is_user_authorized",
-        AsyncMock(return_value=True),
+    reply_msg = make_message(message_id=79)
+    mocker.patch.object(Message, "reply_text", AsyncMock(return_value=reply_msg))
+    process_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.process_user_input",
+        AsyncMock(return_value="ti"),
     )
-    handler_mock = mocker.patch(
-        "telegram_bot.handlers.message_handlers.handle_delete_workflow",
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.validate_and_enrich_torrent",
+        AsyncMock(return_value=(None, {"type": "movie"})),
+    )
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.send_confirmation_prompt",
         AsyncMock(),
     )
-    context.user_data["active_workflow"] = "delete"
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
 
-    await handle_search_message(update, context)
+    await handle_link_message(update, context)
 
-    handler_mock.assert_awaited_once_with(update, context)
+    process_mock.assert_awaited_once_with("magnet:?xt=urn:btih:abcdef", context, reply_msg)
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)

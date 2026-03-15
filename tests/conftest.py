@@ -118,8 +118,11 @@ def make_update():
 
 @pytest.fixture
 def context(make_message):
+    bot_data: dict[str, object] = {}
     bot = SimpleNamespace(
         send_message=AsyncMock(return_value=make_message()),
         delete_message=AsyncMock(),
+        edit_message_text=AsyncMock(return_value=make_message(message_id=999)),
     )
-    return SimpleNamespace(bot=bot, user_data={}, bot_data={})
+    application = SimpleNamespace(bot_data=bot_data)
+    return SimpleNamespace(bot=bot, user_data={}, bot_data=bot_data, application=application)

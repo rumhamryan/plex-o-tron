@@ -310,8 +310,8 @@ async def _handle_episode_selection_button(
 async def _handle_start_button(query, context):
     """Handles the initial 'Movie' or 'TV Show' button press."""
     store = _get_user_data_store(context)
-    store["active_workflow"] = "search"
     clear_search_session(store)
+    store["active_workflow"] = "search"
     session = SearchSession()
 
     action = _get_callback_data(query)
@@ -552,6 +552,8 @@ async def _handle_result_selection_button(
 
     # Prevent duplicate selections during the download handoff.
     clear_search_session(context.user_data)
+    if context.user_data is not None:
+        context.user_data.pop("active_workflow", None)
 
     ti = await torrent_service.process_user_input(
         url_to_process, context, query.message, info_url=info_url
