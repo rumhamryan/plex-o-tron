@@ -3,7 +3,9 @@
 import asyncio
 import json
 import os
+from types import SimpleNamespace
 
+from telegram.error import TelegramError
 from telegram.ext import Application
 
 # --- Corrected Import: Import the constant directly ---
@@ -63,6 +65,49 @@ def load_state(file_path: str) -> tuple[dict, dict]:
         return {}, {}
 
 
+async def _render_home_menu_on_startup(application: Application) -> None:
+    """
+    Best-effort startup render of the home menu for allowed DM users.
+
+    Telegram only permits outbound messages when the user has previously
+    initiated chat with the bot, so failures here are expected for first-time users.
+    """
+    from .ui.home_menu import show_home_menu
+
+    allowed_user_ids = application.bot_data.get("ALLOWED_USER_IDS", [])
+    if not isinstance(allowed_user_ids, list) or not allowed_user_ids:
+        return
+
+    context = SimpleNamespace(
+        application=application,
+        bot=application.bot,
+        bot_data=application.bot_data,
+        user_data={},
+    )
+
+    for user_id in allowed_user_ids:
+        try:
+            chat_id = int(user_id)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Skipping invalid allowed user id during startup menu render: %r", user_id
+            )
+            continue
+
+        try:
+            await show_home_menu(context, chat_id)
+        except TelegramError as exc:
+            logger.info(
+                "Could not render startup home menu for chat %s (likely no DM open yet): %s",
+                chat_id,
+                exc,
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected error while rendering startup home menu for chat %s", chat_id
+            )
+
+
 async def post_init(application: Application) -> None:
     """
     Resumes any active downloads after the bot has been initialized.
@@ -83,16 +128,16 @@ async def post_init(application: Application) -> None:
 
     if not active_downloads:
         logger.info("No active downloads to resume.")
-        return
-
-    for chat_id_str, download_data in active_downloads.items():
-        logger.info(f"Resuming download for chat_id {chat_id_str}...")
-        # Re-create the non-serializable parts and restart the task
-        download_data["lock"] = asyncio.Lock()
-        task = asyncio.create_task(download_task_wrapper(download_data, application))
-        download_data["task"] = task
+    else:
+        for chat_id_str, download_data in active_downloads.items():
+            logger.info(f"Resuming download for chat_id {chat_id_str}...")
+            # Re-create the non-serializable parts and restart the task
+            download_data["lock"] = asyncio.Lock()
+            task = asyncio.create_task(download_task_wrapper(download_data, application))
+            download_data["task"] = task
 
     logger.info("--- Resume process finished ---")
+    await _render_home_menu_on_startup(application)
 
 
 async def post_shutdown(application: Application) -> None:

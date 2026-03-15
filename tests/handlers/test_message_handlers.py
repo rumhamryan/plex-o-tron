@@ -23,6 +23,7 @@ async def test_idle_dm_text_renders_home_menu(mocker, make_message, context):
     await handle_user_message(update, context)
 
     show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+    msg.get_bot().delete_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -96,6 +97,49 @@ async def test_idle_magnet_text_does_not_bypass_home_menu(mocker, make_message, 
 
     show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
     process_mock.assert_not_called()
+    msg.get_bot().delete_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stale_search_state_deletes_user_message_before_menu(mocker, make_message, context):
+    msg = make_message("recover")
+    update = Update(update_id=1, message=msg)
+    context.user_data["active_workflow"] = "search"
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+    msg.get_bot().delete_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stale_delete_state_deletes_user_message_before_menu(mocker, make_message, context):
+    msg = make_message("recover")
+    update = Update(update_id=1, message=msg)
+    context.user_data["active_workflow"] = "delete"
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+    msg.get_bot().delete_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio

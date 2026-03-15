@@ -21,6 +21,14 @@ def _is_private_chat(update: Update) -> bool:
     return bool(chat and chat.type == "private")
 
 
+async def _delete_user_message_before_menu(message: Message) -> None:
+    """Best-effort cleanup so home-menu bootstrap does not leave stray user text."""
+    try:
+        await message.delete()
+    except TelegramError:
+        pass
+
+
 async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles explicit link-ingestion workflow messages.
@@ -96,6 +104,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         logger.info("Clearing stale search workflow state for user %s.", user.id)
         clear_all_workflow_state(user_data)
+        await _delete_user_message_before_menu(message)
         await show_home_menu(context, chat.id)
         return
 
@@ -105,6 +114,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         logger.info("Clearing stale delete workflow state for user %s.", user.id)
         clear_all_workflow_state(user_data)
+        await _delete_user_message_before_menu(message)
         await show_home_menu(context, chat.id)
         return
 
@@ -113,6 +123,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     clear_all_workflow_state(user_data)
+    await _delete_user_message_before_menu(message)
     await show_home_menu(context, chat.id)
 
 

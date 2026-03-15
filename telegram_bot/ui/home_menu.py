@@ -18,16 +18,16 @@ def build_home_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Search Media", callback_data="home_search"),
-                InlineKeyboardButton("Delete Media", callback_data="home_delete"),
+                InlineKeyboardButton("Search", callback_data="home_search"),
+                InlineKeyboardButton("Delete", callback_data="home_delete"),
             ],
             [
-                InlineKeyboardButton("Add by Link", callback_data="home_link"),
-                InlineKeyboardButton("Plex Status", callback_data="home_status"),
+                InlineKeyboardButton("Link", callback_data="home_link"),
+                InlineKeyboardButton("Status", callback_data="home_status"),
             ],
             [
-                InlineKeyboardButton("Restart Plex", callback_data="home_restart"),
-                InlineKeyboardButton("Help & Info", callback_data="home_help"),
+                InlineKeyboardButton("Restart", callback_data="home_restart"),
+                InlineKeyboardButton("Help", callback_data="home_help"),
             ],
         ]
     )
@@ -35,7 +35,7 @@ def build_home_menu_markup() -> InlineKeyboardMarkup:
 
 def get_home_menu_text() -> str:
     """Returns the standard launcher text shown above home menu buttons."""
-    return "*Plex\\-o\\-Tron Control Panel*\n\nSelect an operation\\."
+    return "*Plex\\-o\\-Tron*\n" "Manage search, downloads, and Plex maintenance from here\\."
 
 
 def _ensure_home_menu_store(bot_data: MutableMapping[str, Any]) -> dict[int, int]:

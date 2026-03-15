@@ -72,6 +72,7 @@ async def test_post_init_resumes_persisted_download(mocker):
     # Instead of SimpleNamespace, create a Mock instance
     application = Mock()
     application.bot_data = {}  # Attach the required bot_data attribute
+    application.bot = Mock()
 
     mocker.patch(
         "telegram_bot.state.load_state",
@@ -82,6 +83,7 @@ async def test_post_init_resumes_persisted_download(mocker):
         "telegram_bot.services.download_manager.download_task_wrapper",
         new=download_mock,
     )
+    show_home_mock = mocker.patch("telegram_bot.ui.home_menu.show_home_menu", new=AsyncMock())
     create_task_mock = mocker.patch("telegram_bot.state.asyncio.create_task")
 
     await post_init(application)  # This will no longer show an error
@@ -91,6 +93,23 @@ async def test_post_init_resumes_persisted_download(mocker):
     assert passed_data["name"] == "movie"
     assert passed_app is application
     create_task_mock.assert_called_once_with("coro")
+    show_home_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_post_init_renders_home_menu_for_allowed_users(mocker):
+    application = Mock()
+    application.bot_data = {"ALLOWED_USER_IDS": [123, 456]}
+    application.bot = Mock()
+
+    mocker.patch("telegram_bot.state.load_state", return_value=({}, {}))
+    show_home_mock = mocker.patch("telegram_bot.ui.home_menu.show_home_menu", new=AsyncMock())
+
+    await post_init(application)
+
+    assert show_home_mock.await_count == 2
+    show_home_mock.assert_any_await(mocker.ANY, 123)
+    show_home_mock.assert_any_await(mocker.ANY, 456)
 
 
 @pytest.mark.asyncio
