@@ -19,8 +19,9 @@ def test_build_home_menu_markup_layout():
     callback_rows = [[button.callback_data for button in row] for row in markup.inline_keyboard]
 
     assert callback_rows == [
-        ["home_search", "home_delete", "home_link"],
-        ["home_status", "home_restart", "home_help"],
+        ["home_search", "home_delete"],
+        ["home_link", "home_status"],
+        ["home_restart", "home_help"],
     ]
 
 
