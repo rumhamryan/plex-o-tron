@@ -7,7 +7,10 @@ from telegram import Update
 
 from telegram_bot.workflows.search_session import SearchSession, SearchStep
 from telegram_bot.workflows.search_workflow import handle_search_buttons, handle_search_workflow
-from telegram_bot.workflows.search_workflow.helpers import _format_collection_movie_label
+from telegram_bot.workflows.search_workflow.helpers import (
+    _ensure_identifier,
+    _format_collection_movie_label,
+)
 from telegram_bot.workflows.search_workflow.movie_collection_flow import (
     _classify_collection_release,
     _handle_collection_accept,
@@ -1135,6 +1138,19 @@ def test_resolve_collection_search_template_falls_back_when_movie_preferences_mi
     context.bot_data["SEARCH_CONFIG"] = {"preferences": {"movies": {}}}
 
     assert _resolve_collection_search_template(context) == ("1080p", "x265")
+
+
+def test_collection_identifier_stays_within_telegram_callback_limit():
+    identifier = _ensure_identifier(
+        {
+            "title": "Harry Potter and the Deathly Hallows - Part 1",
+            "year": 2010,
+        },
+        7,
+    )
+
+    assert identifier == "movie-7"
+    assert len(f"search_collection_toggle_{identifier}") <= 64
 
 
 @pytest.mark.asyncio

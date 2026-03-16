@@ -51,12 +51,8 @@ def _format_collection_movie_label(movie: dict[str, Any]) -> str:
 
 
 def _ensure_identifier(movie: dict[str, Any], index: int) -> str:
-    title = str(movie.get("title") or "")
-    year = movie.get("year")
-    base = _normalize_label(title) or f"movie{index}"
-    if isinstance(year, int):
-        base = f"{base}{year}"
-    return f"{base}-{index}"
+    """Returns a short, session-stable identifier safe for Telegram callback data."""
+    return f"movie-{index}"
 
 
 def _parse_release_iso(value: Any) -> date | None:
