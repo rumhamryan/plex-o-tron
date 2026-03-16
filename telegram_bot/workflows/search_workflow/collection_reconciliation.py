@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from typing import Literal, TypedDict, cast
@@ -43,6 +45,13 @@ class CollectionMoveResult(TypedDict, total=False):
     status: Literal["already_in_collection", "moved_to_collection", "conflict"]
     destination_path: str
     detail: str
+
+
+_LABEL_YEAR_PATTERN = re.compile(r"\((?P<year>(?:18|19|20|21)\d{2})\)\s*$")
+_ENTRY_YEAR_PATTERN = re.compile(r"(?<!\d)(?P<year>(?:18|19|20|21)\d{2})(?!\d)")
+_LEADING_ORDER_PREFIX_PATTERN = re.compile(r"^\s*\d+\s*[-._:]\s*")
+_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+_TITLE_STOPWORDS = {"a", "an", "and", "the", "part"}
 
 
 def locate_collection_movie_matches(
@@ -161,13 +170,13 @@ def _find_label_matches(
             ]
             for entry in dirs + files:
                 entry_path = os.path.join(current_root, entry)
-                if _entry_matches_label(entry, normalized_label):
+                if _entry_matches_label(entry, label, normalized_label):
                     matches.append(entry_path)
     else:
         try:
             for entry in os.listdir(root_path):
                 entry_path = os.path.join(root_path, entry)
-                if _entry_matches_label(entry, normalized_label):
+                if _entry_matches_label(entry, label, normalized_label):
                     matches.append(entry_path)
         except FileNotFoundError:
             return []
@@ -175,11 +184,87 @@ def _find_label_matches(
     return _collapse_nested_matches(matches)
 
 
-def _entry_matches_label(entry_name: str, normalized_label: str) -> bool:
+def _entry_matches_label(entry_name: str, label: str, normalized_label: str) -> bool:
     if _normalize_label(entry_name) == normalized_label:
         return True
+
     stem, _ = os.path.splitext(entry_name)
-    return bool(stem) and _normalize_label(stem) == normalized_label
+    if not stem:
+        return False
+
+    normalized_stem = _normalize_label(stem)
+    if normalized_stem == normalized_label:
+        return True
+
+    expected_title, expected_year = _split_label_title_and_year(label)
+    if expected_year is None:
+        return False
+
+    candidate_title, candidate_year = _extract_entry_title_and_year(stem)
+    if candidate_year != expected_year or not candidate_title:
+        return False
+
+    expected_normalized = _normalize_label(expected_title)
+    candidate_normalized = _normalize_label(candidate_title)
+    if not expected_normalized or not candidate_normalized:
+        return False
+    if candidate_normalized == expected_normalized:
+        return True
+
+    token_overlap = _title_token_overlap_ratio(expected_title, candidate_title)
+    title_similarity = difflib.SequenceMatcher(
+        a=expected_normalized,
+        b=candidate_normalized,
+    ).ratio()
+    return token_overlap >= 0.5 or title_similarity >= 0.72
+
+
+def _split_label_title_and_year(label: str) -> tuple[str, int | None]:
+    match = _LABEL_YEAR_PATTERN.search(label)
+    if match is None:
+        return label.strip(), None
+    title = label[: match.start()].strip()
+    return title, int(match.group("year"))
+
+
+def _extract_entry_title_and_year(entry_stem: str) -> tuple[str, int | None]:
+    year_match = None
+    for match in _ENTRY_YEAR_PATTERN.finditer(entry_stem):
+        year_match = match
+
+    if year_match is None:
+        cleaned_title = _LEADING_ORDER_PREFIX_PATTERN.sub("", entry_stem).strip()
+        return cleaned_title, None
+
+    raw_title = entry_stem[: year_match.start()].strip(" -_.()[]")
+    cleaned_title = _LEADING_ORDER_PREFIX_PATTERN.sub("", raw_title).strip()
+    return cleaned_title, int(year_match.group("year"))
+
+
+def _title_token_overlap_ratio(left: str, right: str) -> float:
+    left_tokens = _normalize_title_tokens(left)
+    right_tokens = _normalize_title_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+
+    overlap = len(left_tokens & right_tokens)
+    return overlap / max(min(len(left_tokens), len(right_tokens)), 1)
+
+
+def _normalize_title_tokens(value: str) -> set[str]:
+    tokens: set[str] = set()
+    for raw_token in _TOKEN_PATTERN.findall(value.casefold()):
+        token = raw_token.strip()
+        if not token:
+            continue
+        if token in _TITLE_STOPWORDS:
+            continue
+        token = token.removesuffix("'s")
+        if len(token) > 4 and token.endswith("s"):
+            token = token[:-1]
+        if token:
+            tokens.add(token)
+    return tokens
 
 
 async def _move_match_into_collection(

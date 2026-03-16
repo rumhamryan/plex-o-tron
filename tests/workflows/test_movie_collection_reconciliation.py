@@ -51,6 +51,30 @@ def test_locate_collection_movie_matches_finds_nested_library_entries_outside_co
     assert matches[0].path == str(nested_library_dir / "Movie One (2020).mkv")
 
 
+def test_locate_collection_movie_matches_relaxes_collection_filename_conventions(
+    tmp_path: Path,
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Harry Potter"
+    franchise_dir.mkdir(parents=True)
+    (franchise_dir / "04 - Harry Potter and the Sorcerers Stone (2001).mp4").write_bytes(b"legacy")
+    (
+        franchise_dir / "12 - Harry Potter 20th Anniversary Return To Hogwarts (2022).mp4"
+    ).write_bytes(b"doc")
+
+    matches = locate_collection_movie_matches(
+        str(movies_root),
+        str(franchise_dir),
+        "Harry Potter and the Philosopher's Stone (2001)",
+    )
+
+    assert len(matches) == 1
+    assert matches[0].location == "collection"
+    assert matches[0].path == str(
+        franchise_dir / "04 - Harry Potter and the Sorcerers Stone (2001).mp4"
+    )
+
+
 @pytest.mark.asyncio
 async def test_reconcile_collection_movie_moves_root_file_into_collection(tmp_path: Path) -> None:
     movies_root = tmp_path / "movies"
@@ -213,6 +237,40 @@ async def test_prepare_collection_directory_uses_existing_alias_collection_folde
     assert session.collection_movies[1]["reconciliation_status"] == "already_in_collection"
     assert session.collection_movies[2]["reconciliation_status"] == "available_outside_collection"
     assert session.collection_movies[3]["reconciliation_status"] == "missing"
+
+
+@pytest.mark.asyncio
+async def test_prepare_collection_directory_matches_legacy_prefixed_collection_files(
+    tmp_path: Path, context
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Harry Potter"
+    franchise_dir.mkdir(parents=True)
+    (franchise_dir / "04 - Harry Potter and the Sorcerers Stone (2001).mp4").write_bytes(b"owned")
+    (franchise_dir / "05 - Harry Potter and the Chamber of Secrets (2002).mp4").write_bytes(
+        b"owned"
+    )
+    (
+        franchise_dir / "12 - Harry Potter 20th Anniversary Return To Hogwarts (2022).mp4"
+    ).write_bytes(b"doc")
+
+    context.bot_data["SAVE_PATHS"] = {"movies": str(movies_root), "default": str(tmp_path)}
+    session = SearchSession(
+        collection_name="Harry Potter",
+        collection_fs_name="Harry Potter",
+        collection_movies=[
+            {"title": "Harry Potter and the Philosopher's Stone", "year": 2001},
+            {"title": "Harry Potter and the Chamber of Secrets", "year": 2002},
+            {"title": "Harry Potter and the Prisoner of Azkaban", "year": 2004},
+        ],
+    )
+
+    owned_count = await _prepare_collection_directory(context, session)
+
+    assert owned_count == 2
+    assert session.collection_movies[0]["reconciliation_status"] == "already_in_collection"
+    assert session.collection_movies[1]["reconciliation_status"] == "already_in_collection"
+    assert session.collection_movies[2]["reconciliation_status"] == "missing"
 
 
 @pytest.mark.asyncio
