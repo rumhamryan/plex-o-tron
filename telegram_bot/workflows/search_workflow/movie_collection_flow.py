@@ -50,6 +50,7 @@ from .collection_reconciliation import (
     CollectionMovieResolution,
     locate_collection_movie_matches,
     reconcile_collection_movie,
+    select_preferred_collection_match,
 )
 from .results import (
     FOUR_K_SIZE_MULTIPLIER,
@@ -715,8 +716,8 @@ async def _prepare_collection_directory(
             franchise_dir,
             label,
         )
-        if len(matches) == 1:
-            match = matches[0]
+        match = select_preferred_collection_match(matches)
+        if match is not None:
             movie["owned"] = True
             movie["existing_path"] = match.path
             movie["existing_location"] = match.location
@@ -727,7 +728,7 @@ async def _prepare_collection_directory(
                 else "available_outside_collection"
             )
             owned += 1
-        elif len(matches) > 1:
+        elif matches:
             movie["owned"] = False
             movie["existing_path"] = None
             movie["existing_location"] = None

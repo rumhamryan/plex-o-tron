@@ -92,6 +92,29 @@ def locate_collection_movie_matches(
     return matches
 
 
+def select_preferred_collection_match(
+    matches: list[CollectionMovieMatch],
+) -> CollectionMovieMatch | None:
+    """
+    Prefer a single collection-folder match over duplicates elsewhere.
+
+    Ambiguous remains only when there is no clear winning collection match:
+    - multiple non-collection matches
+    - multiple collection matches
+    - mixed matches without exactly one collection-folder candidate
+    """
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+
+    collection_matches = [match for match in matches if match.location == "collection"]
+    if len(collection_matches) == 1:
+        return collection_matches[0]
+
+    return None
+
+
 async def reconcile_collection_movie(
     movies_root: str, franchise_dir: str, label: str
 ) -> CollectionMovieResolution:
@@ -106,11 +129,10 @@ async def reconcile_collection_movie(
 
     if not matches:
         return CollectionMovieResolution(label=label, status="missing")
-    if len(matches) > 1:
+    match = select_preferred_collection_match(matches)
+    if match is None:
         detail = ", ".join(match.path for match in matches)
         return CollectionMovieResolution(label=label, status="ambiguous", detail=detail)
-
-    match = matches[0]
     try:
         move_result = await _move_match_into_collection(match, franchise_dir)
     except Exception as exc:  # noqa: BLE001

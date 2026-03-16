@@ -14,6 +14,7 @@ from telegram_bot.workflows.search_session import SearchSession
 from telegram_bot.workflows.search_workflow.collection_reconciliation import (
     locate_collection_movie_matches,
     reconcile_collection_movie,
+    select_preferred_collection_match,
 )
 
 
@@ -131,27 +132,47 @@ async def test_reconcile_collection_movie_reports_already_in_collection(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_reconcile_collection_movie_reports_ambiguous_when_multiple_matches_exist(
+async def test_reconcile_collection_movie_prefers_existing_collection_match_over_duplicate_elsewhere(
     tmp_path: Path,
 ) -> None:
     movies_root = tmp_path / "movies"
     franchise_dir = movies_root / "Saga"
     franchise_dir.mkdir(parents=True)
     (movies_root / "Movie Four (2023).mkv").write_bytes(b"root")
-    nested_dir = franchise_dir / "Movie Four (2023)"
-    nested_dir.mkdir()
-    (nested_dir / "Movie Four (2023).mkv").write_bytes(b"nested")
+    collection_file = franchise_dir / "Movie Four (2023).mkv"
+    collection_file.write_bytes(b"nested")
 
     result = await reconcile_collection_movie(
         str(movies_root), str(franchise_dir), "Movie Four (2023)"
     )
 
-    assert result.status == "ambiguous"
-    assert result.detail is not None
+    assert result.status == "already_in_collection"
+    assert result.destination_path == str(collection_file)
+
+
+def test_select_preferred_collection_match_returns_none_for_multiple_non_collection_matches(
+    tmp_path: Path,
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Saga"
+    archive_dir = movies_root / "Archive"
+    archive_dir.mkdir(parents=True)
+    franchise_dir.mkdir(parents=True)
+    root_file = movies_root / "Movie Four (2023).mkv"
+    root_file.write_bytes(b"root")
+    nested_file = archive_dir / "Movie Four (2023).mkv"
+    nested_file.write_bytes(b"nested")
+
+    matches = locate_collection_movie_matches(
+        str(movies_root), str(franchise_dir), "Movie Four (2023)"
+    )
+
+    assert len(matches) == 2
+    assert select_preferred_collection_match(matches) is None
 
 
 @pytest.mark.asyncio
-async def test_prepare_collection_directory_marks_only_unique_owned_matches(
+async def test_prepare_collection_directory_prefers_collection_match_over_duplicate_elsewhere(
     tmp_path: Path, context
 ) -> None:
     movies_root = tmp_path / "movies"
@@ -182,12 +203,41 @@ async def test_prepare_collection_directory_marks_only_unique_owned_matches(
 
     owned_count = await _prepare_collection_directory(context, session)
 
-    assert owned_count == 2
+    assert owned_count == 3
     assert session.collection_movies[0]["owned"] is True
     assert session.collection_movies[0]["existing_location"] == "movies_root"
     assert session.collection_movies[1]["already_in_collection"] is True
-    assert session.collection_movies[2]["reconciliation_status"] == "ambiguous"
+    assert session.collection_movies[2]["reconciliation_status"] == "already_in_collection"
+    assert session.collection_movies[2]["already_in_collection"] is True
     assert session.collection_movies[3]["reconciliation_status"] == "missing"
+
+
+@pytest.mark.asyncio
+async def test_prepare_collection_directory_marks_multiple_non_collection_matches_ambiguous(
+    tmp_path: Path, context
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Saga"
+    archive_dir = movies_root / "Archive" / "Favorites"
+    franchise_dir.mkdir(parents=True)
+    archive_dir.mkdir(parents=True)
+    (movies_root / "Movie One (2020).mkv").write_bytes(b"root")
+    (archive_dir / "Movie One (2020).mkv").write_bytes(b"archive")
+
+    context.bot_data["SAVE_PATHS"] = {"movies": str(movies_root), "default": str(tmp_path)}
+    session = SearchSession(
+        collection_name="Saga",
+        collection_fs_name="Saga",
+        collection_movies=[
+            {"title": "Movie One", "year": 2020},
+        ],
+    )
+
+    owned_count = await _prepare_collection_directory(context, session)
+
+    assert owned_count == 0
+    assert session.collection_movies[0]["owned"] is False
+    assert session.collection_movies[0]["reconciliation_status"] == "ambiguous"
 
 
 def test_resolve_collection_paths_uses_existing_alias_directory(tmp_path: Path, context) -> None:
