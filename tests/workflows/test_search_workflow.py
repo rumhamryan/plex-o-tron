@@ -466,6 +466,67 @@ async def test_collection_lookup_strips_duplicate_trailing_year_from_titles(
 
 
 @pytest.mark.asyncio
+async def test_collection_lookup_normalizes_resolved_franchise_name(
+    mocker, context, make_callback_query, make_message
+):
+    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    status_message = make_message(message_id=122)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
+        new=AsyncMock(return_value=status_message),
+    )
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_franchise_details",
+        new=AsyncMock(
+            return_value=(
+                "Harry Potter (film series)",
+                [
+                    {
+                        "title": "Harry Potter and the Philosopher's Stone",
+                        "year": 2001,
+                        "release_date": "2001-11-16",
+                    },
+                    {
+                        "title": "Harry Potter and the Chamber of Secrets",
+                        "year": 2002,
+                        "release_date": "2002-11-15",
+                    },
+                ],
+            )
+        ),
+    )
+
+    await handle_search_buttons(
+        Update(
+            update_id=36,
+            callback_query=make_callback_query("search_start_movie", make_message()),
+        ),
+        context,
+    )
+    await handle_search_buttons(
+        Update(
+            update_id=37,
+            callback_query=make_callback_query("search_movie_scope_collection", make_message()),
+        ),
+        context,
+    )
+    await handle_search_workflow(
+        Update(update_id=38, message=make_message("Harry Potter")),
+        context,
+    )
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.collection_name == "Harry Potter"
+    assert session.collection_fs_name == "Harry Potter"
+    assert "Harry Potter (film series)" not in edit_mock.await_args.kwargs["text"]
+    assert "*Harry Potter*" in edit_mock.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
 async def test_collection_lookup_accepts_past_year_only_titles(
     mocker, context, make_callback_query, make_message
 ):

@@ -402,8 +402,9 @@ async def _start_collection_lookup(
         _save_session(context, session)
         return
 
-    session.collection_name = franchise_name
-    session.collection_fs_name = sanitize_collection_name(franchise_name)
+    normalized_collection_name = sanitize_collection_name(franchise_name)
+    session.collection_name = normalized_collection_name
+    session.collection_fs_name = normalized_collection_name
     session.collection_movies = normalized_movies
     session.collection_exclusions = []
     session.collection_resolution = None
@@ -763,8 +764,53 @@ def _resolve_collection_paths(
 
     final_name = collection_fs_name or collection_name or "Collection"
     safe_name = sanitize_collection_name(final_name)
-    franchise_dir = os.path.join(movies_root, safe_name)
+    franchise_dir = _find_existing_collection_directory(
+        movies_root,
+        collection_name=collection_name,
+        collection_fs_name=collection_fs_name,
+        safe_name=safe_name,
+    )
     return movies_root, franchise_dir
+
+
+def _find_existing_collection_directory(
+    movies_root: str,
+    *,
+    collection_name: str | None,
+    collection_fs_name: str | None,
+    safe_name: str,
+) -> str:
+    """Resolves the on-disk collection folder, tolerating legacy naming variants."""
+    direct_candidates: list[str] = []
+    for raw_name in (collection_fs_name, collection_name, safe_name):
+        if not isinstance(raw_name, str):
+            continue
+        candidate = raw_name.strip()
+        if candidate and candidate not in direct_candidates:
+            direct_candidates.append(candidate)
+
+    for candidate_name in direct_candidates:
+        candidate_path = os.path.join(movies_root, candidate_name)
+        if os.path.isdir(candidate_path):
+            return candidate_path
+
+    alias_matches: list[str] = []
+    try:
+        entries = sorted(os.listdir(movies_root))
+    except FileNotFoundError:
+        entries = []
+
+    for entry in entries:
+        entry_path = os.path.join(movies_root, entry)
+        if not os.path.isdir(entry_path):
+            continue
+        if sanitize_collection_name(entry) == safe_name:
+            alias_matches.append(entry_path)
+
+    if alias_matches:
+        return alias_matches[0]
+
+    return os.path.join(movies_root, safe_name)
 
 
 async def finalize_movie_collection(

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from telegram_bot.workflows.search_workflow.movie_collection_flow import (
     _present_collection_download_confirmation,
     _prepare_collection_directory,
+    _resolve_collection_paths,
     _render_collection_movie_picker,
     finalize_movie_collection,
 )
@@ -162,6 +163,55 @@ async def test_prepare_collection_directory_marks_only_unique_owned_matches(
     assert session.collection_movies[0]["existing_location"] == "movies_root"
     assert session.collection_movies[1]["already_in_collection"] is True
     assert session.collection_movies[2]["reconciliation_status"] == "ambiguous"
+    assert session.collection_movies[3]["reconciliation_status"] == "missing"
+
+
+def test_resolve_collection_paths_uses_existing_alias_directory(tmp_path: Path, context) -> None:
+    movies_root = tmp_path / "movies"
+    movies_root.mkdir()
+    legacy_dir = movies_root / "Harry Potter Collection"
+    legacy_dir.mkdir()
+    context.bot_data["SAVE_PATHS"] = {"movies": str(movies_root), "default": str(tmp_path)}
+
+    resolved_root, resolved_dir = _resolve_collection_paths(
+        context,
+        "Harry Potter (film series)",
+        "Harry Potter",
+    )
+
+    assert resolved_root == str(movies_root)
+    assert resolved_dir == str(legacy_dir)
+
+
+@pytest.mark.asyncio
+async def test_prepare_collection_directory_uses_existing_alias_collection_folder(
+    tmp_path: Path, context
+) -> None:
+    movies_root = tmp_path / "movies"
+    legacy_dir = movies_root / "Harry Potter Collection"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "Harry Potter and the Philosopher's Stone (2001).mkv").write_bytes(b"owned")
+    (legacy_dir / "Harry Potter and the Chamber of Secrets (2002).mkv").write_bytes(b"owned")
+    (movies_root / "Harry Potter and the Prisoner of Azkaban (2004).mkv").write_bytes(b"owned")
+
+    context.bot_data["SAVE_PATHS"] = {"movies": str(movies_root), "default": str(tmp_path)}
+    session = SearchSession(
+        collection_name="Harry Potter (film series)",
+        collection_fs_name="Harry Potter",
+        collection_movies=[
+            {"title": "Harry Potter and the Philosopher's Stone", "year": 2001},
+            {"title": "Harry Potter and the Chamber of Secrets", "year": 2002},
+            {"title": "Harry Potter and the Prisoner of Azkaban", "year": 2004},
+            {"title": "Harry Potter and the Goblet of Fire", "year": 2005},
+        ],
+    )
+
+    owned_count = await _prepare_collection_directory(context, session)
+
+    assert owned_count == 3
+    assert session.collection_movies[0]["reconciliation_status"] == "already_in_collection"
+    assert session.collection_movies[1]["reconciliation_status"] == "already_in_collection"
+    assert session.collection_movies[2]["reconciliation_status"] == "available_outside_collection"
     assert session.collection_movies[3]["reconciliation_status"] == "missing"
 
 
