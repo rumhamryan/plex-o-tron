@@ -10,10 +10,11 @@ from telegram_bot.workflows.search_workflow import handle_search_buttons, handle
 from telegram_bot.workflows.search_workflow.helpers import _format_collection_movie_label
 from telegram_bot.workflows.search_workflow.movie_collection_flow import (
     _classify_collection_release,
+    _handle_collection_accept,
     _ensure_existing_movie_in_collection,
     _handle_collection_confirm,
-    _prompt_collection_preferences,
     _prompt_collection_confirmation,
+    _resolve_collection_search_template,
     _resolve_current_year_release_date,
     _resolve_collection_release,
 )
@@ -1107,6 +1108,89 @@ async def test_collection_confirm_sets_pending_payload(
     assert pending_payload["owned_summaries"] == ["summary block"]
 
 
+def test_resolve_collection_search_template_uses_supported_movie_preferences(context):
+    context.bot_data["SEARCH_CONFIG"] = {
+        "preferences": {
+            "movies": {
+                "resolutions": {
+                    "720p": 9,
+                    "1080p": 3,
+                    "2160p": 5,
+                    "4k": 5,
+                },
+                "codecs": {
+                    "x264": 1,
+                    "h264": 1,
+                    "x265": 2,
+                    "hevc": 2,
+                },
+            }
+        }
+    }
+
+    assert _resolve_collection_search_template(context) == ("2160p", "x265")
+
+
+def test_resolve_collection_search_template_falls_back_when_movie_preferences_missing(context):
+    context.bot_data["SEARCH_CONFIG"] = {"preferences": {"movies": {}}}
+
+    assert _resolve_collection_search_template(context) == ("1080p", "x265")
+
+
+@pytest.mark.asyncio
+async def test_collection_accept_uses_configured_movie_template(
+    mocker, context, make_callback_query, make_message
+):
+    context.bot_data["SEARCH_CONFIG"] = {
+        "preferences": {
+            "movies": {
+                "resolutions": {
+                    "1080p": 3,
+                    "2160p": 5,
+                    "4k": 5,
+                },
+                "codecs": {
+                    "x264": 1,
+                    "x265": 2,
+                    "hevc": 2,
+                },
+            }
+        }
+    }
+    session = SearchSession(media_type="movie", collection_mode=True)
+    session.collection_movies = [
+        {
+            "title": "Movie One",
+            "year": 2001,
+            "identifier": "movie-1",
+        }
+    ]
+
+    prepare_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._prepare_collection_directory",
+        new=AsyncMock(return_value=2),
+    )
+    render_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._render_collection_movie_picker",
+        new=AsyncMock(),
+    )
+
+    message = make_message(message_id=77)
+    callback = make_callback_query("search_collection_accept", message)
+    await _handle_collection_accept(callback, context, session)
+
+    prepare_mock.assert_awaited_once_with(context, session)
+    render_mock.assert_awaited_once_with(message, context, session)
+    assert session.collection_owned_count == 2
+    assert session.collection_resolution == "2160p"
+    assert session.collection_codec == "x265"
+    assert session.step == SearchStep.CONFIRMATION
+
+    persisted = SearchSession.from_user_data(context.user_data)
+    assert persisted.collection_resolution == "2160p"
+    assert persisted.collection_codec == "x265"
+
+
 @pytest.mark.asyncio
 async def test_existing_movie_folder_flattened(tmp_path):
     movies_root = tmp_path / "movies"
@@ -1894,30 +1978,6 @@ async def test_entire_season_skips_pack_and_targets_missing(
     # And present confirmation with exactly those episodes
     torrents = present_conf_mock.await_args.args[2]
     assert {t["parsed_info"]["episode"] for t in torrents} == {1, 3, 5}
-
-
-@pytest.mark.asyncio
-async def test_collection_preferences_prompt_uses_unified_filter_layout(
-    mocker, context, make_message
-):
-    safe_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.preferences.safe_edit_message",
-        new=AsyncMock(),
-    )
-    session = SearchSession(media_type="movie")
-    session.collection_owned_count = 2
-    session.collection_resolution = "2160p"
-    session.collection_codec = "x265"
-
-    await _prompt_collection_preferences(make_message(), context, session)
-
-    kwargs = safe_mock.await_args.kwargs
-    labels = [btn.text for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert "🟢2160p / 4K" in labels
-    assert "🟢x265 / HEVC" in labels
-    assert "➡️ Continue" in labels
-    assert "Best Available" not in labels
-    assert "Either Codec" not in labels
 
 
 @pytest.mark.asyncio

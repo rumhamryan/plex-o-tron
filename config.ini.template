@@ -40,6 +40,8 @@ websites = {
         }
     ]
 }
+# Movie collection runs automatically use the highest-ranked supported
+# movie resolution and codec from the preferences below as the collection template.
 preferences = {
     "movies": {
         "resolutions": {

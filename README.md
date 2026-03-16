@@ -119,7 +119,7 @@ The bot supports the following commands (with or without a leading slash):
 *   **help / start**: Displays a welcome message and lists all available commands.
 *   **search**: Initiates an interactive workflow to find media.
     *   Prompts for "Movie" or "TV Show".
-    *   **Movies**: Search by title and year. Supports **Collections** to download entire franchises (auto-detected via Wikipedia).
+    *   **Movies**: Search by title and year. Supports **Collections** to download entire franchises (auto-detected via Wikipedia). Collection runs use the highest-ranked supported movie `resolution` and `codec` from `[search].preferences.movies` in `config.ini` as the template for the whole set.
     *   **TV Shows**: Search by title, season, and episode.
     *   Presents the best matching torrents based on your preferences (resolution, codec, uploader).
 *   **delete**: Initiates an interactive workflow to safely remove media from your library.

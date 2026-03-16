@@ -31,11 +31,8 @@ from ..search_session import (
 )
 from .movie_collection_flow import (
     _handle_collection_accept,
-    _handle_collection_codec_button,
     _handle_collection_confirm,
     _handle_collection_movie_toggle,
-    _handle_collection_preferences_continue,
-    _handle_collection_resolution_button,
 )
 from .movie_flow import _handle_movie_title_reply, _handle_movie_year_reply, _search_movie_results
 from .results import (
@@ -149,16 +146,9 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         or action.startswith("search_results_page_")
         or action.startswith("search_results_filter_resolution_")
         or action.startswith("search_results_filter_codec_")
-        or action.startswith("search_collection_resolution_")
-        or action.startswith("search_collection_codec_")
         or action.startswith("search_collection_toggle_")
-        or action
-        in {
-            "search_collection_accept",
-            "search_collection_confirm",
-            "search_collection_preferences_continue",
-            "search_tv_season_preferences_continue",
-        }
+        or action in {"search_collection_accept", "search_collection_confirm"}
+        or action == "search_tv_season_preferences_continue"
         or action == "search_tv_change_details"
     )
 
@@ -175,12 +165,6 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
             await _handle_movie_scope_button(query, context, session)
         elif action == "search_collection_accept":
             await _handle_collection_accept(query, context, session)
-        elif action.startswith("search_collection_resolution_"):
-            await _handle_collection_resolution_button(query, context, session)
-        elif action.startswith("search_collection_codec_"):
-            await _handle_collection_codec_button(query, context, session)
-        elif action == "search_collection_preferences_continue":
-            await _handle_collection_preferences_continue(query, context, session)
         elif action.startswith("search_collection_toggle_"):
             await _handle_collection_movie_toggle(query, context, session)
         elif action == "search_collection_confirm":

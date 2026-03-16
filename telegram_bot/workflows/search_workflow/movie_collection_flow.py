@@ -51,7 +51,6 @@ from .collection_reconciliation import (
     locate_collection_movie_matches,
     reconcile_collection_movie,
 )
-from .preferences import _render_search_preferences_prompt
 from .results import (
     FOUR_K_SIZE_MULTIPLIER,
     _filter_results_by_resolution,
@@ -62,8 +61,77 @@ from .state import _get_callback_data, _get_user_data_store, _save_session
 
 COLLECTION_CODEC_CHOICES: tuple[str, ...] = ("x264", "x265")
 COLLECTION_RESOLUTION_CHOICES: tuple[str, ...] = ("1080p", "2160p")
-COLLECTION_RESOLUTION_OPTIONS = (("1080p", "1080p"), ("2160p", "2160p / 4K"))
-COLLECTION_CODEC_OPTIONS = (("x264", "x264 / AVC"), ("x265", "x265 / HEVC"))
+COLLECTION_DEFAULT_RESOLUTION = "1080p"
+COLLECTION_DEFAULT_CODEC = "x265"
+_COLLECTION_RESOLUTION_ALIASES = {
+    "1080p": "1080p",
+    "2160p": "2160p",
+    "4k": "2160p",
+}
+_COLLECTION_CODEC_ALIASES = {
+    "x264": "x264",
+    "h264": "x264",
+    "x265": "x265",
+    "hevc": "x265",
+}
+
+
+def _resolve_collection_search_template(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> tuple[str, str]:
+    """Resolves the collection template from configured movie search preferences."""
+    search_config = (context.bot_data or {}).get("SEARCH_CONFIG", {})
+    preferences = search_config.get("preferences", {}) if isinstance(search_config, dict) else {}
+    movie_preferences = preferences.get("movies", {}) if isinstance(preferences, dict) else {}
+
+    resolution = _resolve_collection_preference_value(
+        movie_preferences.get("resolutions"),
+        aliases=_COLLECTION_RESOLUTION_ALIASES,
+        preference_order=COLLECTION_RESOLUTION_CHOICES,
+        fallback=COLLECTION_DEFAULT_RESOLUTION,
+    )
+    codec = _resolve_collection_preference_value(
+        movie_preferences.get("codecs"),
+        aliases=_COLLECTION_CODEC_ALIASES,
+        preference_order=COLLECTION_CODEC_CHOICES,
+        fallback=COLLECTION_DEFAULT_CODEC,
+    )
+    return resolution, codec
+
+
+def _resolve_collection_preference_value(
+    raw_preferences: Any,
+    *,
+    aliases: dict[str, str],
+    preference_order: tuple[str, ...],
+    fallback: str,
+) -> str:
+    """Selects the highest-ranked supported preference from config values."""
+    if not isinstance(raw_preferences, dict):
+        return fallback
+
+    order_index = {value: index for index, value in enumerate(preference_order)}
+    best_scores: dict[str, float] = {}
+    for raw_key, raw_value in raw_preferences.items():
+        if not isinstance(raw_key, str):
+            continue
+        normalized = aliases.get(raw_key.strip().lower())
+        if normalized not in order_index:
+            continue
+        score = _coerce_float(raw_value)
+        if score is None:
+            continue
+        previous = best_scores.get(normalized)
+        if previous is None or score > previous:
+            best_scores[normalized] = score
+
+    if not best_scores:
+        return fallback
+
+    return min(
+        best_scores,
+        key=lambda value: (-best_scores[value], order_index[value]),
+    )
 
 
 def _format_collection_lookup_phase(title: str, phase: str, detail: str | None = None) -> str:
@@ -388,7 +456,7 @@ async def _prompt_collection_confirmation(
 async def _handle_collection_accept(
     query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
-    """Prepares filesystem state and prompts for resolution selection."""
+    """Prepares filesystem state and applies the configured collection template."""
     if not isinstance(query.message, Message):
         return
 
@@ -415,98 +483,13 @@ async def _handle_collection_accept(
         )
         return
 
+    session.collection_resolution, session.collection_codec = _resolve_collection_search_template(
+        context
+    )
     session.collection_owned_count = owned_count
     session.prompt_message_id = query.message.message_id
-    session.advance(SearchStep.RESOLUTION)
+    session.advance(SearchStep.CONFIRMATION)
     _save_session(context, session)
-    await _prompt_collection_preferences(query.message, context, session)
-
-
-async def _prompt_collection_preferences(
-    message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
-) -> None:
-    owned_note = ""
-    if session.collection_owned_count:
-        owned_note = (
-            f"\n📁 {session.collection_owned_count} film{'s' if session.collection_owned_count != 1 else ''} "
-            "already exist in your library and will be skipped\\."
-        )
-    text = (
-        "Choose the resolution and codec for this collection run\\."
-        f"{owned_note}\n\nThese preferences guide selection toward consistent releases\\."
-    )
-    await _render_search_preferences_prompt(
-        message,
-        text=text,
-        selected_resolution=session.collection_resolution,
-        resolution_options=COLLECTION_RESOLUTION_OPTIONS,
-        resolution_callback_prefix="search_collection_resolution_",
-        selected_codec=session.collection_codec,
-        codec_options=COLLECTION_CODEC_OPTIONS,
-        codec_callback_prefix="search_collection_codec_",
-        continue_callback_data="search_collection_preferences_continue",
-        continue_label="Continue",
-    )
-
-
-async def _handle_collection_resolution_button(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
-) -> None:
-    if not isinstance(query.message, Message):
-        return
-
-    choice = _get_callback_data(query).split("_")[-1]
-    if choice not in COLLECTION_RESOLUTION_CHOICES:
-        try:
-            await query.answer(text="Please choose 1080p or 4K.", show_alert=False)
-        except RuntimeError:
-            pass
-        await _prompt_collection_preferences(query.message, context, session)
-        return
-    session.collection_resolution = choice
-    _save_session(context, session)
-    await _prompt_collection_preferences(query.message, context, session)
-
-
-async def _handle_collection_codec_button(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
-) -> None:
-    if not isinstance(query.message, Message):
-        return
-
-    choice = _get_callback_data(query).split("_")[-1].lower()
-    if choice not in COLLECTION_CODEC_CHOICES:
-        try:
-            await query.answer(text="Please choose x264 or x265.", show_alert=False)
-        except RuntimeError:
-            pass
-        await _prompt_collection_preferences(query.message, context, session)
-        return
-    session.collection_codec = choice
-    _save_session(context, session)
-    await _prompt_collection_preferences(query.message, context, session)
-
-
-async def _handle_collection_preferences_continue(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
-) -> None:
-    if not isinstance(query.message, Message):
-        return
-
-    if (
-        session.collection_resolution not in COLLECTION_RESOLUTION_CHOICES
-        or session.collection_codec not in COLLECTION_CODEC_CHOICES
-    ):
-        try:
-            await query.answer(
-                text="Choose both a resolution and codec before continuing.",
-                show_alert=False,
-            )
-        except RuntimeError:
-            pass
-        await _prompt_collection_preferences(query.message, context, session)
-        return
-
     await _render_collection_movie_picker(query.message, context, session)
 
 
@@ -545,9 +528,18 @@ async def _render_collection_movie_picker(
     queued_count = sum(1 for m in movies if m.get("queued"))
     ambiguous_count = sum(1 for m in movies if m.get("reconciliation_status") == "ambiguous")
     franchise = session.collection_name or "Franchise"
+    template_resolution = escape_markdown(
+        session.collection_resolution or COLLECTION_DEFAULT_RESOLUTION,
+        version=2,
+    )
+    template_codec = escape_markdown(
+        (session.collection_codec or COLLECTION_DEFAULT_CODEC).upper(),
+        version=2,
+    )
 
     text_lines = [
         f"🎬 Preparing *{escape_markdown(franchise, version=2)}* collection\\.",
+        f"Template from config: *{template_resolution}* / *{template_codec}*\\.",
         "Tap a title to remove it from this run\\.",
         f"Ready to download: *{len(available)}* / {len(downloadable)} remaining movies\\.",
     ]
