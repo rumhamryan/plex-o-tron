@@ -28,8 +28,12 @@ __all__ = [
     "get_plex_server_status",
     "restart_plex_server",
     "get_existing_episodes_for_season",
+    "wait_for_movies_to_be_available",
     "ensure_collection_contains_movies",
 ]
+
+PLEX_INDEX_WAIT_TIMEOUT_SECONDS = 120
+PLEX_INDEX_POLL_INTERVAL_SECONDS = 5
 
 
 def _should_suppress_plex_error(exc: Exception) -> bool:
@@ -242,24 +246,12 @@ async def ensure_collection_contains_movies(
         if not title:
             continue
         year_value = movie.get("year")
-
-        def _search():
-            params: dict[str, Any] = {"title": title}
-            if isinstance(year_value, int):
-                params["year"] = year_value
-            try:
-                results = movies_section.search(**params)
-            except Exception:
-                results = []
-            if not results and "year" in params:
-                params.pop("year", None)
-                try:
-                    results = movies_section.search(**params)
-                except Exception:
-                    results = []
-            return results
-
-        matches = await asyncio.to_thread(_search)
+        matches = await asyncio.to_thread(
+            _search_movies_section,
+            movies_section,
+            title,
+            year_value,
+        )
         if not matches:
             logger.warning(
                 "[PLEX] Could not locate '%s' (%s) when updating collection '%s'.",
@@ -286,3 +278,97 @@ async def ensure_collection_contains_movies(
             )
 
     return matched_labels
+
+
+async def wait_for_movies_to_be_available(
+    plex_config: dict[str, str] | None,
+    movies: Sequence[dict[str, Any]],
+    *,
+    timeout_seconds: int = PLEX_INDEX_WAIT_TIMEOUT_SECONDS,
+    poll_interval_seconds: int = PLEX_INDEX_POLL_INTERVAL_SECONDS,
+    plex_client_factory: PlexClientFactory | None = None,
+) -> bool:
+    """
+    Poll Plex until the provided movies are searchable or the timeout elapses.
+    """
+    if not plex_config or not _has_valid_plex_token(plex_config) or not movies:
+        return False
+
+    expected_movies = [
+        {
+            "title": str(movie.get("title") or "").strip(),
+            "year": movie.get("year"),
+        }
+        for movie in movies
+        if str(movie.get("title") or "").strip()
+    ]
+    if not expected_movies:
+        return False
+
+    try:
+        plex: PlexClient = await asyncio.to_thread(
+            create_plex_client,
+            plex_config["url"],
+            plex_config["token"],
+            plex_client_factory,
+        )
+        movies_section = await asyncio.to_thread(plex.library.section, "Movies")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[PLEX] Could not prepare index wait: %s", exc)
+        return False
+
+    deadline = asyncio.get_running_loop().time() + max(timeout_seconds, 1)
+    pending_movies = list(expected_movies)
+
+    while pending_movies:
+        remaining: list[dict[str, Any]] = []
+        for movie in pending_movies:
+            movie_title = str(movie.get("title") or "").strip()
+            movie_year = movie.get("year")
+            matches = await asyncio.to_thread(
+                _search_movies_section,
+                movies_section,
+                movie_title,
+                movie_year,
+            )
+            if not matches:
+                remaining.append(movie)
+
+        if not remaining:
+            logger.info("[PLEX] Indexed %d movie(s) before timeout.", len(expected_movies))
+            return True
+
+        now = asyncio.get_running_loop().time()
+        if now >= deadline:
+            logger.info(
+                "[PLEX] Timed out waiting for %d/%d movie(s) to become searchable in Plex.",
+                len(remaining),
+                len(expected_movies),
+            )
+            return False
+
+        pending_movies = remaining
+        await asyncio.sleep(min(poll_interval_seconds, max(deadline - now, 0)))
+
+    return True
+
+
+def _search_movies_section(
+    movies_section: Any,
+    title: str,
+    year_value: Any,
+) -> Sequence[Any]:
+    params: dict[str, Any] = {"title": title}
+    if isinstance(year_value, int):
+        params["year"] = year_value
+    try:
+        results = movies_section.search(**params)
+    except Exception:
+        results = []
+    if not results and "year" in params:
+        params.pop("year", None)
+        try:
+            results = movies_section.search(**params)
+        except Exception:
+            results = []
+    return results

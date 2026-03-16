@@ -565,6 +565,10 @@ async def test_add_collection_to_queue_owned_only(
         "telegram_bot.services.download_manager._trigger_plex_scan",
         AsyncMock(return_value="\nScan started"),
     )
+    wait_mock = mocker.patch(
+        "telegram_bot.services.download_manager.wait_for_movies_to_be_available",
+        AsyncMock(return_value=True),
+    )
     ensure_mock = mocker.patch(
         "telegram_bot.services.download_manager.ensure_collection_contains_movies",
         AsyncMock(return_value=[]),
@@ -574,17 +578,11 @@ async def test_add_collection_to_queue_owned_only(
     async def record_edit(*args, **kwargs):
         events.append("edit")
 
-    async def record_sleep(seconds):
-        events.append("sleep")
-
     edit_mock.side_effect = record_edit
-    sleep_mock = mocker.patch("asyncio.sleep", AsyncMock(side_effect=record_sleep))
 
     await add_collection_to_queue(update, context)
 
-    # Should wait 120s for Plex
-    sleep_mock.assert_awaited_once_with(120)
-
+    wait_mock.assert_awaited_once_with(None, [{"title": "Movie One", "year": 2001}])
     process_mock.assert_not_awaited()
     finalize_mock.assert_awaited_once()
     ensure_mock.assert_awaited_once_with(
@@ -592,7 +590,7 @@ async def test_add_collection_to_queue_owned_only(
         "Saga",
         [{"title": "Movie One", "year": 2001}],
     )
-    assert events[:2] == ["edit", "sleep"]
+    assert events[:1] == ["edit"]
     kwargs = edit_mock.await_args_list[0].kwargs
     assert "Collection Complete" in kwargs["text"]
     assert "Already Available" in kwargs["text"]

@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 from unittest.mock import Mock
 from plexapi.exceptions import Unauthorized
@@ -7,6 +8,7 @@ from requests import exceptions as requests_exceptions
 from telegram_bot.services.plex_service import (
     get_plex_server_status,
     ensure_collection_contains_movies,
+    wait_for_movies_to_be_available,
 )
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -108,3 +110,72 @@ async def test_ensure_collection_contains_movies_skips_placeholder_token(mocker)
 
     assert result == []
     plex_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_movies_to_be_available_returns_early_when_movies_found(mocker):
+    movie = mocker.Mock()
+    movie.title = "Movie One"
+    movie.year = 2021
+
+    section = mocker.Mock()
+    section.search.side_effect = [[], [movie]]
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.create_plex_client", return_value=plex)
+    current_time = [0.0]
+
+    async def fake_sleep(seconds):
+        current_time[0] += seconds
+
+    mocker.patch(
+        "telegram_bot.services.plex_service.asyncio.get_running_loop",
+        return_value=SimpleNamespace(time=lambda: current_time[0]),
+    )
+    sleep_mock = mocker.patch("asyncio.sleep", mocker.AsyncMock(side_effect=fake_sleep))
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    result = await wait_for_movies_to_be_available(
+        plex_config,
+        [{"title": "Movie One", "year": 2021}],
+        timeout_seconds=30,
+        poll_interval_seconds=5,
+    )
+
+    assert result is True
+    sleep_mock.assert_not_awaited()
+    assert section.search.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_wait_for_movies_to_be_available_times_out(mocker):
+    section = mocker.Mock()
+    section.search.return_value = []
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.create_plex_client", return_value=plex)
+    current_time = [0.0]
+
+    async def fake_sleep(seconds):
+        current_time[0] += seconds
+
+    mocker.patch(
+        "telegram_bot.services.plex_service.asyncio.get_running_loop",
+        return_value=SimpleNamespace(time=lambda: current_time[0]),
+    )
+    sleep_mock = mocker.patch("asyncio.sleep", mocker.AsyncMock(side_effect=fake_sleep))
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    result = await wait_for_movies_to_be_available(
+        plex_config,
+        [{"title": "Movie One", "year": 2021}],
+        timeout_seconds=1,
+        poll_interval_seconds=5,
+    )
+
+    assert result is False
+    sleep_mock.assert_awaited_once()

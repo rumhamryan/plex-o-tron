@@ -193,7 +193,12 @@ async def _update_batch_and_maybe_scan(
 
     Returns the (possibly) augmented message_text with batch-complete info lines.
     """
-    from . import _trigger_plex_scan, ensure_collection_contains_movies, finalize_movie_collection
+    from . import (
+        _trigger_plex_scan,
+        ensure_collection_contains_movies,
+        finalize_movie_collection,
+        wait_for_movies_to_be_available,
+    )
 
     try:
         batch_id = source_dict.get("batch_id")
@@ -251,14 +256,12 @@ async def _update_batch_and_maybe_scan(
         scan_msg = await _trigger_plex_scan(media_type, plex_config)
 
         if media_type == "movie":
-            # Wait 120s for Plex scan to likely complete so items are indexable
-            if scan_msg:
-                logger.info("Waiting 120 seconds for Plex scan to index new movies...")
-                await asyncio.sleep(120)
-
             raw_name = str(collection_meta.get("name") or "").strip()
             collection_name = sanitize_collection_name(raw_name)
             organized_movies = get_collection_movies_for_plex(finalization)
+            if scan_msg:
+                logger.info("Waiting for Plex to index new movies before tagging the collection...")
+                await wait_for_movies_to_be_available(plex_config, organized_movies)
             added = await ensure_collection_contains_movies(
                 plex_config,
                 collection_name,

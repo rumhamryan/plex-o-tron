@@ -373,6 +373,7 @@ async def _finalize_owned_collection_batch(
         ensure_collection_contains_movies,
         finalize_movie_collection,
         safe_edit_message,
+        wait_for_movies_to_be_available,
     )
 
     batches: dict[str, BatchMeta] = get_or_create_download_batches(context.bot_data)
@@ -406,10 +407,9 @@ async def _finalize_owned_collection_batch(
         reply_markup=None,
     )
 
-    # Wait 120s for Plex scan to likely complete
     if scan_msg:
-        logger.info("Waiting 120 seconds for Plex scan to index existing movies...")
-        await asyncio.sleep(120)
+        logger.info("Waiting for Plex to index existing movies before tagging the collection...")
+        await wait_for_movies_to_be_available(plex_config, organized_movies)
 
     added = await ensure_collection_contains_movies(plex_config, collection_name, organized_movies)
     if added:
