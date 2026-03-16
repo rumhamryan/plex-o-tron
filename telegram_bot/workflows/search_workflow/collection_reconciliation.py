@@ -67,7 +67,12 @@ def locate_collection_movie_matches(
             )
         )
 
-    for path in _find_label_matches(movies_root, label, recursive=False):
+    for path in _find_label_matches(
+        movies_root,
+        label,
+        recursive=True,
+        excluded_roots=(franchise_dir,),
+    ):
         if os.path.abspath(path) == os.path.abspath(franchise_dir):
             continue
         _add_match(path, "movies_root")
@@ -119,7 +124,13 @@ async def reconcile_collection_movie(
     )
 
 
-def _find_label_matches(root_path: str, label: str, *, recursive: bool) -> list[str]:
+def _find_label_matches(
+    root_path: str,
+    label: str,
+    *,
+    recursive: bool,
+    excluded_roots: tuple[str, ...] = (),
+) -> list[str]:
     if not root_path or not os.path.isdir(root_path):
         return []
 
@@ -127,9 +138,27 @@ def _find_label_matches(root_path: str, label: str, *, recursive: bool) -> list[
     if not normalized_label:
         return []
 
+    excluded_paths = {
+        os.path.abspath(candidate)
+        for candidate in excluded_roots
+        if candidate and os.path.exists(candidate)
+    }
+    root_abs = os.path.abspath(root_path)
+    if root_abs in excluded_paths:
+        return []
+
     matches: list[str] = []
     if recursive:
         for current_root, dirs, files in os.walk(root_path):
+            current_root_abs = os.path.abspath(current_root)
+            if current_root_abs in excluded_paths:
+                dirs[:] = []
+                continue
+            dirs[:] = [
+                entry
+                for entry in dirs
+                if os.path.abspath(os.path.join(current_root, entry)) not in excluded_paths
+            ]
             for entry in dirs + files:
                 entry_path = os.path.join(current_root, entry)
                 if _entry_matches_label(entry, normalized_label):

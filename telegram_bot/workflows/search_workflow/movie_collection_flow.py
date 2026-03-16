@@ -524,7 +524,13 @@ async def _render_collection_movie_picker(
         and m.get("reconciliation_status") != "ambiguous"
         and not m.get("queued")
     ]
-    owned_count = sum(1 for m in movies if m.get("owned"))
+    already_in_collection_count = sum(
+        1 for m in movies if m.get("reconciliation_status") == "already_in_collection"
+    )
+    found_elsewhere_count = sum(
+        1 for m in movies if m.get("reconciliation_status") == "available_outside_collection"
+    )
+    owned_count = already_in_collection_count + found_elsewhere_count
     queued_count = sum(1 for m in movies if m.get("queued"))
     ambiguous_count = sum(1 for m in movies if m.get("reconciliation_status") == "ambiguous")
     franchise = session.collection_name or "Franchise"
@@ -543,8 +549,10 @@ async def _render_collection_movie_picker(
         "Tap a title to remove it from this run\\.",
         f"Ready to download: *{len(available)}* / {len(downloadable)} remaining movies\\.",
     ]
-    if owned_count:
-        text_lines.append(f"📁 Owned: {owned_count}")
+    if already_in_collection_count:
+        text_lines.append(f"📁 Already in collection folder: {already_in_collection_count}")
+    if found_elsewhere_count:
+        text_lines.append(f"📦 Found elsewhere in library: {found_elsewhere_count}")
     if queued_count:
         text_lines.append(f"⏳ Already queued: {queued_count}")
     if ambiguous_count:
@@ -552,10 +560,12 @@ async def _render_collection_movie_picker(
     if not downloadable:
         if ambiguous_count:
             text_lines.append(
-                "No additional downloads are ready\\. Remaining titles already exist, are queued, or need review\\."
+                "No additional downloads are ready\\. Remaining titles are already organized, elsewhere in your library, queued, or need review\\."
             )
         else:
-            text_lines.append("Everything in this franchise already exists or is queued\\.")
+            text_lines.append(
+                "Everything in this franchise is already organized, elsewhere in your library, or queued\\."
+            )
     text = "\n".join(text_lines)
 
     keyboard_rows: list[list[InlineKeyboardButton]] = []
@@ -563,8 +573,10 @@ async def _render_collection_movie_picker(
         label = _format_collection_movie_label(movie)
         identifier = movie["identifier"]
         prefix = ""
-        if movie.get("owned"):
+        if movie.get("reconciliation_status") == "already_in_collection":
             prefix = "📁 "
+        elif movie.get("reconciliation_status") == "available_outside_collection":
+            prefix = "📦 "
         elif movie.get("reconciliation_status") == "ambiguous":
             prefix = "⚠️ "
         elif movie.get("queued"):

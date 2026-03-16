@@ -31,6 +31,25 @@ def test_locate_collection_movie_matches_finds_root_and_collection_entries(tmp_p
     assert {match.location for match in matches} == {"movies_root", "collection"}
 
 
+def test_locate_collection_movie_matches_finds_nested_library_entries_outside_collection(
+    tmp_path: Path,
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Saga"
+    nested_library_dir = movies_root / "Archive" / "Shelf"
+    nested_library_dir.mkdir(parents=True)
+    franchise_dir.mkdir(parents=True)
+    (nested_library_dir / "Movie One (2020).mkv").write_bytes(b"root-nested")
+
+    matches = locate_collection_movie_matches(
+        str(movies_root), str(franchise_dir), "Movie One (2020)"
+    )
+
+    assert len(matches) == 1
+    assert matches[0].location == "movies_root"
+    assert matches[0].path == str(nested_library_dir / "Movie One (2020).mkv")
+
+
 @pytest.mark.asyncio
 async def test_reconcile_collection_movie_moves_root_file_into_collection(tmp_path: Path) -> None:
     movies_root = tmp_path / "movies"
@@ -113,7 +132,9 @@ async def test_prepare_collection_directory_marks_only_unique_owned_matches(
     movies_root = tmp_path / "movies"
     franchise_dir = movies_root / "Saga"
     franchise_dir.mkdir(parents=True)
-    (movies_root / "Movie One (2020).mkv").write_bytes(b"owned")
+    archive_dir = movies_root / "Archive" / "Favorites"
+    archive_dir.mkdir(parents=True)
+    (archive_dir / "Movie One (2020).mkv").write_bytes(b"owned")
     nested_dir = franchise_dir / "Movie Two (2021)"
     nested_dir.mkdir()
     (nested_dir / "Movie Two (2021).mkv").write_bytes(b"owned")
@@ -238,3 +259,47 @@ async def test_collection_picker_all_owned_still_allows_continue(
         for button in row
     ]
     assert "✅ Continue" in labels
+
+
+@pytest.mark.asyncio
+async def test_collection_picker_separates_in_collection_vs_elsewhere_counts(
+    mocker, context, make_message
+) -> None:
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(
+        collection_name="Saga",
+        collection_movies=[
+            {
+                "title": "Movie One",
+                "year": 2020,
+                "identifier": "movie-0",
+                "owned": True,
+                "already_in_collection": True,
+                "reconciliation_status": "already_in_collection",
+            },
+            {
+                "title": "Movie Two",
+                "year": 2021,
+                "identifier": "movie-1",
+                "owned": True,
+                "already_in_collection": False,
+                "reconciliation_status": "available_outside_collection",
+            },
+        ],
+    )
+
+    await _render_collection_movie_picker(make_message(), context, session)
+
+    text = edit_mock.await_args.kwargs["text"]
+    labels = [
+        button.text
+        for row in edit_mock.await_args.kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "Already in collection folder: 1" in text
+    assert "Found elsewhere in library: 1" in text
+    assert "📁 Movie One (2020)" in labels
+    assert "📦 Movie Two (2021)" in labels
