@@ -3,10 +3,12 @@ from unittest.mock import AsyncMock
 
 from telegram import Update
 from telegram.helpers import escape_markdown
+from plexapi.exceptions import BadRequest
 
 from telegram_bot.workflows.delete_workflow import handle_delete_buttons, handle_delete_workflow
 from telegram_bot.workflows.delete_workflow.handlers import _handle_confirm_delete_button
 from telegram_bot.workflows.delete_workflow.helpers import _calculate_path_size, _has_name_twin
+from telegram_bot.workflows.delete_workflow.plex import _delete_item_from_plex
 from telegram_bot.workflows.delete_workflow.selection import _present_delete_results
 
 
@@ -300,6 +302,7 @@ async def test_collection_delete_triggers_plex_cleanup(
     )
 
     context.user_data["path_to_delete"] = "/downloads/MovieCollection"
+    context.user_data["delete_target_kind"] = "movie_collection"
     context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "t"}
 
     await _handle_confirm_delete_button(
@@ -307,10 +310,94 @@ async def test_collection_delete_triggers_plex_cleanup(
     )
 
     delete_mock.assert_awaited_once()
-    collection_mock.assert_not_awaited()
+    collection_mock.assert_awaited_once()
     final_text = safe_edit_mock.await_args.kwargs["text"]
     assert "Successfully Deleted from Plex" in final_text
     assert "\nSize: 1\\.0 GiB" in final_text
+
+
+@pytest.mark.asyncio
+async def test_delete_item_from_plex_collection_returns_manual_cleanup_when_delete_rejected(
+    mocker, tmp_path
+):
+    collection_dir = tmp_path / "Scary Movie"
+    collection_dir.mkdir()
+    movie_file = collection_dir / "Scary Movie (2000).mkv"
+    movie_file.write_text("data")
+
+    item = mocker.Mock(title="Scary Movie", ratingKey=17474)
+    item.media = [mocker.Mock(parts=[mocker.Mock(file=str(movie_file))])]
+    item.delete.side_effect = BadRequest("bad_request")
+
+    section = mocker.Mock(type="movie")
+    section.all.return_value = [item]
+
+    plex_server = mocker.Mock()
+    plex_server.library.sections.return_value = [section]
+
+    mocker.patch("telegram_bot.workflows.delete_workflow.plex.PlexServer", return_value=plex_server)
+
+    result, plex = await _delete_item_from_plex(str(collection_dir), {"url": "u", "token": "t"})
+
+    assert plex is plex_server
+    assert result["status"] == "manual_delete_required"
+    assert "Plex rejected deletion" in result["detail"]
+    item.delete.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_confirm_delete_movie_collection_falls_back_to_disk_when_plex_rejects_delete(
+    mocker, context, make_callback_query, make_message
+):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.handlers.safe_edit_message",
+        new=AsyncMock(),
+    )
+    plex_server = mocker.Mock()
+    delete_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.handlers._delete_item_from_plex",
+        new=AsyncMock(
+            return_value=(
+                {
+                    "status": "manual_delete_required",
+                    "detail": "Plex rejected deletion for: Scary Movie.",
+                    "plex_deleted": False,
+                    "plex_items_deleted": 0,
+                },
+                plex_server,
+            )
+        ),
+    )
+    fs_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.handlers._delete_from_filesystem",
+        new=AsyncMock(return_value=(True, "directory")),
+    )
+    collection_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.handlers._delete_plex_collection",
+        new=AsyncMock(return_value=True),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow.handlers._format_size_label",
+        return_value="9.0 GiB",
+    )
+    mocker.patch(
+        "telegram_bot.workflows.delete_workflow.filesystem.os.path.exists", return_value=False
+    )
+
+    context.user_data["path_to_delete"] = "/downloads/Scary Movie"
+    context.user_data["delete_target_kind"] = "movie_collection"
+    context.bot_data["PLEX_CONFIG"] = {"url": "u", "token": "t"}
+
+    await _handle_confirm_delete_button(
+        make_callback_query("confirm_delete", make_message()), context
+    )
+
+    delete_mock.assert_awaited_once()
+    fs_mock.assert_awaited_once_with("/downloads/Scary Movie")
+    collection_mock.assert_awaited_once_with(plex_server, "Scary Movie")
+    final_text = safe_edit_mock.await_args.kwargs["text"]
+    assert "Deleted From Disk, Plex Needs Cleanup" in final_text
+    assert "Plex rejected deletion for: Scary Movie" in final_text
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ import asyncio
 import os
 from typing import TYPE_CHECKING, Literal, TypedDict
 
-from plexapi.exceptions import NotFound, Unauthorized
+from plexapi.exceptions import BadRequest, NotFound, Unauthorized
 from plexapi.server import PlexServer
 
 from ...config import logger
@@ -18,19 +18,14 @@ from .helpers import _has_name_twin
 
 
 class PlexDeleteResult(TypedDict, total=False):
-    status: Literal["success", "skip", "not_found", "error"]
+    status: Literal["success", "skip", "not_found", "manual_delete_required", "error"]
     detail: str
     plex_deleted: bool
     plex_items_deleted: int
 
 
-def _has_multiple_plex_parts(plex_item, target_path: str) -> bool:
-    """Detect whether a Plex item has multiple distinct file parts."""
-    try:
-        target_abs = os.path.abspath(target_path)
-    except Exception:
-        target_abs = target_path
-
+def _get_part_files(plex_item) -> set[str]:
+    """Collect normalized file paths for all Plex media parts on an item."""
     part_files: set[str] = set()
     for media in getattr(plex_item, "media", []) or []:
         for part in getattr(media, "parts", []) or []:
@@ -41,12 +36,40 @@ def _has_multiple_plex_parts(plex_item, target_path: str) -> bool:
                 part_files.add(os.path.abspath(file_path))
             except Exception:
                 part_files.add(str(file_path))
+    return part_files
+
+
+def _has_multiple_plex_parts(plex_item, target_path: str) -> bool:
+    """Detect whether a Plex item has multiple distinct file parts."""
+    try:
+        target_abs = os.path.abspath(target_path)
+    except Exception:
+        target_abs = target_path
+
+    part_files = _get_part_files(plex_item)
 
     if len(part_files) <= 1:
         return False
 
     if target_abs and target_abs in part_files:
         return True
+    return False
+
+
+def _has_plex_parts_outside_directory(plex_item, target_path: str) -> bool:
+    """Return True when a Plex item also references files outside the selected directory."""
+    try:
+        target_abs = os.path.abspath(target_path)
+    except Exception:
+        target_abs = target_path
+
+    if not target_abs:
+        return False
+
+    target_prefix = target_abs + os.sep
+    for part_file in _get_part_files(plex_item):
+        if part_file != target_abs and not part_file.startswith(target_prefix):
+            return True
     return False
 
 
@@ -205,15 +228,65 @@ async def _delete_item_from_plex(
                     len(items_to_delete),
                     base_name,
                 )
+                deleted_count = 0
+                skipped_for_external_parts = 0
+                rejected_titles: list[str] = []
+
                 for it in items_to_delete:
-                    await asyncio.to_thread(it.delete)
+                    title = getattr(it, "title", getattr(it, "ratingKey", "Unknown title"))
+                    if _has_plex_parts_outside_directory(it, abs_path):
+                        skipped_for_external_parts += 1
+                        logger.info(
+                            "Skipping Plex deletion for '%s' because other files exist outside '%s'.",
+                            title,
+                            abs_path,
+                        )
+                        continue
+
+                    try:
+                        await asyncio.to_thread(it.delete)
+                        deleted_count += 1
+                    except BadRequest as exc:
+                        rejected_titles.append(str(title))
+                        logger.warning(
+                            "Plex rejected deletion for '%s' under collection folder '%s': %s",
+                            title,
+                            base_name,
+                            exc,
+                        )
+
+                if skipped_for_external_parts or rejected_titles:
+                    details: list[str] = []
+                    if deleted_count:
+                        details.append(f"Deleted {deleted_count} Plex movie(s).")
+                    if skipped_for_external_parts:
+                        details.append(
+                            f"Left {skipped_for_external_parts} movie(s) in Plex because other encodes exist outside the selected folder."
+                        )
+                    if rejected_titles:
+                        details.append(
+                            "Plex rejected deletion for: " + ", ".join(rejected_titles) + "."
+                        )
+                    details.append(
+                        "The selected folder can still be removed from disk, but Plex may need a library refresh or trash cleanup afterward."
+                    )
+
+                    return (
+                        {
+                            "status": "manual_delete_required",
+                            "detail": " ".join(details),
+                            "plex_deleted": deleted_count > 0,
+                            "plex_items_deleted": deleted_count,
+                        },
+                        plex_server,
+                    )
 
                 return (
                     {
                         "status": "success",
-                        "detail": f"Deleted {len(items_to_delete)} Plex movie(s) linked to '{base_name}'.",
+                        "detail": f"Deleted {deleted_count} Plex movie(s) linked to '{base_name}'.",
                         "plex_deleted": True,
-                        "plex_items_deleted": len(items_to_delete),
+                        "plex_items_deleted": deleted_count,
                     },
                     plex_server,
                 )
@@ -242,7 +315,23 @@ async def _delete_item_from_plex(
 
         display_name = plex_item.title
         logger.info("Found Plex item '%s'. Attempting API deletion...", display_name)
-        await asyncio.to_thread(plex_item.delete)
+        try:
+            await asyncio.to_thread(plex_item.delete)
+        except BadRequest as exc:
+            detail = (
+                f"Plex rejected deletion for '{display_name}'. "
+                "The item can still be removed from disk, but Plex may need a library refresh or trash cleanup afterward."
+            )
+            logger.warning("%s Details: %s", detail, exc)
+            return (
+                {
+                    "status": "manual_delete_required",
+                    "detail": detail,
+                    "plex_deleted": False,
+                    "plex_items_deleted": 0,
+                },
+                plex_server,
+            )
         logger.info("Successfully deleted '%s' via Plex API.", display_name)
         return (
             {

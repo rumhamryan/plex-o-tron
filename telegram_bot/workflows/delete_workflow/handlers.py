@@ -435,6 +435,19 @@ async def _handle_confirm_delete_button(query, context):
 
             if status == "success":
                 message_text = _format_item_line("🗑️ *Successfully Deleted from Plex*")
+            elif status == "manual_delete_required":
+                logger.warning(
+                    "Plex deletion requires manual filesystem cleanup for '%s': %s",
+                    path_to_delete,
+                    detail,
+                )
+                manual_success, manual_detail = await _delete_from_filesystem(path_to_delete)
+                if manual_success:
+                    note = escape_markdown(detail or "Plex still needs cleanup.", version=2)
+                    message_text = _format_item_line("⚠️ *Deleted From Disk, Plex Needs Cleanup*")
+                    message_text += "\n" + note
+                else:
+                    message_text = _format_manual_delete_failure(manual_detail)
             elif status == "skip":
                 logger.info(
                     "Plex deletion skipped for '%s'; falling back to filesystem removal.",
