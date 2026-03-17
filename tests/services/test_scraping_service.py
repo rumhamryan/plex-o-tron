@@ -240,6 +240,35 @@ FRANCHISE_INFOBOX_HTML = """
 </table>
 """
 
+TRON_STYLE_INFOBOX_HTML = """
+<table class="infobox vevent">
+  <tr>
+    <th scope="row" class="infobox-label">Film(s)</th>
+    <td class="infobox-data">
+      <a href="/wiki/Tron_(film)" title="Tron (film)">Tron</a> (1982)
+      <br/>
+      <a href="/wiki/Tron:_Legacy" title="Tron: Legacy">Tron: Legacy</a> (2010)
+      <br/>
+      <a href="/wiki/Tron:_Ares" title="Tron: Ares">Tron: Ares</a> (2025)
+    </td>
+  </tr>
+  <tr>
+    <th scope="row" class="infobox-label">Short film(s)</th>
+    <td class="infobox-data">
+      <a href="/wiki/The_Ghost_in_the_Machine_(film)" title="The Ghost in the Machine (film)">
+        The Ghost in the Machine
+      </a> (2010)
+    </td>
+  </tr>
+  <tr>
+    <th scope="row" class="infobox-label">Animated series</th>
+    <td class="infobox-data">
+      <a href="/wiki/Tron:_Uprising" title="Tron: Uprising">Tron: Uprising</a> (2012-2013)
+    </td>
+  </tr>
+</table>
+"""
+
 FILM_SERIES_SECTION_HTML = """
 <div class="mw-heading mw-heading2"><h2 id="Film_series">Film series</h2></div>
 <div class="mw-heading mw-heading3"><h3 id="Movie_1"><i>Movie One</i> (2001)</h3></div>
@@ -381,6 +410,16 @@ def test_extract_movies_from_infobox_keeps_year_only_entries_without_fabricated_
 
     movies = wiki_module._extract_movies_from_infobox(soup)
 
+    assert [movie["release_date"] for movie in movies] == [None, None, None]
+
+
+def test_extract_movies_from_infobox_handles_inline_link_entries_with_dates():
+    soup = BeautifulSoup(TRON_STYLE_INFOBOX_HTML, "html.parser")
+
+    movies = wiki_module._extract_movies_from_infobox(soup)
+
+    assert [movie["title"] for movie in movies] == ["Tron", "Tron: Legacy", "Tron: Ares"]
+    assert [movie["year"] for movie in movies] == [1982, 2010, 2025]
     assert [movie["release_date"] for movie in movies] == [None, None, None]
 
 
@@ -584,6 +623,33 @@ async def test_fetch_movie_franchise_details_accepts_infobox_only_page(mocker):
         "The Equalizer 2",
         "The Equalizer 3",
     ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_movie_franchise_details_accepts_inline_infobox_page(mocker):
+    page = mocker.Mock()
+    page.title = "Tron (franchise)"
+
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise.wikipedia.search",
+        return_value=["Tron (franchise)"],
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._resolve_franchise_candidate",
+        new=AsyncMock(return_value=page),
+    )
+    mocker.patch(
+        "telegram_bot.services.scrapers.wikipedia.franchise._fetch_html_from_page",
+        new=AsyncMock(return_value=TRON_STYLE_INFOBOX_HTML),
+    )
+
+    result = await wiki_module.fetch_movie_franchise_details_from_wikipedia("Tron")
+
+    assert result is not None
+    franchise_name, movies = result
+    assert franchise_name == "Tron (franchise)"
+    assert [movie["title"] for movie in movies] == ["Tron", "Tron: Legacy", "Tron: Ares"]
+    assert [movie["year"] for movie in movies] == [1982, 2010, 2025]
 
 
 @pytest.mark.asyncio

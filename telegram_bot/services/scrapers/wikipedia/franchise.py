@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Literal, TypedDict
 
 import wikipedia
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 from ....config import logger
 from .cache import _WIKI_FRANCHISE_CACHE
@@ -512,6 +512,88 @@ def _extract_franchise_candidate_result(html: str) -> _FranchiseExtractionResult
     return None
 
 
+def _text_from_infobox_nodes(nodes: list[Tag | NavigableString]) -> str:
+    parts: list[str] = []
+    for node in nodes:
+        if isinstance(node, Tag):
+            text = node.get_text(" ", strip=True)
+        else:
+            text = str(node).strip()
+        if text:
+            parts.append(text)
+    return _clean_movie_label(" ".join(parts))
+
+
+def _build_movie_from_infobox_nodes(
+    nodes: list[Tag | NavigableString],
+    fallback_idx: int,
+) -> dict[str, Any] | None:
+    release_text = _text_from_infobox_nodes(nodes)
+    if not release_text:
+        return None
+
+    title_source: Tag | None = None
+    for node in nodes:
+        if not isinstance(node, Tag):
+            continue
+        if node.name in {"i", "em", "a"}:
+            title_source = node
+            break
+        nested_title_source = node.find(["i", "em", "a"])
+        if isinstance(nested_title_source, Tag):
+            title_source = nested_title_source
+            break
+
+    raw_title = (
+        title_source.get_text(" ", strip=True) if isinstance(title_source, Tag) else release_text
+    )
+    return _build_movie_entry(raw_title, release_text, fallback_idx)
+
+
+def _extract_movies_from_infobox_inline_nodes(value: Tag) -> list[dict[str, Any]]:
+    movies: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    current_nodes: list[Tag | NavigableString] = []
+
+    def flush() -> None:
+        nonlocal current_nodes
+        movie = _build_movie_from_infobox_nodes(current_nodes, len(movies))
+        current_nodes = []
+        if not movie or _looks_like_season_release(movie["title"]):
+            return
+        if movie["identifier"] in seen:
+            return
+        seen.add(movie["identifier"])
+        movies.append(movie)
+
+    for child in value.children:
+        if isinstance(child, NavigableString) and not child.strip() and not current_nodes:
+            continue
+
+        child_starts_new_entry = False
+        if isinstance(child, Tag):
+            if child.name == "br":
+                flush()
+                continue
+
+            if current_nodes:
+                current_text = _text_from_infobox_nodes(current_nodes)
+                current_has_release = (
+                    _extract_release_date_iso(current_text) is not None
+                    or _extract_year_from_text(current_text) is not None
+                )
+                child_starts_new_entry = child.name in {"a", "i", "em"} and current_has_release
+
+        if child_starts_new_entry:
+            flush()
+
+        if isinstance(child, (Tag, NavigableString)):
+            current_nodes.append(child)
+
+    flush()
+    return movies if len(movies) >= 2 else []
+
+
 def _extract_movies_from_infobox(soup: BeautifulSoup) -> list[dict[str, Any]]:
     infobox = soup.find("table", class_=re.compile(r"\binfobox\b"))
     if not isinstance(infobox, Tag):
@@ -532,9 +614,15 @@ def _extract_movies_from_infobox(soup: BeautifulSoup) -> list[dict[str, Any]]:
         movies: list[dict[str, Any]] = []
         seen: set[str] = set()
         list_items = list(value.find_all("li"))
-        candidates: list[Tag] = list_items or list(value.find_all(["i", "em"]))
-        if not candidates:
-            candidates = [value]
+        if list_items:
+            candidates: list[Tag] = list_items
+        else:
+            inline_movies = _extract_movies_from_infobox_inline_nodes(value)
+            if inline_movies:
+                return inline_movies
+            candidates = list(value.find_all(["i", "em"]))
+            if not candidates:
+                candidates = [value]
 
         for idx, candidate in enumerate(candidates):
             if not isinstance(candidate, Tag):
