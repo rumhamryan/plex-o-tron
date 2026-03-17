@@ -76,6 +76,28 @@ def test_locate_collection_movie_matches_relaxes_collection_filename_conventions
     )
 
 
+def test_locate_collection_movie_matches_ignores_trash_directory_entries(tmp_path: Path) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Jurassic"
+    franchise_dir.mkdir(parents=True)
+    collection_file = franchise_dir / "06 - Jurassic World Dominion (2022).mp4"
+    collection_file.write_bytes(b"video")
+
+    trash_info_dir = movies_root / ".Trash-1000" / "info"
+    trash_info_dir.mkdir(parents=True)
+    (trash_info_dir / "06 - Jurassic World Dominion (2022).mp4.trashinfo").write_text("trash entry")
+
+    matches = locate_collection_movie_matches(
+        str(movies_root),
+        str(franchise_dir),
+        "Jurassic World Dominion (2022)",
+    )
+
+    assert len(matches) == 1
+    assert matches[0].location == "collection"
+    assert matches[0].path == str(collection_file)
+
+
 @pytest.mark.asyncio
 async def test_reconcile_collection_movie_moves_root_file_into_collection(tmp_path: Path) -> None:
     movies_root = tmp_path / "movies"
@@ -125,6 +147,30 @@ async def test_reconcile_collection_movie_reports_already_in_collection(tmp_path
 
     result = await reconcile_collection_movie(
         str(movies_root), str(franchise_dir), "Movie Three (2022)"
+    )
+
+    assert result.status == "already_in_collection"
+    assert result.destination_path == str(source_file)
+
+
+@pytest.mark.asyncio
+async def test_reconcile_collection_movie_ignores_trash_directory_entries(
+    tmp_path: Path,
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Jurassic"
+    franchise_dir.mkdir(parents=True)
+    source_file = franchise_dir / "06 - Jurassic World Dominion (2022).mp4"
+    source_file.write_bytes(b"video")
+
+    trash_info_dir = movies_root / ".Trash-1000" / "info"
+    trash_info_dir.mkdir(parents=True)
+    (trash_info_dir / "06 - Jurassic World Dominion (2022).mp4.trashinfo").write_text("trash entry")
+
+    result = await reconcile_collection_movie(
+        str(movies_root),
+        str(franchise_dir),
+        "Jurassic World Dominion (2022)",
     )
 
     assert result.status == "already_in_collection"

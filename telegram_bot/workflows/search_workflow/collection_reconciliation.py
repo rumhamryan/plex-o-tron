@@ -52,6 +52,8 @@ _ENTRY_YEAR_PATTERN = re.compile(r"(?<!\d)(?P<year>(?:18|19|20|21)\d{2})(?!\d)")
 _LEADING_ORDER_PREFIX_PATTERN = re.compile(r"^\s*\d+\s*[-._:]\s*")
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 _TITLE_STOPWORDS = {"a", "an", "and", "the", "part"}
+_IGNORED_DIRECTORY_NAMES = {".trash", ".trashes", "$recycle.bin", "system volume information"}
+_IGNORED_DIRECTORY_PREFIXES = (".trash-",)
 
 
 def locate_collection_movie_matches(
@@ -182,13 +184,14 @@ def _find_label_matches(
     if recursive:
         for current_root, dirs, files in os.walk(root_path):
             current_root_abs = os.path.abspath(current_root)
-            if current_root_abs in excluded_paths:
+            if current_root_abs in excluded_paths or _is_ignored_search_directory(current_root_abs):
                 dirs[:] = []
                 continue
             dirs[:] = [
                 entry
                 for entry in dirs
                 if os.path.abspath(os.path.join(current_root, entry)) not in excluded_paths
+                and not _is_ignored_search_directory(os.path.join(current_root, entry))
             ]
             for entry in dirs + files:
                 entry_path = os.path.join(current_root, entry)
@@ -198,12 +201,21 @@ def _find_label_matches(
         try:
             for entry in os.listdir(root_path):
                 entry_path = os.path.join(root_path, entry)
+                if _is_ignored_search_directory(entry_path):
+                    continue
                 if _entry_matches_label(entry, label, normalized_label):
                     matches.append(entry_path)
         except FileNotFoundError:
             return []
 
     return _collapse_nested_matches(matches)
+
+
+def _is_ignored_search_directory(path: str) -> bool:
+    basename = os.path.basename(os.path.abspath(path)).casefold()
+    if basename in _IGNORED_DIRECTORY_NAMES:
+        return True
+    return any(basename.startswith(prefix) for prefix in _IGNORED_DIRECTORY_PREFIXES)
 
 
 def _entry_matches_label(entry_name: str, label: str, normalized_label: str) -> bool:
