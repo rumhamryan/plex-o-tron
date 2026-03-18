@@ -40,6 +40,43 @@ from .collection_reporting import (
 )
 
 
+def _format_collection_progress_text(collection_name: str, *detail_lines: str) -> str:
+    """Build a concise MarkdownV2-safe status message for collection finalization."""
+    collection_md = escape_markdown(collection_name or "Collection", version=2)
+    lines = [f"🎬 Finalizing *{collection_md}* collection\\."]
+    lines.extend(line for line in detail_lines if line)
+    return "\n".join(lines)
+
+
+async def _best_effort_collection_status_edit(message, *, text: str) -> None:
+    """Update a collection status message without letting Telegram errors abort the workflow."""
+    from . import safe_edit_message
+
+    try:
+        await safe_edit_message(
+            message,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[COLLECTION] Failed to update Telegram status message: %s", exc)
+
+
+async def _run_owned_collection_finalization(
+    query,
+    context,
+    batch_id: str,
+    franchise_meta: BatchCollectionMeta | None,
+    summaries: list[str],
+) -> None:
+    """Run owned-only collection finalization in the background and log any fatal failures."""
+    try:
+        await _finalize_owned_collection_batch(query, context, batch_id, franchise_meta, summaries)
+    except Exception:  # noqa: BLE001
+        logger.exception("[COLLECTION] Owned-only collection finalization failed.")
+
+
 async def process_queue_for_user(chat_id: int, application) -> None:
     """
     Checks and processes the download queue for a user.
@@ -314,10 +351,25 @@ async def add_collection_to_queue(update, context) -> bool:
     batches[batch_id] = batch_meta
 
     if not items:
-        await _finalize_owned_collection_batch(
-            query, context, batch_id, franchise_meta, initial_summaries
+        collection_name = str((franchise_meta or {}).get("name") or "this collection")
+        await _best_effort_collection_status_edit(
+            query.message,
+            text=_format_collection_progress_text(
+                collection_name,
+                "Reorganizing files and preparing Plex updates\\.",
+                "This can take a couple of minutes\\.",
+            ),
         )
-        return False
+        asyncio.create_task(
+            _run_owned_collection_finalization(
+                query,
+                context,
+                batch_id,
+                franchise_meta,
+                initial_summaries,
+            )
+        )
+        return True
 
     for entry in items:
         link = entry.get("link")
@@ -372,7 +424,6 @@ async def _finalize_owned_collection_batch(
         _trigger_plex_scan,
         ensure_collection_contains_movies,
         finalize_movie_collection,
-        safe_edit_message,
         wait_for_movies_to_be_available,
     )
 
@@ -400,26 +451,50 @@ async def _finalize_owned_collection_batch(
     plex_config = get_plex_config(context.bot_data)
     scan_msg = await _trigger_plex_scan("movie", plex_config)
     initial_text = f"{combined}{info_line}{scan_msg}"
-    await safe_edit_message(
-        query.message,
-        text=initial_text,
-        parse_mode=ParseMode.MARKDOWN_V2,
-        reply_markup=None,
-    )
+    await _best_effort_collection_status_edit(query.message, text=initial_text)
 
+    status_notes: list[str] = []
     if scan_msg:
-        logger.info("Waiting for Plex to index existing movies before tagging the collection...")
-        await wait_for_movies_to_be_available(plex_config, organized_movies)
-
-    added = await ensure_collection_contains_movies(plex_config, collection_name, organized_movies)
-    if added:
-        final_text = (
-            f"{initial_text}\nAdded {len(added)} film{'s' if len(added) != 1 else ''} "
-            "to the Plex collection\\."
-        )
-        await safe_edit_message(
+        await _best_effort_collection_status_edit(
             query.message,
-            text=final_text,
-            parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=None,
+            text=(
+                f"{initial_text}\n"
+                "Waiting for Plex to index the organized movies before tagging the Plex collection\\.\n"
+                "This can take up to 2 minutes\\."
+            ),
         )
+        logger.info("Waiting for Plex to index existing movies before tagging the collection...")
+        indexed_before_timeout = await wait_for_movies_to_be_available(
+            plex_config, organized_movies
+        )
+        if not indexed_before_timeout:
+            status_notes.append(
+                "⚠️ Plex did not finish indexing every movie before the timeout\\. "
+                "I still attempted to update the collection with what was available\\."
+            )
+
+    try:
+        added = await ensure_collection_contains_movies(
+            plex_config, collection_name, organized_movies
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[COLLECTION] Plex collection tagging failed for '%s': %s",
+            collection_name,
+            exc,
+        )
+        status_notes.append(
+            "⚠️ Plex collection tagging failed\\. "
+            "Your files were organized, but the Plex collection may need manual cleanup\\."
+        )
+        added = []
+
+    if added:
+        status_notes.append(
+            f"Added {len(added)} film{'s' if len(added) != 1 else ''} to the Plex collection\\."
+        )
+
+    final_text = initial_text
+    if status_notes:
+        final_text = f"{initial_text}\n" + "\n".join(status_notes)
+    await _best_effort_collection_status_edit(query.message, text=final_text)

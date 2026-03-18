@@ -574,13 +574,26 @@ async def test_add_collection_to_queue_owned_only(
         AsyncMock(return_value=[]),
     )
     events: list[str] = []
+    scheduled_tasks: list[asyncio.Task] = []
+    real_create_task = asyncio.create_task
+
+    def schedule_background_task(coro):
+        task = real_create_task(coro)
+        scheduled_tasks.append(task)
+        return task
 
     async def record_edit(*args, **kwargs):
-        events.append("edit")
+        events.append(kwargs["text"])
 
     edit_mock.side_effect = record_edit
+    mocker.patch(
+        "telegram_bot.services.download_manager.queue.asyncio.create_task",
+        side_effect=schedule_background_task,
+    )
 
-    await add_collection_to_queue(update, context)
+    started = await add_collection_to_queue(update, context)
+    if scheduled_tasks:
+        await asyncio.gather(*scheduled_tasks)
 
     wait_mock.assert_awaited_once_with(None, [{"title": "Movie One", "year": 2001}])
     process_mock.assert_not_awaited()
@@ -590,8 +603,9 @@ async def test_add_collection_to_queue_owned_only(
         "Saga",
         [{"title": "Movie One", "year": 2001}],
     )
-    assert events[:1] == ["edit"]
-    kwargs = edit_mock.await_args_list[0].kwargs
+    assert started is True
+    assert "Finalizing" in events[0]
+    kwargs = edit_mock.await_args_list[-1].kwargs
     assert "Collection Complete" in kwargs["text"]
     assert "Already Available" in kwargs["text"]
     assert "Moved into collection folder" in kwargs["text"]
