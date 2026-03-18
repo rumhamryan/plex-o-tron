@@ -196,7 +196,7 @@ async def test_reconcile_collection_movie_prefers_existing_collection_match_over
     assert result.destination_path == str(collection_file)
 
 
-def test_select_preferred_collection_match_returns_none_for_multiple_non_collection_matches(
+def test_select_preferred_collection_match_picks_best_non_collection_match(
     tmp_path: Path,
 ) -> None:
     movies_root = tmp_path / "movies"
@@ -214,7 +214,57 @@ def test_select_preferred_collection_match_returns_none_for_multiple_non_collect
     )
 
     assert len(matches) == 2
-    assert select_preferred_collection_match(matches) is None
+    selected = select_preferred_collection_match(matches)
+
+    assert selected is not None
+    assert selected.location == "movies_root"
+    assert selected.path == str(root_file)
+
+
+def test_select_preferred_collection_match_prefers_exact_collection_entry_when_duplicates_exist(
+    tmp_path: Path,
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Saga"
+    franchise_dir.mkdir(parents=True)
+    exact_file = franchise_dir / "Movie Four (2023).mkv"
+    exact_file.write_bytes(b"exact")
+    (franchise_dir / "Movie Four (2023) 2160p x265.mkv").write_bytes(b"alt")
+
+    matches = locate_collection_movie_matches(
+        str(movies_root), str(franchise_dir), "Movie Four (2023)"
+    )
+
+    selected = select_preferred_collection_match(matches)
+
+    assert selected is not None
+    assert selected.location == "collection"
+    assert selected.path == str(exact_file)
+
+
+def test_select_preferred_collection_match_prefers_collection_entry_even_with_duplicates_elsewhere(
+    tmp_path: Path,
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Saga"
+    archive_dir = movies_root / "Archive"
+    franchise_dir.mkdir(parents=True)
+    archive_dir.mkdir(parents=True)
+    exact_file = franchise_dir / "Movie Four (2023).mkv"
+    exact_file.write_bytes(b"collection")
+    (franchise_dir / "Movie Four (2023) 2160p x265.mkv").write_bytes(b"collection-alt")
+    (movies_root / "Movie Four (2023).mkv").write_bytes(b"root")
+    (archive_dir / "Movie Four (2023) 1080p.mkv").write_bytes(b"archive")
+
+    matches = locate_collection_movie_matches(
+        str(movies_root), str(franchise_dir), "Movie Four (2023)"
+    )
+
+    selected = select_preferred_collection_match(matches)
+
+    assert selected is not None
+    assert selected.location == "collection"
+    assert selected.path == str(exact_file)
 
 
 @pytest.mark.asyncio
@@ -259,7 +309,7 @@ async def test_prepare_collection_directory_prefers_collection_match_over_duplic
 
 
 @pytest.mark.asyncio
-async def test_prepare_collection_directory_marks_multiple_non_collection_matches_ambiguous(
+async def test_prepare_collection_directory_picks_best_multiple_non_collection_match(
     tmp_path: Path, context
 ) -> None:
     movies_root = tmp_path / "movies"
@@ -268,7 +318,7 @@ async def test_prepare_collection_directory_marks_multiple_non_collection_matche
     franchise_dir.mkdir(parents=True)
     archive_dir.mkdir(parents=True)
     (movies_root / "Movie One (2020).mkv").write_bytes(b"root")
-    (archive_dir / "Movie One (2020).mkv").write_bytes(b"archive")
+    (archive_dir / "Movie One (2020) 2160p.mkv").write_bytes(b"archive")
 
     context.bot_data["SAVE_PATHS"] = {"movies": str(movies_root), "default": str(tmp_path)}
     session = SearchSession(
@@ -281,9 +331,31 @@ async def test_prepare_collection_directory_marks_multiple_non_collection_matche
 
     owned_count = await _prepare_collection_directory(context, session)
 
-    assert owned_count == 0
-    assert session.collection_movies[0]["owned"] is False
-    assert session.collection_movies[0]["reconciliation_status"] == "ambiguous"
+    assert owned_count == 1
+    assert session.collection_movies[0]["owned"] is True
+    assert session.collection_movies[0]["existing_path"] == str(
+        movies_root / "Movie One (2020).mkv"
+    )
+    assert session.collection_movies[0]["reconciliation_status"] == "available_outside_collection"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_collection_movie_accepts_multiple_collection_versions(
+    tmp_path: Path,
+) -> None:
+    movies_root = tmp_path / "movies"
+    franchise_dir = movies_root / "Saga"
+    franchise_dir.mkdir(parents=True)
+    exact_file = franchise_dir / "Movie Five (2024).mkv"
+    exact_file.write_bytes(b"exact")
+    (franchise_dir / "Movie Five (2024) 1080p.mkv").write_bytes(b"alt")
+
+    result = await reconcile_collection_movie(
+        str(movies_root), str(franchise_dir), "Movie Five (2024)"
+    )
+
+    assert result.status == "already_in_collection"
+    assert result.destination_path == str(exact_file)
 
 
 def test_resolve_collection_paths_uses_existing_alias_directory(tmp_path: Path, context) -> None:

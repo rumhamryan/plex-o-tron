@@ -98,23 +98,16 @@ def select_preferred_collection_match(
     matches: list[CollectionMovieMatch],
 ) -> CollectionMovieMatch | None:
     """
-    Prefer a single collection-folder match over duplicates elsewhere.
+    Deterministically select the best available match.
 
-    Ambiguous remains only when there is no clear winning collection match:
-    - multiple non-collection matches
-    - multiple collection matches
-    - mixed matches without exactly one collection-folder candidate
+    The ranking intentionally prefers collection-folder matches first so duplicate
+    versions already organized in the franchise do not trigger manual review.
+    When every match is outside the collection, choose the closest title/year
+    match instead of treating duplicates as ambiguous.
     """
     if not matches:
         return None
-    if len(matches) == 1:
-        return matches[0]
-
-    collection_matches = [match for match in matches if match.location == "collection"]
-    if len(collection_matches) == 1:
-        return collection_matches[0]
-
-    return None
+    return min(matches, key=_collection_match_sort_key)
 
 
 async def reconcile_collection_movie(
@@ -375,3 +368,57 @@ def _is_nested_under(path: str, candidate_parent: str) -> bool:
     except ValueError:
         return False
     return common == os.path.abspath(candidate_parent) and path != os.path.abspath(candidate_parent)
+
+
+def _collection_match_sort_key(
+    match: CollectionMovieMatch,
+) -> tuple[int, int, int, int, int, int, str]:
+    """
+    Rank candidate matches from best to worst.
+
+    Preference order:
+    1. Already inside the collection folder.
+    2. Exact normalized label match.
+    3. Exact title/year extraction match.
+    4. Fewer extra title tokens beyond the requested movie label.
+    5. Shallower path depth, then shorter basename, then lexical path for stability.
+    """
+    absolute_path = os.path.abspath(match.path)
+    basename = os.path.basename(absolute_path)
+    stem, _ = os.path.splitext(basename)
+    candidate_name = stem if stem else basename
+
+    normalized_label = _normalize_label(match.label)
+    normalized_name = _normalize_label(candidate_name)
+    expected_title, expected_year = _split_label_title_and_year(match.label)
+    candidate_title, candidate_year = _extract_entry_title_and_year(candidate_name)
+    normalized_expected_title = _normalize_label(expected_title)
+    normalized_candidate_title = _normalize_label(candidate_title)
+
+    label_exact_rank = 0 if normalized_name == normalized_label else 1
+    title_year_exact_rank = (
+        0
+        if (
+            expected_year is not None
+            and candidate_year == expected_year
+            and normalized_expected_title
+            and normalized_candidate_title == normalized_expected_title
+        )
+        else 1
+    )
+
+    extra_token_count = len(
+        _normalize_title_tokens(candidate_name) - _normalize_title_tokens(match.label)
+    )
+    path_depth = absolute_path.count(os.sep)
+    basename_length = len(candidate_name)
+
+    return (
+        0 if match.location == "collection" else 1,
+        label_exact_rank,
+        title_year_exact_rank,
+        extra_token_count,
+        path_depth,
+        basename_length,
+        absolute_path.casefold(),
+    )
