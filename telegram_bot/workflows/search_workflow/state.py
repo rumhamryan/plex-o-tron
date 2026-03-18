@@ -13,6 +13,7 @@ from telegram.ext import ContextTypes
 from ...utils import (
     safe_send_message,
 )
+from ..navigation import set_active_prompt_message_id
 from ..search_session import (
     SearchSession,
     clear_search_session,
@@ -60,6 +61,7 @@ async def _send_prompt(
         session = _get_session(context)
     session.prompt_message_id = prompt_message.message_id
     _save_session(context, session)
+    set_active_prompt_message_id(context, chat_id, prompt_message.message_id)
 
 
 def _clear_search_context(context: ContextTypes.DEFAULT_TYPE) -> None:

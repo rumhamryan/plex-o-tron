@@ -4,6 +4,7 @@ import pytest
 from telegram import Message, Update
 
 from telegram_bot.handlers.message_handlers import handle_link_message, handle_user_message
+from telegram_bot.workflows.navigation import mark_chat_workflow_active, return_to_home
 
 
 @pytest.mark.asyncio
@@ -27,7 +28,7 @@ async def test_idle_dm_text_renders_home_menu(mocker, make_message, context):
 
 
 @pytest.mark.asyncio
-async def test_idle_dm_text_with_active_home_menu_is_ignored(mocker, make_message, context):
+async def test_idle_dm_text_with_active_home_menu_refreshes_menu(mocker, make_message, context):
     msg = make_message("hello")
     update = Update(update_id=1, message=msg)
     context.bot_data["home_menu_messages"] = {msg.chat_id: 42}
@@ -43,7 +44,7 @@ async def test_idle_dm_text_with_active_home_menu_is_ignored(mocker, make_messag
 
     await handle_user_message(update, context)
 
-    show_home_menu_mock.assert_not_called()
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
     msg.get_bot().delete_message.assert_awaited_once()
 
 
@@ -52,7 +53,7 @@ async def test_active_search_text_routes_to_search_workflow(mocker, make_message
     msg = make_message("query")
     update = Update(update_id=1, message=msg)
 
-    context.user_data["active_workflow"] = "search"
+    mark_chat_workflow_active(context, msg.chat_id, "search")
     context.user_data["search_session"] = {"media_type": "movie", "step": "title"}
 
     mocker.patch(
@@ -79,7 +80,7 @@ async def test_active_delete_text_routes_to_delete_workflow(mocker, make_message
     msg = make_message("query")
     update = Update(update_id=1, message=msg)
 
-    context.user_data["active_workflow"] = "delete"
+    mark_chat_workflow_active(context, msg.chat_id, "delete")
     context.user_data["next_action"] = "delete_tv_show_search"
 
     mocker.patch(
@@ -164,12 +165,68 @@ async def test_stale_delete_state_deletes_user_message_before_menu(mocker, make_
 
 
 @pytest.mark.asyncio
+async def test_stale_link_state_falls_back_to_home_menu(mocker, make_message, context):
+    msg = make_message("recover")
+    update = Update(update_id=1, message=msg)
+    mark_chat_workflow_active(context, msg.chat_id, "link")
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.ui.home_menu.show_home_menu",
+        AsyncMock(),
+    )
+    link_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.handle_link_message",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    link_mock.assert_not_awaited()
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+    assert context.bot_data["chat_navigation"][msg.chat_id]["state"] == "idle"
+
+
+@pytest.mark.asyncio
+async def test_cancel_then_plain_search_recovers_home_menu_instead_of_search_workflow(
+    mocker, make_message, context
+):
+    mark_chat_workflow_active(context, 456, "search", prompt_message_id=15)
+    context.user_data["search_session"] = {"media_type": "movie", "step": "title"}
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    await return_to_home(context, 456)
+
+    msg = make_message("search", message_id=16)
+    update = Update(update_id=1, message=msg)
+    show_home_menu_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.show_home_menu",
+        AsyncMock(),
+    )
+    search_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.handle_search_workflow",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    search_mock.assert_not_awaited()
+    show_home_menu_mock.assert_awaited_once_with(context, msg.chat_id)
+
+
+@pytest.mark.asyncio
 async def test_link_workflow_message_processes_input_waits_for_download_start_or_cancel(
     mocker, make_message, context
 ):
     msg = make_message("magnet:?xt=urn:btih:abcdef")
     update = Update(update_id=1, message=msg)
-    context.user_data["active_workflow"] = "link"
+    mark_chat_workflow_active(context, msg.chat_id, "link", prompt_message_id=1234)
     context.user_data["link_prompt_message_id"] = 1234
 
     reply_msg = make_message(message_id=77)
@@ -210,7 +267,7 @@ async def test_link_workflow_message_processes_input_waits_for_download_start_or
 async def test_non_link_text_inside_link_workflow_stays_in_workflow(mocker, make_message, context):
     msg = make_message("not-a-link")
     update = Update(update_id=1, message=msg)
-    context.user_data["active_workflow"] = "link"
+    mark_chat_workflow_active(context, msg.chat_id, "link", prompt_message_id=1234)
 
     reply_msg = make_message(message_id=78)
     mocker.patch.object(Message, "reply_text", AsyncMock(return_value=reply_msg))

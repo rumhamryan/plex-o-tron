@@ -9,7 +9,12 @@ from ..config import logger
 from ..services.auth_service import is_user_authorized
 from ..services.plex_service import get_plex_server_status, restart_plex_server
 from ..utils import safe_send_message
-from ..workflows.navigation import clear_all_workflow_state, get_user_data_store
+from ..workflows.navigation import (
+    clear_all_workflow_state,
+    get_user_data_store,
+    mark_chat_workflow_active,
+    set_active_prompt_message_id,
+)
 
 
 def get_help_message_text() -> str:
@@ -33,7 +38,7 @@ async def launch_search_workflow(
     """Starts the top-level search launcher prompt."""
     store = get_user_data_store(context)
     clear_all_workflow_state(store)
-    store["active_workflow"] = "search"
+    mark_chat_workflow_active(context, chat_id, "search")
 
     keyboard = [
         [
@@ -42,13 +47,15 @@ async def launch_search_workflow(
         ],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
     ]
-    return await safe_send_message(
+    prompt = await safe_send_message(
         context.bot,
         chat_id=chat_id,
         text=r"What type of media do you want to search for\?",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
+    set_active_prompt_message_id(context, chat_id, prompt.message_id)
+    return prompt
 
 
 async def launch_delete_workflow(
@@ -58,7 +65,7 @@ async def launch_delete_workflow(
     """Starts the top-level delete launcher prompt."""
     store = get_user_data_store(context)
     clear_all_workflow_state(store)
-    store["active_workflow"] = "delete"
+    mark_chat_workflow_active(context, chat_id, "delete")
 
     keyboard = [
         [
@@ -67,12 +74,14 @@ async def launch_delete_workflow(
         ],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
     ]
-    return await safe_send_message(
+    prompt = await safe_send_message(
         context.bot,
         chat_id=chat_id,
         text="What type of media do you want to delete?",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+    set_active_prompt_message_id(context, chat_id, prompt.message_id)
+    return prompt
 
 
 async def launch_link_workflow(
@@ -82,7 +91,7 @@ async def launch_link_workflow(
     """Starts the guided link-ingestion workflow."""
     store = get_user_data_store(context)
     clear_all_workflow_state(store)
-    store["active_workflow"] = "link"
+    mark_chat_workflow_active(context, chat_id, "link")
 
     keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
     prompt_text = escape_markdown(
@@ -98,6 +107,7 @@ async def launch_link_workflow(
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     store["link_prompt_message_id"] = prompt.message_id
+    set_active_prompt_message_id(context, chat_id, prompt.message_id)
     return prompt
 
 

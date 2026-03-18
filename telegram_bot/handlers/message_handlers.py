@@ -1,4 +1,5 @@
 import os
+from collections.abc import MutableMapping
 
 from telegram import Message, Update
 from telegram.error import TelegramError
@@ -8,10 +9,17 @@ from ..config import logger
 from ..services.auth_service import is_user_authorized
 from ..services.media_manager import validate_and_enrich_torrent
 from ..services.torrent_service import process_user_input
-from ..ui.home_menu import get_home_menu_message_id, show_home_menu
+from ..ui.home_menu import show_home_menu
 from ..ui.views import send_confirmation_prompt
 from ..workflows.delete_workflow import handle_delete_workflow
-from ..workflows.navigation import clear_all_workflow_state, get_user_data_store
+from ..workflows.navigation import (
+    clear_all_workflow_state,
+    get_active_prompt_message_id,
+    get_chat_navigation_state,
+    get_user_data_store,
+    return_to_home,
+    set_active_prompt_message_id,
+)
 from ..workflows.search_session import SearchSession
 from ..workflows.search_workflow import handle_search_workflow
 
@@ -34,18 +42,39 @@ async def _delete_link_example_prompt(context: ContextTypes.DEFAULT_TYPE, *, cha
     user_data = get_user_data_store(context)
     prompt_message_id = user_data.pop("link_prompt_message_id", None)
     if not isinstance(prompt_message_id, int):
+        prompt_message_id = get_active_prompt_message_id(context, chat_id)
+    if not isinstance(prompt_message_id, int):
         return
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
     except TelegramError:
         pass
+    set_active_prompt_message_id(context, chat_id, None)
 
 
-def _has_active_home_menu(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
-    application = getattr(context, "application", None)
-    if application is None:
-        return False
-    return get_home_menu_message_id(application, chat_id) is not None
+def _has_valid_link_session(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_data: MutableMapping[str, object] | None,
+    *,
+    chat_id: int,
+) -> bool:
+    if not isinstance(user_data, MutableMapping):
+        return isinstance(get_active_prompt_message_id(context, chat_id), int)
+
+    return (
+        any(
+            isinstance(user_data.get(key), expected_type)
+            for key, expected_type in (
+                ("link_prompt_message_id", int),
+                ("pending_magnet_link", str),
+                ("pending_info_url", str),
+                ("torrent_file_path", str),
+                ("pending_torrent", dict),
+            )
+        )
+        or isinstance(user_data.get("temp_magnet_choices_details"), list)
+        or isinstance(get_active_prompt_message_id(context, chat_id), int)
+    )
 
 
 async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -70,6 +99,7 @@ async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         progress_message = await message.reply_text("✅ Link received. Analyzing...")
+        set_active_prompt_message_id(context, chat.id, progress_message.message_id)
         await message.delete()
     except TelegramError as exc:
         logger.warning("Could not delete user message or reply in link workflow: %s", exc)
@@ -116,37 +146,35 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     user_data = get_user_data_store(context)
-    active_workflow = user_data.get("active_workflow")
+    navigation_state = get_chat_navigation_state(context, chat.id)
+    active_state = navigation_state.get("state")
 
-    if active_workflow == "search":
+    if active_state == "search":
         session = SearchSession.from_user_data(user_data)
         if session.is_active:
             await handle_search_workflow(update, context)
             return
         logger.info("Clearing stale search workflow state for user %s.", user.id)
-        clear_all_workflow_state(user_data)
-        await _delete_user_message_before_menu(message)
-        await show_home_menu(context, chat.id)
+        await return_to_home(context, chat.id, source_message=message)
         return
 
-    if active_workflow == "delete":
+    if active_state == "delete":
         if user_data.get("next_action"):
             await handle_delete_workflow(update, context)
             return
         logger.info("Clearing stale delete workflow state for user %s.", user.id)
-        clear_all_workflow_state(user_data)
-        await _delete_user_message_before_menu(message)
-        await show_home_menu(context, chat.id)
+        await return_to_home(context, chat.id, source_message=message)
         return
 
-    if active_workflow == "link":
-        await handle_link_message(update, context)
+    if active_state == "link":
+        if _has_valid_link_session(context, user_data, chat_id=chat.id):
+            await handle_link_message(update, context)
+            return
+        logger.info("Clearing stale link workflow state for user %s.", user.id)
+        await return_to_home(context, chat.id, source_message=message)
         return
 
     clear_all_workflow_state(user_data)
-    if _has_active_home_menu(context, chat.id):
-        await _delete_user_message_before_menu(message)
-        return
     await _delete_user_message_before_menu(message)
     await show_home_menu(context, chat.id)
 

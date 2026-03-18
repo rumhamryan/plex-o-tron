@@ -31,6 +31,7 @@ from ...utils import (
     safe_send_message,
     sanitize_collection_name,
 )
+from ..navigation import mark_chat_idle
 from ..search_session import (
     SearchSession,
     SearchStep,
@@ -695,8 +696,7 @@ async def _handle_collection_confirm(
         query.message, context, session, pending, missing
     )
     clear_search_session(context.user_data)
-    if context.user_data is not None:
-        context.user_data.pop("active_workflow", None)
+    mark_chat_idle(context, query.message.chat_id)
 
 
 async def _prepare_collection_directory(

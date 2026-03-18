@@ -22,7 +22,7 @@ from ..ui.home_menu import (
 )
 from ..ui.views import send_confirmation_prompt
 from ..workflows.delete_workflow import handle_delete_buttons
-from ..workflows.navigation import return_to_home
+from ..workflows.navigation import mark_chat_idle, return_to_home
 from ..workflows.search_workflow import handle_reject_season_pack, handle_search_buttons
 from .command_handlers import (
     launch_delete_workflow,
@@ -198,14 +198,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif action == "confirm_download":
         started = await add_download_to_queue(update, context)
         if started and isinstance(query.message, Message):
+            mark_chat_idle(context, query.message.chat_id)
             await show_home_menu(context, query.message.chat_id)
     elif action == "confirm_season_download":
         started = await add_season_to_queue(update, context)
         if started and isinstance(query.message, Message):
+            mark_chat_idle(context, query.message.chat_id)
             await show_home_menu(context, query.message.chat_id)
     elif action == "confirm_collection_download":
         started = await add_collection_to_queue(update, context)
         if started and isinstance(query.message, Message):
+            mark_chat_idle(context, query.message.chat_id)
             await show_home_menu(context, query.message.chat_id)
     elif action.startswith("select_magnet_"):
         await _handle_select_magnet_choice(update, context)

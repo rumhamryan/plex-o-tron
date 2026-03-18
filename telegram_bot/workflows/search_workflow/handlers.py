@@ -22,6 +22,7 @@ from ...utils import (
     safe_edit_message,
     safe_send_message,
 )
+from ..navigation import mark_chat_idle, mark_chat_workflow_active, set_active_prompt_message_id
 from ..search_session import (
     CONTEXT_LOST_MESSAGE,
     SearchSession,
@@ -295,8 +296,9 @@ async def _handle_start_button(query, context):
     """Handles the initial 'Movie' or 'TV Show' button press."""
     store = _get_user_data_store(context)
     clear_search_session(store)
-    store["active_workflow"] = "search"
     session = SearchSession()
+    if isinstance(query.message, Message):
+        mark_chat_workflow_active(context, query.message.chat_id, "search")
 
     action = _get_callback_data(query)
     if action == "search_start_movie":
@@ -325,6 +327,7 @@ async def _handle_start_button(query, context):
 
     session.prompt_message_id = query.message.message_id
     _save_session(context, session)
+    set_active_prompt_message_id(context, query.message.chat_id, query.message.message_id)
 
     await safe_edit_message(
         query.message,
@@ -536,8 +539,7 @@ async def _handle_result_selection_button(
 
     # Prevent duplicate selections during the download handoff.
     clear_search_session(context.user_data)
-    if context.user_data is not None:
-        context.user_data.pop("active_workflow", None)
+    mark_chat_idle(context, query.message.chat_id)
 
     ti = await torrent_service.process_user_input(
         url_to_process, context, query.message, info_url=info_url

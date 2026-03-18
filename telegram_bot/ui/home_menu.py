@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import MutableMapping
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -9,8 +8,11 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from ..config import logger
-
-HOME_MENU_MESSAGES_KEY = "home_menu_messages"
+from ..workflows.navigation import (
+    clear_home_menu_message_id_for_application,
+    get_home_menu_message_id_from_application,
+    set_home_menu_message_id_for_application,
+)
 
 
 def build_home_menu_markup() -> InlineKeyboardMarkup:
@@ -35,24 +37,7 @@ def build_home_menu_markup() -> InlineKeyboardMarkup:
 
 def get_home_menu_text() -> str:
     """Returns the standard launcher text shown above home menu buttons."""
-    return "*Plex\\-o\\-Tron*\n" "Manage search, downloads, and Plex maintenance from here\\."
-
-
-def _ensure_home_menu_store(bot_data: MutableMapping[str, Any]) -> dict[int, int]:
-    raw_store = bot_data.get(HOME_MENU_MESSAGES_KEY)
-    if isinstance(raw_store, dict):
-        return raw_store
-
-    store: dict[int, int] = {}
-    bot_data[HOME_MENU_MESSAGES_KEY] = store
-    return store
-
-
-def _get_bot_data_from_application(application: Any) -> MutableMapping[str, Any]:
-    bot_data = getattr(application, "bot_data", None)
-    if not isinstance(bot_data, MutableMapping):
-        raise TypeError("application.bot_data must be a mutable mapping.")
-    return bot_data
+    return "*Plex\\-o\\-Tron*\nManage search, downloads, and Plex maintenance from here\\."
 
 
 def _get_application_from_context(context: ContextTypes.DEFAULT_TYPE) -> Any:
@@ -67,24 +52,17 @@ def _get_application_from_context(context: ContextTypes.DEFAULT_TYPE) -> Any:
 
 def get_home_menu_message_id(application: Any, chat_id: int) -> int | None:
     """Returns the canonical home-menu message id for a chat, if known."""
-    bot_data = _get_bot_data_from_application(application)
-    store = _ensure_home_menu_store(bot_data)
-    message_id = store.get(int(chat_id))
-    return int(message_id) if isinstance(message_id, int) else None
+    return get_home_menu_message_id_from_application(application, chat_id)
 
 
 def set_home_menu_message_id(application: Any, chat_id: int, message_id: int) -> None:
     """Stores the canonical home-menu message id for a chat."""
-    bot_data = _get_bot_data_from_application(application)
-    store = _ensure_home_menu_store(bot_data)
-    store[int(chat_id)] = int(message_id)
+    set_home_menu_message_id_for_application(application, chat_id, message_id)
 
 
 def clear_home_menu_message_id(application: Any, chat_id: int) -> None:
     """Clears any canonical home-menu message id stored for a chat."""
-    bot_data = _get_bot_data_from_application(application)
-    store = _ensure_home_menu_store(bot_data)
-    store.pop(int(chat_id), None)
+    clear_home_menu_message_id_for_application(application, chat_id)
 
 
 def _is_message_not_modified(error: BadRequest) -> bool:

@@ -25,7 +25,7 @@ from ...services.search_logic import (
 )
 from ...ui.messages import format_media_summary
 from ...utils import safe_edit_message, safe_send_message
-from ..navigation import return_to_home
+from ..navigation import mark_chat_workflow_active, return_to_home, set_active_prompt_message_id
 
 if TYPE_CHECKING:
     pass
@@ -250,7 +250,7 @@ async def handle_delete_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _handle_start_buttons(query, context):
     """Handles 'Movie' or 'TV Show' selection."""
-    context.user_data["active_workflow"] = "delete"
+    mark_chat_workflow_active(context, query.message.chat_id, "delete")
     if query.data == "delete_start_movie":
         message_text = "Delete a full movie collection \\(folder\\) or a single movie file\\?"
         keyboard = [
@@ -272,6 +272,7 @@ async def _handle_start_buttons(query, context):
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     context.user_data["prompt_message_id"] = query.message.message_id
+    set_active_prompt_message_id(context, query.message.chat_id, query.message.message_id)
 
 
 async def _handle_movie_type_buttons(query, context):

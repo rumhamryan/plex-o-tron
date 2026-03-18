@@ -31,9 +31,11 @@ def test_home_menu_message_id_storage():
 
     set_home_menu_message_id(application, 456, 12)
     assert get_home_menu_message_id(application, 456) == 12
+    assert application.bot_data["chat_navigation"][456]["home_menu_message_id"] == 12
 
     clear_home_menu_message_id(application, 456)
     assert get_home_menu_message_id(application, 456) is None
+    assert application.bot_data["chat_navigation"][456]["home_menu_message_id"] is None
 
 
 @pytest.mark.asyncio
@@ -48,6 +50,7 @@ async def test_show_home_menu_falls_back_to_send_when_canonical_edit_fails(conte
 
     assert rendered.message_id == 99
     assert context.bot_data["home_menu_messages"][456] == 99
+    assert context.bot_data["chat_navigation"][456]["home_menu_message_id"] == 99
     context.bot.send_message.assert_awaited_once()
 
 
@@ -67,6 +70,7 @@ async def test_show_home_menu_replaces_id_after_target_edit_failure(mocker, cont
 
     assert rendered.message_id == 33
     assert context.bot_data["home_menu_messages"][456] == 33
+    assert context.bot_data["chat_navigation"][456]["home_menu_message_id"] == 33
 
 
 @pytest.mark.asyncio
@@ -79,6 +83,7 @@ async def test_delete_home_menu_message_clears_stored_message_id(context):
 
     context.bot.delete_message.assert_awaited_once_with(chat_id=456, message_id=12)
     assert 456 not in context.bot_data["home_menu_messages"]
+    assert context.bot_data["chat_navigation"][456]["home_menu_message_id"] is None
 
 
 @pytest.mark.asyncio
@@ -90,3 +95,4 @@ async def test_delete_home_menu_message_clears_id_even_when_delete_fails(context
     await delete_home_menu_message(context, 456)
 
     assert 456 not in context.bot_data["home_menu_messages"]
+    assert context.bot_data["chat_navigation"][456]["home_menu_message_id"] is None
