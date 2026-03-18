@@ -1,6 +1,7 @@
 # telegram_bot/services/plex_service.py
 
 import asyncio
+import difflib
 import platform
 import re
 import subprocess
@@ -34,6 +35,32 @@ __all__ = [
 
 PLEX_INDEX_WAIT_TIMEOUT_SECONDS = 120
 PLEX_INDEX_POLL_INTERVAL_SECONDS = 5
+_PLEX_TITLE_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+_ROMAN_NUMERAL_TOKENS = {
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+}
+_NUMBER_WORD_TOKENS = {
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+}
+_PLEX_COLLECTION_STOPWORDS = {"collection", "film", "films", "movie", "movies"}
 
 
 def _should_suppress_plex_error(exc: Exception) -> bool:
@@ -56,6 +83,205 @@ def _has_valid_plex_token(plex_config: dict[str, Any] | None) -> bool:
         return False
     token = str(plex_config.get("token") or "").strip()
     return bool(token) and token.upper() != "PLEX_TOKEN"
+
+
+def _normalize_plex_title(value: str) -> str:
+    """Normalize common Plex/Wikipedia title variants for matching."""
+    raw = (value or "").casefold().replace("&", " and ")
+    tokens: list[str] = []
+    for token in _PLEX_TITLE_TOKEN_PATTERN.findall(raw):
+        if token == "pt":
+            token = "part"
+        token = _ROMAN_NUMERAL_TOKENS.get(token, token)
+        token = _NUMBER_WORD_TOKENS.get(token, token)
+        tokens.append(token)
+    return " ".join(tokens).strip()
+
+
+def _normalize_collection_lookup_key(value: str) -> str:
+    normalized = _normalize_plex_title(value)
+    tokens = [token for token in normalized.split() if token not in _PLEX_COLLECTION_STOPWORDS]
+    return " ".join(tokens) if tokens else normalized
+
+
+def _title_token_overlap_ratio(left: str, right: str) -> float:
+    left_tokens = set(_normalize_plex_title(left).split())
+    right_tokens = set(_normalize_plex_title(right).split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / max(min(len(left_tokens), len(right_tokens)), 1)
+
+
+def _iter_media_title_variants(item: Any) -> list[str]:
+    variants: list[str] = []
+    for attr_name in ("title", "originalTitle", "titleSort"):
+        raw_value = getattr(item, attr_name, None)
+        if not isinstance(raw_value, str):
+            continue
+        cleaned = raw_value.strip()
+        if cleaned and cleaned not in variants:
+            variants.append(cleaned)
+    return variants
+
+
+def _score_media_title_match(item: Any, expected_title: str, year_value: Any) -> float:
+    expected_normalized = _normalize_plex_title(expected_title)
+    if not expected_normalized:
+        return 0.0
+
+    best_score = 0.0
+    for candidate_title in _iter_media_title_variants(item):
+        candidate_normalized = _normalize_plex_title(candidate_title)
+        if not candidate_normalized:
+            continue
+        if candidate_normalized == expected_normalized:
+            best_score = max(best_score, 100.0)
+            continue
+
+        sequence_score = (
+            difflib.SequenceMatcher(
+                a=expected_normalized,
+                b=candidate_normalized,
+            ).ratio()
+            * 100
+        )
+        overlap_score = _title_token_overlap_ratio(expected_title, candidate_title) * 100
+        containment_score = 0.0
+        if (
+            expected_normalized in candidate_normalized
+            or candidate_normalized in expected_normalized
+        ):
+            containment_score = 92.0
+        best_score = max(best_score, sequence_score, overlap_score, containment_score)
+
+    raw_item_year = getattr(item, "year", None)
+    item_year: int | None
+    if isinstance(raw_item_year, int):
+        item_year = raw_item_year
+    else:
+        try:
+            item_year = int(raw_item_year) if isinstance(raw_item_year, str) else None
+        except ValueError:
+            item_year = None
+    try:
+        expected_year = int(year_value) if year_value is not None else None
+    except (TypeError, ValueError):
+        expected_year = None
+
+    if expected_year is not None and item_year == expected_year:
+        best_score += 5.0
+
+    return best_score
+
+
+def _is_acceptable_media_match(item: Any, expected_title: str, year_value: Any) -> bool:
+    score = _score_media_title_match(item, expected_title, year_value)
+    has_year = year_value is not None
+    threshold = 72.0 if has_year else 85.0
+    return score >= threshold
+
+
+def _dedupe_media_items(items: Sequence[Any]) -> list[Any]:
+    deduped: list[Any] = []
+    seen: set[tuple[Any, Any, Any]] = set()
+    for item in items:
+        key = (
+            getattr(item, "ratingKey", None),
+            getattr(item, "title", None),
+            getattr(item, "year", None),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _resolve_existing_collection_name(movies_section: Any, requested_name: str) -> str:
+    """Prefer the requested Plex collection name, renaming a single equivalent alias when safe."""
+    normalized_requested = _normalize_collection_lookup_key(requested_name)
+    if not normalized_requested:
+        return requested_name
+
+    collection_lookup = getattr(movies_section, "collection", None)
+    if callable(collection_lookup):
+        try:
+            collection = collection_lookup(requested_name)
+        except Exception:
+            collection = None
+        if collection is not None:
+            resolved_title = str(
+                getattr(collection, "title", requested_name) or requested_name
+            ).strip()
+            return resolved_title or requested_name
+
+    collections_getter = getattr(movies_section, "collections", None)
+    if not callable(collections_getter):
+        return requested_name
+
+    try:
+        collections = collections_getter()
+    except Exception:
+        return requested_name
+
+    matching_collections: list[Any] = []
+    for collection in collections or []:
+        title = str(getattr(collection, "title", "") or "").strip()
+        if not title:
+            continue
+        if _normalize_collection_lookup_key(title) == normalized_requested:
+            matching_collections.append(collection)
+
+    if not matching_collections:
+        return requested_name
+
+    if len(matching_collections) > 1:
+        alias_titles = [
+            str(getattr(collection, "title", "") or "").strip()
+            for collection in matching_collections
+        ]
+        logger.warning(
+            "[PLEX] Found multiple equivalent collections for requested collection '%s': %s. "
+            "Keeping the first match without renaming.",
+            requested_name,
+            ", ".join(title for title in alias_titles if title) or "(unknown titles)",
+        )
+        first_title = str(
+            getattr(matching_collections[0], "title", requested_name) or requested_name
+        )
+        return first_title.strip() or requested_name
+
+    collection = matching_collections[0]
+    existing_title = str(getattr(collection, "title", requested_name) or requested_name).strip()
+    if not existing_title or existing_title == requested_name:
+        return requested_name
+
+    rename_method = getattr(collection, "editTitle", None)
+    if not callable(rename_method):
+        logger.info(
+            "[PLEX] Reusing existing collection '%s' for requested collection '%s'.",
+            existing_title,
+            requested_name,
+        )
+        return existing_title
+
+    try:
+        rename_method(requested_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[PLEX] Failed to rename existing collection '%s' to '%s': %s",
+            existing_title,
+            requested_name,
+            exc,
+        )
+        return existing_title
+
+    logger.info(
+        "[PLEX] Renamed existing collection '%s' to requested collection '%s'.",
+        existing_title,
+        requested_name,
+    )
+    return requested_name
 
 
 async def get_plex_server_status(
@@ -239,6 +465,11 @@ async def ensure_collection_contains_movies(
         logger.error(f"[PLEX] Could not prepare collection '{collection_name}': {exc}")
         return []
 
+    resolved_collection_name = await asyncio.to_thread(
+        _resolve_existing_collection_name,
+        movies_section,
+        collection_name,
+    )
     matched_labels: list[str] = []
 
     for movie in movies:
@@ -257,13 +488,13 @@ async def ensure_collection_contains_movies(
                 "[PLEX] Could not locate '%s' (%s) when updating collection '%s'.",
                 title,
                 year_value or "unknown year",
-                collection_name,
+                resolved_collection_name,
             )
             continue
 
         target = matches[0]
         try:
-            await asyncio.to_thread(target.addCollection, collection_name)
+            await asyncio.to_thread(target.addCollection, resolved_collection_name)
             label = target.title
             target_year = getattr(target, "year", None)
             if target_year:
@@ -273,7 +504,7 @@ async def ensure_collection_contains_movies(
             logger.warning(
                 "[PLEX] Failed to tag '%s' for collection '%s': %s",
                 title,
-                collection_name,
+                resolved_collection_name,
                 exc,
             )
 
@@ -358,17 +589,28 @@ def _search_movies_section(
     title: str,
     year_value: Any,
 ) -> Sequence[Any]:
-    params: dict[str, Any] = {"title": title}
+    candidate_results: list[Any] = []
+
+    queries: list[dict[str, Any]] = []
+    if title:
+        if isinstance(year_value, int):
+            queries.append({"title": title, "year": year_value})
+        queries.append({"title": title})
     if isinstance(year_value, int):
-        params["year"] = year_value
-    try:
-        results = movies_section.search(**params)
-    except Exception:
-        results = []
-    if not results and "year" in params:
-        params.pop("year", None)
+        queries.append({"year": year_value})
+
+    for params in queries:
         try:
-            results = movies_section.search(**params)
+            candidate_results.extend(movies_section.search(**params) or [])
         except Exception:
-            results = []
-    return results
+            continue
+
+    deduped_results = _dedupe_media_items(candidate_results)
+    acceptable = [
+        item for item in deduped_results if _is_acceptable_media_match(item, title, year_value)
+    ]
+    acceptable.sort(
+        key=lambda item: _score_media_title_match(item, title, year_value),
+        reverse=True,
+    )
+    return acceptable
