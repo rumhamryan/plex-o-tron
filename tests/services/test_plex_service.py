@@ -148,6 +148,40 @@ async def test_ensure_collection_contains_movies_falls_back_when_collection_rena
 
 
 @pytest.mark.asyncio
+async def test_ensure_collection_contains_movies_uses_existing_requested_collection_on_conflict(
+    mocker,
+):
+    movie = mocker.Mock()
+    movie.title = "Mission: Impossible"
+    movie.year = 1996
+    movie.addCollection = mocker.Mock()
+
+    canonical_collection = mocker.Mock()
+    canonical_collection.title = "Mission Impossible"
+    alias_collection = mocker.Mock()
+    alias_collection.title = "Mission: Impossible"
+    alias_collection.editTitle = mocker.Mock()
+
+    section = mocker.Mock()
+    section.search.return_value = [movie]
+    section.collection.side_effect = Exception("not found")
+    section.collections.return_value = [canonical_collection, alias_collection]
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.create_plex_client", return_value=plex)
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    movies = [{"title": "Mission: Impossible", "year": 1996}]
+    result = await ensure_collection_contains_movies(plex_config, "Mission Impossible", movies)
+
+    assert result == ["Mission: Impossible (1996)"]
+    alias_collection.editTitle.assert_not_called()
+    movie.addCollection.assert_called_once_with("Mission Impossible")
+
+
+@pytest.mark.asyncio
 async def test_ensure_collection_contains_movies_matches_variant_titles_from_year_search(mocker):
     movie = mocker.Mock()
     movie.title = "Mission: Impossible II"
@@ -170,6 +204,45 @@ async def test_ensure_collection_contains_movies_matches_variant_titles_from_yea
 
     assert result == ["Mission: Impossible II (2000)"]
     movie.addCollection.assert_called_once_with("Mission Impossible")
+
+
+@pytest.mark.asyncio
+async def test_ensure_collection_contains_movies_uses_path_fallback_when_title_search_misses(
+    mocker,
+):
+    movie = mocker.Mock()
+    movie.title = "Mission: Impossible - Dead Reckoning Part One"
+    movie.year = 2023
+    movie.addCollection = mocker.Mock()
+    part = mocker.Mock(
+        file="/mnt/movies/Mission Impossible/07 - Mission Impossible - Dead Reckoning Part One (2023).mp4"
+    )
+    movie.media = [mocker.Mock(parts=[part])]
+
+    section = mocker.Mock()
+    section.search.side_effect = [[], [], []]
+    section.all.return_value = [movie]
+    section.collection.side_effect = Exception("not found")
+    section.collections.return_value = []
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.create_plex_client", return_value=plex)
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    movies = [
+        {
+            "title": "Dead Reckoning Part One",
+            "year": 2023,
+            "destination_path": "/mnt/movies/Mission Impossible/07 - Mission Impossible - Dead Reckoning Part One (2023).mp4",
+        }
+    ]
+    result = await ensure_collection_contains_movies(plex_config, "Mission Impossible", movies)
+
+    assert result == ["Mission: Impossible - Dead Reckoning Part One (2023)"]
+    movie.addCollection.assert_called_once_with("Mission Impossible")
+    section.all.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -270,6 +343,54 @@ async def test_wait_for_movies_to_be_available_accepts_variant_year_match(mocker
     assert result is True
     sleep_mock.assert_not_awaited()
     assert section.search.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_wait_for_movies_to_be_available_uses_path_fallback(mocker):
+    movie = mocker.Mock()
+    movie.title = "Mission: Impossible - Dead Reckoning Part One"
+    movie.year = 2023
+    part = mocker.Mock(
+        file="/mnt/movies/Mission Impossible/07 - Mission Impossible - Dead Reckoning Part One (2023).mp4"
+    )
+    movie.media = [mocker.Mock(parts=[part])]
+
+    section = mocker.Mock()
+    section.search.side_effect = [[], [], []]
+    section.all.return_value = [movie]
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.create_plex_client", return_value=plex)
+    current_time = [0.0]
+
+    async def fake_sleep(seconds):
+        current_time[0] += seconds
+
+    mocker.patch(
+        "telegram_bot.services.plex_service.asyncio.get_running_loop",
+        return_value=SimpleNamespace(time=lambda: current_time[0]),
+    )
+    sleep_mock = mocker.patch("asyncio.sleep", mocker.AsyncMock(side_effect=fake_sleep))
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    result = await wait_for_movies_to_be_available(
+        plex_config,
+        [
+            {
+                "title": "Dead Reckoning Part One",
+                "year": 2023,
+                "destination_path": "/mnt/movies/Mission Impossible/07 - Mission Impossible - Dead Reckoning Part One (2023).mp4",
+            }
+        ],
+        timeout_seconds=30,
+        poll_interval_seconds=5,
+    )
+
+    assert result is True
+    sleep_mock.assert_not_awaited()
+    section.all.assert_called_once()
 
 
 @pytest.mark.asyncio

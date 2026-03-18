@@ -853,12 +853,16 @@ async def finalize_movie_collection(
             label = _format_collection_movie_label(movie)
             resolution = await reconcile_collection_movie(movies_root, franchise_dir, label)
             results.append(resolution)
+            organized_movie = dict(movie)
+            resolved_path = resolution.destination_path or resolution.source_path
+            if resolved_path:
+                organized_movie["destination_path"] = resolved_path
             if resolution.status == "moved_to_collection":
                 summary["moved_count"] += 1
-                summary["organized_movies"].append(dict(movie))
+                summary["organized_movies"].append(organized_movie)
             elif resolution.status == "already_in_collection":
                 summary["already_in_collection_count"] += 1
-                summary["organized_movies"].append(dict(movie))
+                summary["organized_movies"].append(organized_movie)
             elif resolution.status == "missing":
                 summary["missing_count"] += 1
                 summary["missing_movies"].append(dict(movie))

@@ -2,6 +2,7 @@
 
 import asyncio
 import difflib
+import os
 import platform
 import re
 import subprocess
@@ -197,6 +198,61 @@ def _dedupe_media_items(items: Sequence[Any]) -> list[Any]:
     return deduped
 
 
+def _normalize_media_path(path: str) -> str:
+    return os.path.normcase(abs_path(path))
+
+
+def _iter_media_file_paths(item: Any) -> list[str]:
+    paths: list[str] = []
+
+    raw_locations = getattr(item, "locations", None)
+    if callable(raw_locations):
+        try:
+            raw_locations = raw_locations()
+        except Exception:
+            raw_locations = None
+
+    if isinstance(raw_locations, Sequence) and not isinstance(raw_locations, (str, bytes)):
+        for path in raw_locations:
+            if isinstance(path, str) and path.strip():
+                paths.append(path.strip())
+
+    for media in getattr(item, "media", []) or []:
+        for part in getattr(media, "parts", []) or []:
+            file_path = getattr(part, "file", None)
+            if isinstance(file_path, str) and file_path.strip():
+                paths.append(file_path.strip())
+
+    deduped_paths: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        normalized = _normalize_media_path(path)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped_paths.append(path)
+    return deduped_paths
+
+
+def _find_movie_by_path(movies_section: Any, expected_path: str) -> Sequence[Any]:
+    normalized_expected = _normalize_media_path(expected_path)
+    if not normalized_expected:
+        return []
+
+    try:
+        items = movies_section.all()
+    except Exception:
+        return []
+
+    matches: list[Any] = []
+    for item in items or []:
+        for candidate_path in _iter_media_file_paths(item):
+            if _normalize_media_path(candidate_path) == normalized_expected:
+                matches.append(item)
+                break
+    return _dedupe_media_items(matches)
+
+
 def _resolve_existing_collection_name(movies_section: Any, requested_name: str) -> str:
     """Prefer the requested Plex collection name, renaming a single equivalent alias when safe."""
     normalized_requested = _normalize_collection_lookup_key(requested_name)
@@ -224,15 +280,25 @@ def _resolve_existing_collection_name(movies_section: Any, requested_name: str) 
     except Exception:
         return requested_name
 
+    exact_requested_exists = False
     matching_collections: list[Any] = []
     for collection in collections or []:
         title = str(getattr(collection, "title", "") or "").strip()
         if not title:
             continue
+        if title == requested_name:
+            exact_requested_exists = True
         if _normalize_collection_lookup_key(title) == normalized_requested:
             matching_collections.append(collection)
 
     if not matching_collections:
+        return requested_name
+
+    if exact_requested_exists:
+        logger.info(
+            "[PLEX] Using existing canonical collection '%s' without renaming alias matches.",
+            requested_name,
+        )
         return requested_name
 
     if len(matching_collections) > 1:
@@ -477,12 +543,19 @@ async def ensure_collection_contains_movies(
         if not title:
             continue
         year_value = movie.get("year")
+        expected_path = str(movie.get("destination_path") or movie.get("path") or "").strip()
         matches = await asyncio.to_thread(
             _search_movies_section,
             movies_section,
             title,
             year_value,
         )
+        if not matches and expected_path:
+            matches = await asyncio.to_thread(
+                _find_movie_by_path,
+                movies_section,
+                expected_path,
+            )
         if not matches:
             logger.warning(
                 "[PLEX] Could not locate '%s' (%s) when updating collection '%s'.",
@@ -529,6 +602,9 @@ async def wait_for_movies_to_be_available(
         {
             "title": str(movie.get("title") or "").strip(),
             "year": movie.get("year"),
+            "destination_path": str(
+                movie.get("destination_path") or movie.get("path") or ""
+            ).strip(),
         }
         for movie in movies
         if str(movie.get("title") or "").strip()
@@ -556,12 +632,19 @@ async def wait_for_movies_to_be_available(
         for movie in pending_movies:
             movie_title = str(movie.get("title") or "").strip()
             movie_year = movie.get("year")
+            expected_path = str(movie.get("destination_path") or "").strip()
             matches = await asyncio.to_thread(
                 _search_movies_section,
                 movies_section,
                 movie_title,
                 movie_year,
             )
+            if not matches and expected_path:
+                matches = await asyncio.to_thread(
+                    _find_movie_by_path,
+                    movies_section,
+                    expected_path,
+                )
             if not matches:
                 remaining.append(movie)
 
