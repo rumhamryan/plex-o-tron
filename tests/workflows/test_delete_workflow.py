@@ -88,6 +88,7 @@ async def test_delete_workflow_not_found(mocker, context, make_message):
         "telegram_bot.workflows.delete_workflow.handlers.safe_edit_message",
         new=AsyncMock(),
     )
+    logger_mock = mocker.patch("telegram_bot.workflows.delete_workflow.handlers.logger")
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.handlers.find_media_by_name",
         new=AsyncMock(return_value=None),
@@ -97,6 +98,14 @@ async def test_delete_workflow_not_found(mocker, context, make_message):
 
     await handle_delete_workflow(Update(update_id=1, message=make_message("Unknown")), context)
     assert "No single TV show directory found" in safe_edit_mock.await_args.kwargs["text"]
+    logged_messages = [call.args[0] for call in logger_mock.info.call_args_list if call.args]
+    assert any(
+        "[DELETE]" in message
+        and "event=search_completed" in message
+        and "target_kind=tv_show" in message
+        and "result=no_match" in message
+        for message in logged_messages
+    )
 
 
 @pytest.mark.asyncio
@@ -438,6 +447,7 @@ async def test_success_message_includes_extension_and_size(
         "telegram_bot.workflows.delete_workflow.handlers.safe_edit_message",
         new=AsyncMock(),
     )
+    logger_mock = mocker.patch("telegram_bot.workflows.delete_workflow.handlers.logger")
     mocker.patch(
         "telegram_bot.workflows.delete_workflow.handlers._delete_item_from_plex",
         new=AsyncMock(
@@ -471,6 +481,20 @@ async def test_success_message_includes_extension_and_size(
     escaped_name = escape_markdown("movie.mkv", version=2)
     assert f"{escaped_name}\nSize: 4\\.0 GiB" in final_text
     assert "Successfully Deleted from Plex" in final_text
+    logged_messages = [call.args[0] for call in logger_mock.info.call_args_list if call.args]
+    assert any(
+        "[DELETE]" in message
+        and "event=confirm_requested" in message
+        and "target_kind=movie_file" in message
+        for message in logged_messages
+    )
+    assert any(
+        "[DELETE]" in message
+        and "event=confirm_completed" in message
+        and "target_kind=movie_file" in message
+        and "outcome=plex_deleted" in message
+        for message in logged_messages
+    )
 
 
 def test_has_name_twin_detects_case_insensitive(tmp_path):

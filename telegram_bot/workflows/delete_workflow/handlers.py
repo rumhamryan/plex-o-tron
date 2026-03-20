@@ -41,6 +41,66 @@ from .plex import _delete_item_from_plex, _delete_plex_collection
 from .selection import _present_delete_results
 
 
+def _truncate_log_text(value: str, limit: int = 120) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 3]}..."
+
+
+def _log_delete_event(message: Message | None, event: str, **fields: object) -> None:
+    chat_id = getattr(message, "chat_id", None)
+    from_user = getattr(message, "from_user", None)
+    user_id = getattr(from_user, "id", None)
+    details = [f"event={event}", f"chat_id={chat_id}", f"user_id={user_id}"]
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            rendered_value = _truncate_log_text(value)
+        else:
+            rendered_value = str(value)
+        details.append(f"{key}={rendered_value}")
+    logger.info("[DELETE] %s" % " ".join(details))
+
+
+def _log_delete_search_outcome(
+    message: Message,
+    *,
+    target_kind: str,
+    query_text: str,
+    results: str | list[str] | None,
+) -> None:
+    if isinstance(results, str):
+        _log_delete_event(
+            message,
+            "search_completed",
+            target_kind=target_kind,
+            query=query_text,
+            result="single_match",
+            matches=1,
+            path=results,
+        )
+        return
+    if isinstance(results, list):
+        _log_delete_event(
+            message,
+            "search_completed",
+            target_kind=target_kind,
+            query=query_text,
+            result="multiple_matches",
+            matches=len(results),
+        )
+        return
+    _log_delete_event(
+        message,
+        "search_completed",
+        target_kind=target_kind,
+        query=query_text,
+        result="no_match",
+        matches=0,
+    )
+
+
 async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Manages the text-based replies in the multi-step conversation for deleting media.
@@ -69,6 +129,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
 
     # Route based on the expected next action
     if next_action == "delete_movie_collection_search":
+        _log_delete_event(
+            update.message,
+            "search_requested",
+            target_kind="movie_collection",
+            query=text,
+        )
         # FIX: Escape the trailing periods
         status_message = await safe_send_message(
             context.bot,
@@ -77,6 +143,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         found = await find_media_by_name("movie", text, save_paths, "directory")
+        _log_delete_search_outcome(
+            update.message,
+            target_kind="movie_collection",
+            query_text=text,
+            results=found,
+        )
         await _present_delete_results(
             found,
             status_message,
@@ -88,6 +160,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop("next_action", None)
 
     elif next_action == "delete_movie_single_search":
+        _log_delete_event(
+            update.message,
+            "search_requested",
+            target_kind="movie_file",
+            query=text,
+        )
         # FIX: Escape the trailing periods
         status_message = await safe_send_message(
             context.bot,
@@ -96,6 +174,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         found = await find_media_by_name("movie", text, save_paths, "file")
+        _log_delete_search_outcome(
+            update.message,
+            target_kind="movie_file",
+            query_text=text,
+            results=found,
+        )
         await _present_delete_results(
             found,
             status_message,
@@ -107,6 +191,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop("next_action", None)
 
     elif next_action == "delete_tv_show_search":
+        _log_delete_event(
+            update.message,
+            "search_requested",
+            target_kind="tv_show",
+            query=text,
+        )
         # FIX: Escape the trailing periods
         status_message = await safe_send_message(
             context.bot,
@@ -115,6 +205,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         found_path = await find_media_by_name("tv_shows", text, save_paths)
+        _log_delete_search_outcome(
+            update.message,
+            target_kind="tv_show",
+            query_text=text,
+            results=found_path,
+        )
         if isinstance(found_path, str):
             context.user_data["show_path_to_delete"] = found_path
             base_name = os.path.basename(found_path)
@@ -139,6 +235,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop("next_action", None)
 
     elif next_action == "delete_tv_season_search":
+        _log_delete_event(
+            update.message,
+            "search_requested",
+            target_kind="tv_season",
+            query=text,
+        )
         # FIX: Escape the trailing periods
         status_message = await safe_send_message(
             context.bot,
@@ -149,6 +251,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
         show_path = context.user_data.get("show_path_to_delete")
         if show_path and text.isdigit():
             found_path = await find_season_directory(show_path, int(text))
+            _log_delete_search_outcome(
+                update.message,
+                target_kind="tv_season",
+                query_text=text,
+                results=found_path,
+            )
             await _present_delete_results(
                 found_path,
                 status_message,
@@ -167,6 +275,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
 
     elif next_action == "delete_tv_episode_season_prompt":
         if text.isdigit():
+            _log_delete_event(
+                update.message,
+                "episode_season_selected",
+                target_kind="tv_episode",
+                season=text,
+            )
             context.user_data["season_to_delete_num"] = int(text)
             context.user_data["next_action"] = "delete_tv_episode_episode_prompt"
             new_prompt = await safe_send_message(
@@ -180,11 +294,23 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             )
             context.user_data["prompt_message_id"] = new_prompt.message_id
         else:
+            _log_delete_event(
+                update.message,
+                "episode_season_invalid",
+                target_kind="tv_episode",
+                season=text,
+            )
             await safe_send_message(
                 context.bot, chat_id, "❌ Invalid season number. Please start over."
             )
 
     elif next_action == "delete_tv_episode_episode_prompt":
+        _log_delete_event(
+            update.message,
+            "search_requested",
+            target_kind="tv_episode",
+            query=text,
+        )
         # FIX: Escape the trailing periods
         status_message = await safe_send_message(
             context.bot,
@@ -198,6 +324,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
             season_path = await find_season_directory(show_path, season_num)
             if season_path:
                 found_path = await find_episode_file(season_path, season_num, int(text))
+                _log_delete_search_outcome(
+                    update.message,
+                    target_kind="tv_episode",
+                    query_text=f"S{season_num:02d}E{int(text):02d}",
+                    results=found_path,
+                )
                 await _present_delete_results(
                     found_path,
                     status_message,
@@ -252,6 +384,7 @@ async def _handle_start_buttons(query, context):
     """Handles 'Movie' or 'TV Show' selection."""
     mark_chat_workflow_active(context, query.message.chat_id, "delete")
     if query.data == "delete_start_movie":
+        _log_delete_event(query.message, "workflow_started", media_type="movie")
         message_text = "Delete a full movie collection \\(folder\\) or a single movie file\\?"
         keyboard = [
             [
@@ -261,6 +394,7 @@ async def _handle_start_buttons(query, context):
             ]
         ]
     else:  # delete_start_tv
+        _log_delete_event(query.message, "workflow_started", media_type="tv_show")
         context.user_data["next_action"] = "delete_tv_show_search"
         message_text = "📺 Please send me the title of the TV show to delete\\."
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
@@ -278,9 +412,11 @@ async def _handle_start_buttons(query, context):
 async def _handle_movie_type_buttons(query, context):
     """Handles 'Collection' or 'Single' movie selection."""
     if query.data == "delete_movie_collection":
+        _log_delete_event(query.message, "movie_scope_selected", target_kind="movie_collection")
         context.user_data["next_action"] = "delete_movie_collection_search"
         message_text = "🎬 Please send the title of the movie collection \\(folder\\) to delete\\."
     else:  # delete_movie_single
+        _log_delete_event(query.message, "movie_scope_selected", target_kind="movie_file")
         context.user_data["next_action"] = "delete_movie_single_search"
         message_text = "🎬 Please send the title of the single movie \\(file\\) to delete\\."
 
@@ -307,6 +443,7 @@ async def _handle_tv_scope_buttons(query, context):
         return
 
     if query.data == "delete_tv_all":
+        _log_delete_event(query.message, "tv_scope_selected", target_kind="tv_show", path=show_path)
         context.user_data["path_to_delete"] = show_path
         context.user_data["delete_target_kind"] = "tv_show"
         base_name = os.path.basename(show_path)
@@ -333,6 +470,9 @@ async def _handle_tv_scope_buttons(query, context):
         )
 
     elif query.data == "delete_tv_season":
+        _log_delete_event(
+            query.message, "tv_scope_selected", target_kind="tv_season", path=show_path
+        )
         context.user_data["next_action"] = "delete_tv_season_search"
         message_text = "💿 Please send me the season number to delete\\."
         reply_markup = InlineKeyboardMarkup(
@@ -347,6 +487,9 @@ async def _handle_tv_scope_buttons(query, context):
         context.user_data["prompt_message_id"] = query.message.message_id
 
     elif query.data == "delete_tv_episode":
+        _log_delete_event(
+            query.message, "tv_scope_selected", target_kind="tv_episode", path=show_path
+        )
         context.user_data["next_action"] = "delete_tv_episode_season_prompt"
         message_text = "📺 First, please send the season number\\."
         reply_markup = InlineKeyboardMarkup(
@@ -367,6 +510,13 @@ async def _handle_selection_button(query, context):
     try:
         index = int(query.data.split("_")[2])
         path_to_delete = choices[index]
+        _log_delete_event(
+            query.message,
+            "selection_made",
+            target_kind=context.user_data.get("selection_target_kind"),
+            selected_index=index,
+            path=path_to_delete,
+        )
         context.user_data["path_to_delete"] = path_to_delete
         target_kind = context.user_data.pop("selection_target_kind", None)
         if target_kind:
@@ -391,6 +541,7 @@ async def _handle_selection_button(query, context):
             parse_mode=ParseMode.MARKDOWN_V2,
         )
     except (ValueError, IndexError):
+        _log_delete_event(query.message, "selection_invalid", callback_data=query.data)
         await safe_edit_message(
             query.message,
             text="❌ Error: Could not process selection\\. Please start over\\.",
@@ -406,10 +557,21 @@ async def _handle_confirm_delete_button(query, context):
     has_valid_plex = _has_valid_plex_credentials(plex_config)
     message_text = ""
     plex: PlexServer | None = None
+    outcome = "unknown"
+
+    _log_delete_event(
+        query.message,
+        "confirm_requested",
+        target_kind=delete_target_kind,
+        path=path_to_delete,
+        plex_enabled=has_valid_plex,
+    )
 
     if not path_to_delete:
+        outcome = "missing_path"
         message_text = "❌ Error: Path to delete not found\\. The action may have expired\\."
     elif not DELETION_ENABLED:
+        outcome = "deletion_disabled"
         logger.warning(f"Deletion attempted for '{path_to_delete}' but DELETION_ENABLED is False.")
         message_text = "ℹ️ *Deletion Confirmed*\n\n(Note: Actual file deletion is disabled by the administrator)"
     else:
@@ -435,6 +597,7 @@ async def _handle_confirm_delete_button(query, context):
             detail = result.get("detail", "")
 
             if status == "success":
+                outcome = "plex_deleted"
                 message_text = _format_item_line("🗑️ *Successfully Deleted from Plex*")
             elif status == "manual_delete_required":
                 logger.warning(
@@ -444,10 +607,12 @@ async def _handle_confirm_delete_button(query, context):
                 )
                 manual_success, manual_detail = await _delete_from_filesystem(path_to_delete)
                 if manual_success:
+                    outcome = "disk_deleted_plex_cleanup_needed"
                     note = escape_markdown(detail or "Plex still needs cleanup.", version=2)
                     message_text = _format_item_line("⚠️ *Deleted From Disk, Plex Needs Cleanup*")
                     message_text += "\n" + note
                 else:
+                    outcome = "disk_delete_failed_after_plex_manual_required"
                     message_text = _format_manual_delete_failure(manual_detail)
             elif status == "skip":
                 logger.info(
@@ -456,6 +621,7 @@ async def _handle_confirm_delete_button(query, context):
                 )
                 manual_success, manual_detail = await _delete_from_filesystem(path_to_delete)
                 if manual_success:
+                    outcome = "disk_deleted_plex_skipped"
                     note = escape_markdown(
                         "Plex library left untouched because other encodes still exist.",
                         version=2,
@@ -464,6 +630,7 @@ async def _handle_confirm_delete_button(query, context):
                         _format_item_line("⚠️ *Plex Skipped, Removed From Disk*") + "\n" + note
                     )
                 else:
+                    outcome = "disk_delete_failed_after_plex_skip"
                     message_text = _format_manual_delete_failure(manual_detail)
             elif status == "not_found":
                 logger.warning(
@@ -471,8 +638,10 @@ async def _handle_confirm_delete_button(query, context):
                 )
                 manual_success, manual_detail = await _delete_from_filesystem(path_to_delete)
                 if manual_success:
+                    outcome = "disk_deleted_item_missing_in_plex"
                     message_text = _format_item_line("🗑️ *Item Not in Plex, Deleted Manually*")
                 else:
+                    outcome = "disk_delete_failed_after_plex_not_found"
                     message_text = _format_manual_delete_failure(manual_detail)
             else:
                 if plex is None:
@@ -483,6 +652,7 @@ async def _handle_confirm_delete_button(query, context):
                     )
                     manual_success, manual_detail = await _delete_from_filesystem(path_to_delete)
                     if manual_success:
+                        outcome = "disk_deleted_plex_unavailable"
                         error_note = escape_markdown(
                             f"Plex deletion failed: {detail or 'Unknown error'}",
                             version=2,
@@ -493,8 +663,10 @@ async def _handle_confirm_delete_button(query, context):
                             + error_note
                         )
                     else:
+                        outcome = "disk_delete_failed_plex_unavailable"
                         message_text = _format_manual_delete_failure(manual_detail)
                 else:
+                    outcome = "plex_delete_failed"
                     message_text = "❌ *Deletion Failed*\n`{}`".format(
                         escape_markdown(detail or "Unknown error", version=2)
                     )
@@ -521,11 +693,20 @@ async def _handle_confirm_delete_button(query, context):
 
             manual_success, manual_detail = await _delete_from_filesystem(path_to_delete)
             if manual_success:
+                outcome = "disk_deleted_without_plex"
                 note = escape_markdown(reason_note, version=2)
                 message_text = _format_item_line("✅ *Deleted From Disk*") + "\n" + note
             else:
+                outcome = "disk_delete_failed_without_plex"
                 message_text = _format_manual_delete_failure(manual_detail)
 
+    _log_delete_event(
+        query.message,
+        "confirm_completed",
+        target_kind=delete_target_kind,
+        path=path_to_delete,
+        outcome=outcome,
+    )
     await safe_edit_message(
         query.message,
         text=message_text,
