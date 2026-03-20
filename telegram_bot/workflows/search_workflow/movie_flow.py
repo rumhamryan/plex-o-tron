@@ -25,11 +25,10 @@ from ..search_session import (
     SearchSession,
     SearchSessionError,
     SearchStep,
-    clear_search_session,
 )
 from .movie_collection_flow import _start_collection_lookup
 from .results import FOUR_K_SIZE_MULTIPLIER, _present_search_results
-from .state import _get_session, _save_session, _send_prompt
+from .state import _end_search_workflow, _get_session, _save_session, _send_prompt
 
 MOVIE_FAST_PATH_RESOLUTIONS = {"1080p", "2160p"}
 
@@ -158,13 +157,12 @@ async def _handle_movie_year_reply(
 
     title = session.effective_title
     if not title:
-        await safe_send_message(
-            context.bot,
+        await _end_search_workflow(
+            context,
             chat_id,
             CONTEXT_LOST_MESSAGE,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
         return
 
     if not (query.isdigit() and len(query) == 4):
@@ -286,19 +284,20 @@ async def _search_movie_results(
         final_title = session.require_final_title()
     except SearchSessionError as exc:
         if isinstance(target, Message):
-            await safe_edit_message(
-                target,
-                text=exc.user_message,
+            await _end_search_workflow(
+                context,
+                target.chat_id,
+                exc.user_message,
+                source_message=target,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         else:
-            await safe_send_message(
-                context.bot,
-                chat_id=target,
-                text=exc.user_message,
+            await _end_search_workflow(
+                context,
+                target,
+                exc.user_message,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-        clear_search_session(context.user_data)
         return
 
     display_title = escape_markdown(final_title, version=2)

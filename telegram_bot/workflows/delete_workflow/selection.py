@@ -14,6 +14,7 @@ from telegram.helpers import escape_markdown
 
 from ...ui.keyboards import confirm_cancel_keyboard, single_column_keyboard
 from ...utils import safe_edit_message
+from ..navigation import return_to_home
 
 if TYPE_CHECKING:
     pass
@@ -73,8 +74,10 @@ async def _present_delete_results(
         )
 
     else:
-        await safe_edit_message(
-            status_message,
-            text=f"❌ No {media_name} found matching: `{escape_markdown(query_text, version=2)}`",
-            parse_mode=ParseMode.MARKDOWN_V2,
+        await return_to_home(
+            context,
+            status_message.chat_id,
+            source_message=status_message,
+            message_text=f"❌ No {media_name} found matching: `{escape_markdown(query_text, version=2)}`",
+            message_parse_mode=ParseMode.MARKDOWN_V2,
         )

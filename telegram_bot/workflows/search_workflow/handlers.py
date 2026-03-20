@@ -19,7 +19,6 @@ from ...ui.keyboards import cancel_only_keyboard, stacked_choice_keyboard
 from ...ui.views import send_confirmation_prompt
 from ...utils import (
     safe_edit_message,
-    safe_send_message,
 )
 from ..navigation import mark_chat_idle, mark_chat_workflow_active, set_active_prompt_message_id
 from ..search_session import (
@@ -46,6 +45,7 @@ from .results import (
 )
 from .state import (
     _get_callback_data,
+    _end_search_workflow,
     _get_session,
     _get_user_data_store,
     _save_session,
@@ -105,13 +105,12 @@ async def handle_search_workflow(update: Update, context: ContextTypes.DEFAULT_T
             elif session.step == SearchStep.TV_EPISODE:
                 await _handle_tv_episode_reply(chat.id, query, context, session)
     except SearchSessionError as exc:
-        await safe_send_message(
-            context.bot,
+        await _end_search_workflow(
+            context,
             chat.id,
             exc.user_message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
 
 
 async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -153,9 +152,11 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     if requires_session and not session.is_active:
-        await safe_edit_message(
-            query.message,
-            text=CONTEXT_LOST_MESSAGE,
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
+            CONTEXT_LOST_MESSAGE,
+            source_message=query.message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -198,12 +199,13 @@ async def handle_search_buttons(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             logger.warning(f"Received unhandled search callback: {action}")
     except SearchSessionError as exc:
-        await safe_edit_message(
-            query.message,
-            text=exc.user_message,
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
+            exc.user_message,
+            source_message=query.message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
 
 
 async def _handle_season_selection_button(
@@ -353,12 +355,13 @@ async def _handle_resolution_button(
         final_title = session.require_final_title()
         media_type = session.require_media_type()
     except SearchSessionError as exc:
-        await safe_edit_message(
-            query.message,
-            text=exc.user_message,
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
+            exc.user_message,
+            source_message=query.message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
         return
 
     if media_type == "movie":
@@ -422,12 +425,13 @@ async def _handle_resolution_button(
             await _perform_tv_season_search(query.message, context, title, int(season))
             return
 
-    await safe_edit_message(
-        query.message,
+    await _end_search_workflow(
+        context,
+        query.message.chat_id,
         CONTEXT_LOST_MESSAGE,
+        source_message=query.message,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
-    clear_search_session(context.user_data)
 
 
 async def _handle_movie_scope_button(
@@ -504,12 +508,13 @@ async def _handle_result_selection_button(
         return
 
     if not (0 <= choice_index < len(filtered_results)):
-        await safe_edit_message(
-            query.message,
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
             "❌ This selection has expired\\. Please start the search again\\.",
+            source_message=query.message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
         return
 
     selected_result = filtered_results[choice_index]

@@ -22,7 +22,7 @@ from ..search_session import (
     SearchSessionError,
     SearchStep,
 )
-from .state import _get_session, _save_session
+from .state import _end_search_workflow, _get_session, _save_session
 
 RESULTS_PAGE_SIZE = 5
 RESULTS_SESSION_TTL_SECONDS = 15 * 60
@@ -110,9 +110,11 @@ async def _present_search_results(
     escaped_query = escape_markdown(query_str, version=2)
 
     if not results:
-        await safe_edit_message(
-            message,
-            text=f"❌ No results found for '`{escaped_query}`' across all configured sites\\.",
+        await _end_search_workflow(
+            context,
+            message.chat_id,
+            f"❌ No results found for '`{escaped_query}`' across all configured sites\\.",
+            source_message=message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return

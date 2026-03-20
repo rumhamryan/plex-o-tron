@@ -25,6 +25,7 @@ from telegram_bot.workflows.search_workflow.results import (
     RESULTS_SESSION_TTL_SECONDS,
     _build_results_keyboard,
     _compute_filtered_results,
+    _present_search_results,
 )
 from telegram_bot.workflows.search_workflow.state import _clear_search_context
 from telegram_bot.workflows.search_workflow.tv_flow import (
@@ -1664,8 +1665,8 @@ def test_compute_filtered_results_filters_by_codec():
 async def test_results_callbacks_respect_expiration(
     mocker, context, make_callback_query, make_message
 ):
-    safe_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.handlers.safe_edit_message",
+    end_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.handlers._end_search_workflow",
         new=AsyncMock(),
     )
     session = SearchSession(media_type="movie")
@@ -1689,9 +1690,26 @@ async def test_results_callbacks_respect_expiration(
     )
     await handle_search_buttons(update, context)
 
-    assert safe_mock.await_count == 1
-    text = safe_mock.await_args.kwargs["text"]
+    assert end_mock.await_count == 1
+    text = end_mock.await_args.args[2]
     assert "expired" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_present_search_results_no_matches_returns_home(mocker, context, make_message):
+    end_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.results._end_search_workflow",
+        new=AsyncMock(),
+    )
+
+    await _present_search_results(
+        make_message(),
+        context,
+        [],
+        "Inception [1080p]",
+    )
+
+    assert "No results found" in end_mock.await_args.args[2]
 
 
 @pytest.mark.asyncio
@@ -2089,8 +2107,8 @@ async def test_tv_season_preferences_prompt_uses_unified_filter_layout(
 async def test_entire_season_all_owned_exits_early(
     mocker, context, make_callback_query, make_message
 ):
-    edit_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.tv_flow.safe_edit_message", new=AsyncMock()
+    end_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow._end_search_workflow", new=AsyncMock()
     )
     mocker.patch(
         "telegram_bot.workflows.search_workflow.tv_flow.scraping_service.fetch_season_episode_count_from_wikipedia",
@@ -2122,8 +2140,7 @@ async def test_entire_season_all_owned_exits_early(
     session = SearchSession.from_user_data(context.user_data)
     assert session.missing_episode_numbers == []
     perform_mock.assert_not_awaited()
-    # Confirm we informed the user
-    assert "already exist" in (edit_mock.await_args.kwargs.get("text") or "")
+    assert "already exist" in end_mock.await_args.args[2]
 
 
 def _make_candidate(

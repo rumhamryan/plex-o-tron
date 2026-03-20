@@ -230,10 +230,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         else:
-            await safe_edit_message(
-                status_message,
-                text=f"❌ No single TV show directory found matching: `{escaped_text}`",
-                parse_mode=ParseMode.MARKDOWN_V2,
+            await return_to_home(
+                context,
+                chat_id,
+                source_message=status_message,
+                message_text=f"❌ No single TV show directory found matching: `{escaped_text}`",
+                message_parse_mode=ParseMode.MARKDOWN_V2,
             )
         context.user_data.pop("next_action", None)
 
@@ -269,10 +271,12 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 "tv_season",
             )
         else:
-            await safe_edit_message(
-                status_message,
-                text="❌ Invalid input or show context lost. Please start over\\.",
-                parse_mode=ParseMode.MARKDOWN_V2,
+            await return_to_home(
+                context,
+                chat_id,
+                source_message=status_message,
+                message_text="❌ Invalid input or show context lost. Please start over\\.",
+                message_parse_mode=ParseMode.MARKDOWN_V2,
             )
         context.user_data.pop("next_action", None)
 
@@ -340,16 +344,20 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                     "tv_episode",
                 )
             else:
-                await safe_edit_message(
-                    status_message,
-                    text=f"❌ Could not find Season {season_num} to look for the episode in\\.",
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                await return_to_home(
+                    context,
+                    chat_id,
+                    source_message=status_message,
+                    message_text=f"❌ Could not find Season {season_num} to look for the episode in\\.",
+                    message_parse_mode=ParseMode.MARKDOWN_V2,
                 )
         else:
-            await safe_edit_message(
-                status_message,
-                text="❌ Invalid input or context lost\\. Please start over\\.",
-                parse_mode=ParseMode.MARKDOWN_V2,
+            await return_to_home(
+                context,
+                chat_id,
+                source_message=status_message,
+                message_text="❌ Invalid input or context lost\\. Please start over\\.",
+                message_parse_mode=ParseMode.MARKDOWN_V2,
             )
         context.user_data.pop("next_action", None)
 
@@ -433,10 +441,12 @@ async def _handle_tv_scope_buttons(query, context):
     """Handles 'All', 'Season', or 'Episode' selection for a TV show."""
     show_path = context.user_data.get("show_path_to_delete")
     if not show_path:
-        await safe_edit_message(
-            query.message,
-            "❌ Error: Show context lost\\. Please start over\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
+        await return_to_home(
+            context,
+            query.message.chat_id,
+            source_message=query.message,
+            message_text="❌ Error: Show context lost\\. Please start over\\.",
+            message_parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
@@ -530,10 +540,12 @@ async def _handle_selection_button(query, context):
         )
     except (ValueError, IndexError):
         _log_delete_event(query.message, "selection_invalid", callback_data=query.data)
-        await safe_edit_message(
-            query.message,
-            text="❌ Error: Could not process selection\\. Please start over\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
+        await return_to_home(
+            context,
+            query.message.chat_id,
+            source_message=query.message,
+            message_text="❌ Error: Could not process selection\\. Please start over\\.",
+            message_parse_mode=ParseMode.MARKDOWN_V2,
         )
 
 

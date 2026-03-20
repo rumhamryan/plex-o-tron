@@ -84,8 +84,8 @@ async def test_delete_show_happy_path(mocker, context, make_callback_query, make
 
 @pytest.mark.asyncio
 async def test_delete_workflow_not_found(mocker, context, make_message):
-    safe_edit_mock = mocker.patch(
-        "telegram_bot.workflows.delete_workflow.handlers.safe_edit_message",
+    return_home_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.handlers.return_to_home",
         new=AsyncMock(),
     )
     logger_mock = mocker.patch("telegram_bot.workflows.delete_workflow.handlers.logger")
@@ -97,7 +97,7 @@ async def test_delete_workflow_not_found(mocker, context, make_message):
     context.user_data["next_action"] = "delete_tv_show_search"
 
     await handle_delete_workflow(Update(update_id=1, message=make_message("Unknown")), context)
-    assert "No single TV show directory found" in safe_edit_mock.await_args.kwargs["text"]
+    assert "No single TV show directory found" in return_home_mock.await_args.kwargs["message_text"]
     logged_messages = [call.args[0] for call in logger_mock.info.call_args_list if call.args]
     assert any(
         "[DELETE]" in message
@@ -462,6 +462,25 @@ async def test_present_delete_results_lists_show_sizes(mocker, context, make_mes
     buttons = reply_markup.inline_keyboard
     assert "movie_a.mkv | 1.0 GiB" in buttons[0][0].text
     assert "movie_b.mkv | 2.0 GiB" in buttons[1][0].text
+
+
+@pytest.mark.asyncio
+async def test_present_delete_results_no_match_returns_home(mocker, context, make_message):
+    return_home_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.selection.return_to_home",
+        new=AsyncMock(),
+    )
+
+    await _present_delete_results(
+        None,
+        make_message(),
+        "single movie",
+        "Unknown",
+        context,
+        "movie_file",
+    )
+
+    assert "No single movie found matching" in return_home_mock.await_args.kwargs["message_text"]
 
 
 @pytest.mark.asyncio

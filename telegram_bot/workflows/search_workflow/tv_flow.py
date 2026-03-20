@@ -36,7 +36,6 @@ from ..search_session import (
     SearchSession,
     SearchSessionError,
     SearchStep,
-    clear_search_session,
 )
 from .helpers import (
     _coerce_float,
@@ -49,6 +48,7 @@ from .preferences import _render_search_preferences_prompt
 from .results import _filter_results_by_resolution, _log_aggregated_results, _present_search_results
 from .state import (
     _get_callback_data,
+    _end_search_workflow,
     _get_session,
     _get_user_data_store,
     _save_session,
@@ -342,7 +342,7 @@ async def _fast_track_tv_episode_resolution(
 ) -> None:
     """Skip directly to resolution selection for a detected episode."""
     if not await _validate_episode_released(chat_id, context, title, season, episode):
-        clear_search_session(context.user_data)
+        await _end_search_workflow(context, chat_id, "")
         return
 
     final_title = f"{title} S{int(season):02d}E{int(episode):02d}"
@@ -471,12 +471,13 @@ async def _handle_tv_change_details(
 
     title = session.effective_title or session.title
     if not title:
-        await safe_edit_message(
-            query.message,
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
             CONTEXT_LOST_MESSAGE,
+            source_message=query.message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
         return
 
     session.season = None
@@ -511,12 +512,13 @@ async def _handle_tv_scope_selection(
     title = session.effective_title or session.title
     season = session.season
     if not title or season is None:
-        await safe_edit_message(
-            query.message,
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
             CONTEXT_LOST_MESSAGE,
+            source_message=query.message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
         return
 
     if action == "search_tv_scope_single":
@@ -581,9 +583,11 @@ async def _handle_tv_scope_selection(
             f"[WIKI] Episode count lookup complete for '{title}' S{int(season):02d}: {episode_count}."
         )
         if not episode_count:
-            await safe_edit_message(
-                query.message,
+            await _end_search_workflow(
+                context,
+                query.message.chat_id,
                 "❌ Could not verify episode count\\. Operation cancelled\\.",
+                source_message=query.message,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
@@ -604,12 +608,14 @@ async def _handle_tv_scope_selection(
         _save_session(context, session)
 
         if len(missing_list) == 0:
-            await safe_edit_message(
-                query.message,
-                text=(
+            await _end_search_workflow(
+                context,
+                query.message.chat_id,
+                (
                     f"All episodes for *{escape_markdown(str(title), version=2)}* "
                     f"S{int(season):02d} already exist in your library\\. Nothing to download\\."
                 ),
+                source_message=query.message,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
@@ -745,9 +751,11 @@ async def _present_season_download_confirmation(
     total_eps = session.season_episode_count
 
     if not found_torrents:
-        await safe_edit_message(
-            message,
-            text="❌ No torrents found for this season.",
+        await _end_search_workflow(
+            context,
+            message.chat_id,
+            "❌ No torrents found for this season.",
+            source_message=message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -989,19 +997,20 @@ async def _search_tv_single_results(
         final_title = session.require_final_title()
     except SearchSessionError as exc:
         if isinstance(target, Message):
-            await safe_edit_message(
-                target,
-                text=exc.user_message,
+            await _end_search_workflow(
+                context,
+                target.chat_id,
+                exc.user_message,
+                source_message=target,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         else:
-            await safe_send_message(
-                context.bot,
-                chat_id=target,
-                text=exc.user_message,
+            await _end_search_workflow(
+                context,
+                target,
+                exc.user_message,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-        clear_search_session(context.user_data)
         return
 
     base_title = session.effective_title or session.title or ""
@@ -1167,12 +1176,14 @@ async def _perform_tv_season_search(
     if isinstance(raw_targets, list) and raw_targets:
         targets = list(raw_targets)
     elif isinstance(raw_targets, list):
-        await safe_edit_message(
-            message,
-            text=(
+        await _end_search_workflow(
+            context,
+            message.chat_id,
+            (
                 f"All episodes for *{escape_markdown(title, version=2)}* "
                 f"S{int(season):02d} already exist in your library\\."
             ),
+            source_message=message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1212,9 +1223,11 @@ async def _perform_tv_season_search(
             title,
             season,
         )
-        await safe_edit_message(
-            message,
-            text=f"❌ No episodes for *{escape_markdown(title, version=2)}* S{int(season):02d} have been released yet or could be verified\\.",
+        await _end_search_workflow(
+            context,
+            message.chat_id,
+            f"❌ No episodes for *{escape_markdown(title, version=2)}* S{int(season):02d} have been released yet or could be verified\\.",
+            source_message=message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1379,12 +1392,13 @@ async def handle_reject_season_pack(update: Update, context: ContextTypes.DEFAUL
     title = session.effective_title or session.title
     season = session.season
     if not title or season is None:
-        await safe_edit_message(
-            query.message,
-            text=CONTEXT_LOST_MESSAGE,
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
+            CONTEXT_LOST_MESSAGE,
+            source_message=query.message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        clear_search_session(context.user_data)
         return
 
     prefix = escape_markdown(
