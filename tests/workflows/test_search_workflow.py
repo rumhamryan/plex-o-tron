@@ -998,6 +998,11 @@ async def test_collection_confirmation_logs_titles(mocker, context, make_message
         "Movie One (2001), Movie Two (2002)",
     )
     safe_mock.assert_awaited_once()
+    reply_markup = safe_mock.await_args.kwargs["reply_markup"]
+    labels = [button.text for row in reply_markup.inline_keyboard for button in row]
+    callbacks = [button.callback_data for row in reply_markup.inline_keyboard for button in row]
+    assert labels == ["✅ Use Collection", "❌ Cancel"]
+    assert callbacks == ["search_collection_accept", "cancel_operation"]
 
 
 @pytest.mark.asyncio
@@ -1706,7 +1711,7 @@ async def test_tv_season_reply_offers_scope_buttons(mocker, context, make_messag
     kwargs = send_mock.await_args.kwargs
     keyboard = kwargs["reply_markup"].inline_keyboard
     assert keyboard[0][0].callback_data == "search_tv_scope_single"
-    assert keyboard[0][1].callback_data == "search_tv_scope_season"
+    assert keyboard[1][0].callback_data == "search_tv_scope_season"
 
 
 @pytest.mark.asyncio

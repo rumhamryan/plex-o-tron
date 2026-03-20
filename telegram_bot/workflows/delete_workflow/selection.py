@@ -6,14 +6,13 @@ import os
 from typing import TYPE_CHECKING
 
 from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
 )
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
+from ...ui.keyboards import confirm_cancel_keyboard, single_column_keyboard
 from ...utils import safe_edit_message
 
 if TYPE_CHECKING:
@@ -47,38 +46,29 @@ async def _present_delete_results(
             f"*Path:*\n`{escape_markdown(display_path, version=2)}`\n\n"
             f"Are you sure you want to permanently delete this item\\?"
         )
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"),
-                InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation"),
-            ]
-        ]
         await safe_edit_message(
             status_message,
             text=message_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            reply_markup=confirm_cancel_keyboard(
+                "✅ Yes, Delete It",
+                "confirm_delete",
+                cancel_label="❌ No, Cancel",
+            ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
     elif isinstance(results, list):
         context.user_data["selection_choices"] = results
         context.user_data["selection_target_kind"] = delete_target_kind
-        keyboard = []
-        for i, path in enumerate(results):
-            button_text = _compose_button_label(path)
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        button_text,
-                        callback_data=f"delete_select_{i}",
-                    )
-                ]
-            )
-        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
         await safe_edit_message(
             status_message,
             text="Multiple matches found\\. Which one do you want to delete\\?",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            reply_markup=single_column_keyboard(
+                [
+                    (_compose_button_label(path), f"delete_select_{i}")
+                    for i, path in enumerate(results)
+                ]
+            ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 

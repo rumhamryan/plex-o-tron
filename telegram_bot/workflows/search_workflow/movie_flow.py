@@ -14,6 +14,7 @@ from telegram.helpers import escape_markdown
 
 from ...config import MAX_TORRENT_SIZE_GIB, logger
 from ...services import scraping_service, search_logic
+from ...ui.keyboards import single_column_keyboard
 from ...utils import (
     safe_edit_message,
     safe_send_message,
@@ -198,11 +199,7 @@ async def _prompt_for_year_selection(
     )
 
     # Create a button for each year found
-    keyboard = [
-        [InlineKeyboardButton(year, callback_data=f"search_select_year_{year}")] for year in years
-    ]
-    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = single_column_keyboard([(year, f"search_select_year_{year}") for year in years])
 
     await safe_edit_message(
         message,

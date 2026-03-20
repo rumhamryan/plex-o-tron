@@ -109,6 +109,31 @@ async def test_delete_workflow_not_found(mocker, context, make_message):
 
 
 @pytest.mark.asyncio
+async def test_delete_movie_start_uses_vertical_scope_menu(
+    mocker, context, make_callback_query, make_message
+):
+    safe_edit_mock = mocker.patch(
+        "telegram_bot.workflows.delete_workflow.handlers.safe_edit_message",
+        new=AsyncMock(),
+    )
+
+    await handle_delete_buttons(
+        Update(
+            update_id=10,
+            callback_query=make_callback_query("delete_start_movie", make_message()),
+        ),
+        context,
+    )
+
+    reply_markup = safe_edit_mock.await_args.kwargs["reply_markup"]
+    assert [[button.callback_data for button in row] for row in reply_markup.inline_keyboard] == [
+        ["delete_movie_collection"],
+        ["delete_movie_single"],
+        ["cancel_operation"],
+    ]
+
+
+@pytest.mark.asyncio
 async def test_confirm_delete_skip_due_to_name_twin(
     mocker, context, make_callback_query, make_message
 ):

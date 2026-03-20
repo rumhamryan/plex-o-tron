@@ -2,14 +2,11 @@
 
 from typing import Any, MutableMapping
 
-from telegram import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import CallbackQuery
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from ...ui.keyboards import cancel_only_keyboard
 from ...utils import (
     safe_send_message,
 )
@@ -52,9 +49,7 @@ async def _send_prompt(
         context.bot,
         chat_id,
         text,
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        ),
+        reply_markup=cancel_only_keyboard(),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     if session is None:

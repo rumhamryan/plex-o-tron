@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram import Message, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
@@ -8,6 +8,7 @@ from telegram.helpers import escape_markdown
 from ..config import logger
 from ..services.auth_service import is_user_authorized
 from ..services.plex_service import get_plex_server_status, restart_plex_server
+from ..ui.keyboards import cancel_only_keyboard, launcher_keyboard
 from ..utils import safe_send_message
 from ..workflows.navigation import (
     clear_all_workflow_state,
@@ -40,18 +41,16 @@ async def launch_search_workflow(
     clear_all_workflow_state(store)
     mark_chat_workflow_active(context, chat_id, "search")
 
-    keyboard = [
-        [
-            InlineKeyboardButton("🎬 Movie", callback_data="search_start_movie"),
-            InlineKeyboardButton("📺 TV Show", callback_data="search_start_tv"),
-        ],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-    ]
     prompt = await safe_send_message(
         context.bot,
         chat_id=chat_id,
         text=r"What type of media do you want to search for\?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=launcher_keyboard(
+            "🎬 Movie",
+            "search_start_movie",
+            "📺 TV Show",
+            "search_start_tv",
+        ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     set_active_prompt_message_id(context, chat_id, prompt.message_id)
@@ -67,18 +66,16 @@ async def launch_delete_workflow(
     clear_all_workflow_state(store)
     mark_chat_workflow_active(context, chat_id, "delete")
 
-    keyboard = [
-        [
-            InlineKeyboardButton("🎬 Movie", callback_data="delete_start_movie"),
-            InlineKeyboardButton("📺 TV Show", callback_data="delete_start_tv"),
-        ],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-    ]
     prompt = await safe_send_message(
         context.bot,
         chat_id=chat_id,
         text="What type of media do you want to delete?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=launcher_keyboard(
+            "🎬 Movie",
+            "delete_start_movie",
+            "📺 TV Show",
+            "delete_start_tv",
+        ),
     )
     set_active_prompt_message_id(context, chat_id, prompt.message_id)
     return prompt
@@ -93,7 +90,6 @@ async def launch_link_workflow(
     clear_all_workflow_state(store)
     mark_chat_workflow_active(context, chat_id, "link")
 
-    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
     prompt_text = escape_markdown(
         "🔗 Send a magnet link, a .torrent URL, or a webpage URL and I'll analyze it.\n\n"
         "Example: magnet:?xt=urn:btih:...",
@@ -103,7 +99,7 @@ async def launch_link_workflow(
         context.bot,
         chat_id=chat_id,
         text=prompt_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=cancel_only_keyboard(),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     store["link_prompt_message_id"] = prompt.message_id

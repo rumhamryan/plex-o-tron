@@ -3,11 +3,7 @@
 from typing import Any
 
 import libtorrent as lt
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+from telegram import Message
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
@@ -18,6 +14,7 @@ from telegram_bot.services.media_manager import (
     get_dominant_file_type,
     parse_resolution_from_name,
 )
+from telegram_bot.ui.keyboards import confirm_cancel_keyboard
 from telegram_bot.utils import format_bytes, safe_edit_message
 
 
@@ -67,13 +64,7 @@ async def send_confirmation_prompt(
         f"Do you want to start this download?"
     )
 
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Confirm Download", callback_data="confirm_download"),
-            InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = confirm_cancel_keyboard("✅ Confirm Download", "confirm_download")
 
     # Store all necessary info in 'pending_torrent' for when the user clicks 'Confirm'
     source_type = "magnet" if "pending_magnet_link" in context.user_data else "file"

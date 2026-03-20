@@ -19,6 +19,12 @@ from telegram.helpers import escape_markdown
 
 from ...config import LOG_SCRAPER_STATS, logger
 from ...services import plex_service, scraping_service, search_logic
+from ...ui.keyboards import (
+    cancel_only_keyboard,
+    confirm_cancel_keyboard,
+    number_grid_keyboard,
+    stacked_choice_keyboard,
+)
 from ...utils import (
     parse_torrent_name,
     safe_edit_message,
@@ -205,12 +211,6 @@ async def _prompt_for_tv_season_selection(
     MAX_SEASON_BUTTONS = 40
 
     if isinstance(seasons_count, int) and seasons_count > 0 and seasons_count <= MAX_SEASON_BUTTONS:
-        buttons = [
-            InlineKeyboardButton(str(i), callback_data=f"search_select_season_{i}")
-            for i in range(1, seasons_count + 1)
-        ]
-        keyboard = [buttons[i : i + SEASON_COLUMNS] for i in range(0, len(buttons), SEASON_COLUMNS)]
-        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
         session.prompt_message_id = status_message.message_id
         _save_session(context, session)
         await safe_edit_message(
@@ -219,7 +219,11 @@ async def _prompt_for_tv_season_selection(
                 f"Found *{escape_markdown(str(seasons_count), version=2)}* season\\(s\\) for "
                 f"*{escape_markdown(title, version=2)}*\\. Please select a season:"
             ),
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            reply_markup=number_grid_keyboard(
+                list(range(1, seasons_count + 1)),
+                "search_select_season_",
+                columns=SEASON_COLUMNS,
+            ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -240,20 +244,20 @@ async def _prompt_for_tv_season_selection(
     await safe_edit_message(
         status_message,
         text=prompt_text,
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        ),
+        reply_markup=cancel_only_keyboard(),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
 
 def _build_tv_scope_keyboard(*, include_change_button: bool = False) -> InlineKeyboardMarkup:
-    rows = [
+    base_rows = stacked_choice_keyboard(
         [
-            InlineKeyboardButton("Single Episode", callback_data="search_tv_scope_single"),
-            InlineKeyboardButton("Entire Season", callback_data="search_tv_scope_season"),
-        ]
-    ]
+            ("Single Episode", "search_tv_scope_single"),
+            ("Entire Season", "search_tv_scope_season"),
+        ],
+        include_cancel=False,
+    ).inline_keyboard
+    rows = [list(row) for row in base_rows]
     if include_change_button:
         rows.append([InlineKeyboardButton("Change", callback_data="search_tv_change_details")])
     rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
@@ -532,21 +536,17 @@ async def _handle_tv_scope_selection(
                 episode_count = None
 
         if isinstance(episode_count, int) and 0 < episode_count <= MAX_EPISODE_BUTTONS:
-            buttons = [
-                InlineKeyboardButton(str(i), callback_data=f"search_select_episode_{i}")
-                for i in range(1, episode_count + 1)
-            ]
-            keyboard = [
-                buttons[i : i + EPISODE_COLUMNS] for i in range(0, len(buttons), EPISODE_COLUMNS)
-            ]
-            keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
             await safe_edit_message(
                 query.message,
                 text=(
                     f"Season *{escape_markdown(str(season), version=2)}* selected\\. "
                     "Choose an episode below or type the number\\."
                 ),
-                reply_markup=InlineKeyboardMarkup(keyboard),
+                reply_markup=number_grid_keyboard(
+                    list(range(1, episode_count + 1)),
+                    "search_select_episode_",
+                    columns=EPISODE_COLUMNS,
+                ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
@@ -791,12 +791,10 @@ async def _present_season_download_confirmation(
             ]
         ]
     else:
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data="confirm_season_download"),
-                InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
-            ]
-        ]
+        keyboard = confirm_cancel_keyboard(
+            "✅ Confirm",
+            "confirm_season_download",
+        ).inline_keyboard
 
     await safe_edit_message(
         message,

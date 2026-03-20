@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, cast
 
 import httpx
 import libtorrent as lt
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from telegram import Message
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
@@ -17,6 +17,7 @@ from telegram_bot.services.media_manager import (
     parse_resolution_from_name,
 )
 from telegram_bot.services.scraping_service import find_magnet_link_on_page
+from telegram_bot.ui.keyboards import single_column_keyboard
 from telegram_bot.utils import format_bytes, parse_torrent_name, safe_edit_message
 
 from .metadata_fetch import _blocking_fetch_metadata, fetch_metadata_from_magnet
@@ -168,18 +169,18 @@ async def _handle_webpage_url(
     header_text = f"*{escape_markdown(common_title)}*\n\n"
     subtitle_text = f"Found {len(parsed_choices)} valid torrents\\. Please select one:"
 
-    keyboard = []
-    for choice in parsed_choices:
-        button_label = f"{choice['resolution']} | {choice['file_type']} | {choice['size']}"
-        keyboard.append(
-            [InlineKeyboardButton(button_label, callback_data=f"select_magnet_{choice['index']}")]
-        )
-    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
-
     await safe_edit_message(
         progress_message,
         text=header_text + subtitle_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=single_column_keyboard(
+            [
+                (
+                    f"{choice['resolution']} | {choice['file_type']} | {choice['size']}",
+                    f"select_magnet_{choice['index']}",
+                )
+                for choice in parsed_choices
+            ]
+        ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     return None

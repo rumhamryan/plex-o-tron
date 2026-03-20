@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 
 from plexapi.server import PlexServer
 from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
     Update,
 )
@@ -22,6 +20,11 @@ from ...services.search_logic import (
     find_episode_file,
     find_media_by_name,
     find_season_directory,
+)
+from ...ui.keyboards import (
+    cancel_only_keyboard,
+    confirm_cancel_keyboard,
+    stacked_choice_keyboard,
 )
 from ...ui.messages import format_media_summary
 from ...utils import safe_edit_message, safe_send_message
@@ -214,16 +217,16 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
         if isinstance(found_path, str):
             context.user_data["show_path_to_delete"] = found_path
             base_name = os.path.basename(found_path)
-            keyboard = [
-                [InlineKeyboardButton("🗑️ All", callback_data="delete_tv_all")],
-                [InlineKeyboardButton("💿 Season", callback_data="delete_tv_season")],
-                [InlineKeyboardButton("▶️ Episode", callback_data="delete_tv_episode")],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-            ]
             await safe_edit_message(
                 status_message,
                 text=f"Found show: `{escape_markdown(base_name)}`\\.\n\nWhat would you like to delete\\?",
-                reply_markup=InlineKeyboardMarkup(keyboard),
+                reply_markup=stacked_choice_keyboard(
+                    [
+                        ("🗑️ All", "delete_tv_all"),
+                        ("💿 Season", "delete_tv_season"),
+                        ("▶️ Episode", "delete_tv_episode"),
+                    ]
+                ),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         else:
@@ -287,9 +290,7 @@ async def handle_delete_workflow(update: Update, context: ContextTypes.DEFAULT_T
                 context.bot,
                 chat_id,
                 f"📺 Season {escaped_text} selected\\. Now, please send the episode number to delete\\.",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-                ),
+                reply_markup=cancel_only_keyboard(),
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             context.user_data["prompt_message_id"] = new_prompt.message_id
@@ -386,23 +387,22 @@ async def _handle_start_buttons(query, context):
     if query.data == "delete_start_movie":
         _log_delete_event(query.message, "workflow_started", media_type="movie")
         message_text = "Delete a full movie collection \\(folder\\) or a single movie file\\?"
-        keyboard = [
+        reply_markup = stacked_choice_keyboard(
             [
-                InlineKeyboardButton("🗂️ Collection", callback_data="delete_movie_collection"),
-                InlineKeyboardButton("📄 Single File", callback_data="delete_movie_single"),
-                InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
+                ("🗂️ Collection", "delete_movie_collection"),
+                ("📄 Single File", "delete_movie_single"),
             ]
-        ]
+        )
     else:  # delete_start_tv
         _log_delete_event(query.message, "workflow_started", media_type="tv_show")
         context.user_data["next_action"] = "delete_tv_show_search"
         message_text = "📺 Please send me the title of the TV show to delete\\."
-        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+        reply_markup = cancel_only_keyboard()
 
     await safe_edit_message(
         query.message,
         text=message_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=reply_markup,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     context.user_data["prompt_message_id"] = query.message.message_id
@@ -423,9 +423,7 @@ async def _handle_movie_type_buttons(query, context):
     await safe_edit_message(
         query.message,
         text=message_text,
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        ),
+        reply_markup=cancel_only_keyboard(),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     context.user_data["prompt_message_id"] = query.message.message_id
@@ -454,13 +452,10 @@ async def _handle_tv_scope_buttons(query, context):
             f"Are you sure you want to delete the ENTIRE show `{escape_markdown(base_name, version=2)}` and all its contents\\?\n\n"
             f"*Path:*\n`{escape_markdown(display_path, version=2)}`"
         )
-        reply_markup = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton("✅ Yes, Delete All", callback_data="confirm_delete"),
-                    InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation"),
-                ]
-            ]
+        reply_markup = confirm_cancel_keyboard(
+            "✅ Yes, Delete All",
+            "confirm_delete",
+            cancel_label="❌ No, Cancel",
         )
         await safe_edit_message(
             query.message,
@@ -475,9 +470,7 @@ async def _handle_tv_scope_buttons(query, context):
         )
         context.user_data["next_action"] = "delete_tv_season_search"
         message_text = "💿 Please send me the season number to delete\\."
-        reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        )
+        reply_markup = cancel_only_keyboard()
         await safe_edit_message(
             query.message,
             text=message_text,
@@ -492,9 +485,7 @@ async def _handle_tv_scope_buttons(query, context):
         )
         context.user_data["next_action"] = "delete_tv_episode_season_prompt"
         message_text = "📺 First, please send the season number\\."
-        reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        )
+        reply_markup = cancel_only_keyboard()
         await safe_edit_message(
             query.message,
             text=message_text,
@@ -526,13 +517,10 @@ async def _handle_selection_button(query, context):
             f"You selected:\n`{escape_markdown(base_name)}`\n\n"
             f"Are you sure you want to permanently delete this item\\?"
         )
-        reply_markup = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton("✅ Yes, Delete It", callback_data="confirm_delete"),
-                    InlineKeyboardButton("❌ No, Cancel", callback_data="cancel_operation"),
-                ]
-            ]
+        reply_markup = confirm_cancel_keyboard(
+            "✅ Yes, Delete It",
+            "confirm_delete",
+            cancel_label="❌ No, Cancel",
         )
         await safe_edit_message(
             query.message,

@@ -4,8 +4,6 @@ import re
 
 from telegram import (
     CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
     Update,
 )
@@ -17,6 +15,7 @@ from telegram.helpers import escape_markdown
 from ...config import MAX_TORRENT_SIZE_GIB, logger
 from ...services import search_logic, torrent_service
 from ...services.media_manager import validate_and_enrich_torrent
+from ...ui.keyboards import cancel_only_keyboard, stacked_choice_keyboard
 from ...ui.views import send_confirmation_prompt
 from ...utils import (
     safe_edit_message,
@@ -310,20 +309,17 @@ async def _handle_start_button(query, context):
         session.collection_exclusions = []
         session.advance(SearchStep.MOVIE_SCOPE)
         prompt_text = "🎬 Are you searching for a single movie or an entire franchise collection?"
-        reply_markup = InlineKeyboardMarkup(
+        reply_markup = stacked_choice_keyboard(
             [
-                [InlineKeyboardButton("Single Movie", callback_data="search_movie_scope_single")],
-                [InlineKeyboardButton("Collection", callback_data="search_movie_scope_collection")],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
+                ("Single Movie", "search_movie_scope_single"),
+                ("Collection", "search_movie_scope_collection"),
             ]
         )
     else:
         session.media_type = "tv"
         session.advance(SearchStep.TITLE)
         prompt_text = "📺 Please send me the title of the TV show to search for\\."
-        reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        )
+        reply_markup = cancel_only_keyboard()
 
     session.prompt_message_id = query.message.message_id
     _save_session(context, session)
@@ -471,9 +467,7 @@ async def _handle_movie_scope_button(
     await safe_edit_message(
         query.message,
         text=prompt_text,
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-        ),
+        reply_markup=cancel_only_keyboard(),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 

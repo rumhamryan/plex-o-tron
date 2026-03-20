@@ -23,6 +23,7 @@ from ...services import scraping_service, search_logic
 from ...services.media_manager import _get_path_size_bytes
 from ...services.scrapers.wikipedia.dates import _extract_release_date_iso
 from ...services.scrapers.wikipedia.fetch import _fetch_html_from_page
+from ...ui.keyboards import cancel_only_keyboard, confirm_cancel_keyboard
 from ...ui.messages import format_media_summary
 from ...utils import (
     format_bytes,
@@ -323,9 +324,7 @@ async def _start_collection_lookup(
                 f"*{escape_markdown(display_title, version=2)}*\\.\n"
                 "Please send another title or cancel the operation\\."
             ),
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-            ),
+            reply_markup=cancel_only_keyboard(),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         session.prompt_message_id = status_message.message_id
@@ -442,16 +441,10 @@ async def _prompt_collection_confirmation(
         f"{summary}\n\n"
         "Use this collection?"
     )
-    keyboard = InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Use Collection", callback_data="search_collection_accept")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-        ]
-    )
     await safe_edit_message(
         message,
         text=text,
-        reply_markup=keyboard,
+        reply_markup=confirm_cancel_keyboard("✅ Use Collection", "search_collection_accept"),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
@@ -479,9 +472,7 @@ async def _handle_collection_accept(
         await safe_edit_message(
             query.message,
             text="⚠️ Could not prepare the collection directory\\. Please try again later\\.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-            ),
+            reply_markup=cancel_only_keyboard(),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1273,19 +1264,12 @@ async def _present_collection_download_confirmation(
         skipped = "\n".join(f"• {escape_markdown(label, version=2)}" for label in missing)
         text += f"\n\n⚠️ No suitable torrent was found for:\n{skipped}"
 
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "✅ Confirm Collection", callback_data="confirm_collection_download"
-                )
-            ],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")],
-        ]
-    )
     await safe_edit_message(
         message,
         text=text,
-        reply_markup=keyboard,
+        reply_markup=confirm_cancel_keyboard(
+            "✅ Confirm Collection",
+            "confirm_collection_download",
+        ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
