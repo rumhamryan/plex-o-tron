@@ -1,5 +1,10 @@
 import pytest
-from telegram_bot.services.search_logic import _parse_size_to_gib
+from telegram_bot.services.search_logic import (
+    _parse_size_to_gib,
+    find_episode_file,
+    find_media_by_name,
+    find_season_directory,
+)
 from telegram_bot.utils import parse_codec, score_torrent_result
 
 
@@ -53,3 +58,80 @@ def test_score_torrent_result():
     # seeders=3, leechers=0 -> 1 rounding to 1.
     no_match = score_torrent_result("Another 720p x264", "unknown", prefs, seeders=3)
     assert no_match == 1
+
+
+@pytest.mark.asyncio
+async def test_find_media_by_name_ignores_trashinfo_files(tmp_path):
+    movies_root = tmp_path / "movies"
+    movies_root.mkdir()
+    valid_file = movies_root / "Him (2023).mkv"
+    valid_file.write_text("video")
+
+    trash_info_dir = movies_root / ".Trash-1000" / "info"
+    trash_info_dir.mkdir(parents=True)
+    (trash_info_dir / "Him (2023).mkv.trashinfo").write_text("trash entry")
+
+    result = await find_media_by_name(
+        "movie",
+        "Him",
+        {"movies": str(movies_root)},
+        "file",
+    )
+
+    assert result == str(valid_file)
+
+
+@pytest.mark.asyncio
+async def test_find_media_by_name_ignores_directories_inside_trash_roots(tmp_path):
+    movies_root = tmp_path / "movies"
+    movies_root.mkdir()
+    valid_directory = movies_root / "Him Collection"
+    valid_directory.mkdir()
+
+    trash_files_dir = movies_root / ".Trash-1000" / "files" / "Him Collection"
+    trash_files_dir.mkdir(parents=True)
+
+    result = await find_media_by_name(
+        "movie",
+        "Him",
+        {"movies": str(movies_root)},
+        "directory",
+    )
+
+    assert result == str(valid_directory)
+
+
+@pytest.mark.asyncio
+async def test_find_season_directory_returns_none_for_ignored_trash_show_path(tmp_path):
+    trash_show_path = tmp_path / ".Trash-1000" / "files" / "Example Show"
+    (trash_show_path / "Season 01").mkdir(parents=True)
+
+    result = await find_season_directory(str(trash_show_path), 1)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_find_episode_file_ignores_trashinfo_matches(tmp_path):
+    season_path = tmp_path / "Example Show" / "Season 01"
+    season_path.mkdir(parents=True)
+    valid_file = season_path / "Example Show S01E02.mkv"
+    valid_file.write_text("episode")
+    (season_path / "Example Show S01E01.mkv.trashinfo").write_text("trash entry")
+
+    result = await find_episode_file(str(season_path), 1, 1)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_find_episode_file_returns_valid_media_when_trashinfo_also_exists(tmp_path):
+    season_path = tmp_path / "Example Show" / "Season 01"
+    season_path.mkdir(parents=True)
+    valid_file = season_path / "Example Show S01E01.mkv"
+    valid_file.write_text("episode")
+    (season_path / "Example Show S01E01.mp4.trashinfo").write_text("trash entry")
+
+    result = await find_episode_file(str(season_path), 1, 1)
+
+    assert result == str(valid_file)
