@@ -109,6 +109,14 @@ async def fetch_movie_years_from_wikipedia(
     best_title, disamb_title = _pick_film_candidate(search_results)
 
     if best_title:
+        normalized_best_title = _normalized_search_title(best_title)
+        if (
+            _normalize_for_comparison(normalized_best_title) == normalized_title_key
+            and not corrected_for_search
+        ):
+            # Keep the best matching canonical text from Wikipedia search results,
+            # even if page loading fails later.
+            corrected_for_search = normalized_best_title
         try:
             page = await asyncio.to_thread(
                 wikipedia.page, best_title, auto_suggest=False, redirect=True
@@ -238,8 +246,6 @@ async def fetch_movie_years_from_wikipedia(
         yr2, corr2 = await fetch_movie_years_from_wikipedia(qualified, _last_resort=True)
         if corr2:
             corrected_for_search = corr2
-        elif corrected_for_search is None:
-            corrected_for_search = _normalized_search_title(qualified)
         years = yr2
 
     preferred_years: list[int]

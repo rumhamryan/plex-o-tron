@@ -16,6 +16,7 @@ from ..workflows.navigation import (
     mark_chat_workflow_active,
     set_active_prompt_message_id,
 )
+from ..workflows.tracking_workflow.handlers import render_tracking_menu
 
 
 def get_help_message_text() -> str:
@@ -25,6 +26,7 @@ def get_help_message_text() -> str:
         "Use the buttons to:\n"
         "\\- Search for movies or TV shows\n"
         "\\- Delete media from your library\n"
+        "\\- Track unreleased movies for auto-download\n"
         "\\- Check Plex status\n"
         "\\- Restart Plex\n"
         "\\- Start the guided link intake flow\n\n"
@@ -105,6 +107,17 @@ async def launch_link_workflow(
     store["link_prompt_message_id"] = prompt.message_id
     set_active_prompt_message_id(context, chat_id, prompt.message_id)
     return prompt
+
+
+async def launch_tracking_workflow(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> None:
+    """Starts the tracking workflow launcher."""
+    store = get_user_data_store(context)
+    clear_all_workflow_state(store)
+    mark_chat_workflow_active(context, chat_id, "track")
+    await render_tracking_menu(context, chat_id)
 
 
 async def launch_help(

@@ -20,8 +20,9 @@ def test_build_home_menu_markup_layout():
 
     assert callback_rows == [
         ["home_search", "home_delete"],
-        ["home_link", "home_status"],
-        ["home_restart", "home_help"],
+        ["home_track", "home_link"],
+        ["home_status", "home_restart"],
+        ["home_help"],
     ]
 
 

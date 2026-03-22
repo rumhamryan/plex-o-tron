@@ -151,10 +151,11 @@ async def test_handle_successful_download(mocker):
     scan_mock.assert_called_once()
     size_mock.assert_called_once_with(expected_dest_path)
     disk_usage_mock.assert_called_once_with(expected_dest_path)
-    assert "Successfully Added to Plex" in result
-    assert "📦 Size: 1\\.0 KiB" in result
-    assert "📁 Destination: `/final/Sample \\(2023\\)\\.mkv`" in result
-    assert "💽 Disk Usage: 62%" in result
+    assert result["succeeded"] is True
+    assert "Successfully Added to Plex" in result["final_message"]
+    assert "📦 Size: 1\\.0 KiB" in result["final_message"]
+    assert "📁 Destination: `/final/Sample \\(2023\\)\\.mkv`" in result["final_message"]
+    assert "💽 Disk Usage: 62%" in result["final_message"]
 
 
 class MovieWithSampleFiles:
@@ -230,8 +231,9 @@ async def test_handle_successful_download_prefers_main_movie_over_sample(mocker)
     move_mock.assert_called_once_with(expected_source_path, expected_dest_path)
     size_mock.assert_called_once_with(expected_dest_path)
     disk_usage_mock.assert_called_once_with(expected_dest_path)
-    assert "📦 Size: 14\\.0 GiB" in result
-    assert "⚠️ Disk Usage: *91%*" in result
+    assert result["succeeded"] is True
+    assert "📦 Size: 14\\.0 GiB" in result["final_message"]
+    assert "⚠️ Disk Usage: *91%*" in result["final_message"]
 
 
 class SeasonFiles:
@@ -306,10 +308,11 @@ async def test_handle_successful_download_season_pack(mocker):
     assert scan_mock.call_count == 1
     assert size_mock.call_count == 2
     disk_usage_mock.assert_called_once_with("/final")
-    assert "Successfully Added to Plex" in result
-    assert "📦 Size: 3\\.0 KiB" in result
-    assert "💽 Disk Usage: 40%" in result
-    assert "Processed and moved 2 episodes from the season pack\\." in result
+    assert result["succeeded"] is True
+    assert "Successfully Added to Plex" in result["final_message"]
+    assert "📦 Size: 3\\.0 KiB" in result["final_message"]
+    assert "💽 Disk Usage: 40%" in result["final_message"]
+    assert "Processed and moved 2 episodes from the season pack\\." in result["final_message"]
 
 
 def test_get_final_destination_path_collection():

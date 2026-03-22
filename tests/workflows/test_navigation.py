@@ -55,3 +55,11 @@ def test_navigation_state_isolated_per_chat(context):
     assert context.bot_data["chat_navigation"][222]["state"] == "idle"
     assert context.bot_data["chat_navigation"][111]["home_menu_message_id"] is None
     assert context.bot_data["chat_navigation"][222]["home_menu_message_id"] == 2
+
+
+def test_tracking_workflow_transition_sets_active_state(context):
+    state = mark_chat_workflow_active(context, 789, "track", prompt_message_id=90)
+
+    assert state["state"] == "track"
+    assert state["active_prompt_message_id"] == 90
+    assert context.user_data["active_workflow"] == "track"

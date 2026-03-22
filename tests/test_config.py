@@ -22,12 +22,16 @@ plex_token=PLEX_TOKEN
 [search]
 websites=["site1"]
 preferences={"category": "movie"}
+
+[tmdb]
+access_token=TMDB_TEST_ACCESS_TOKEN
+region=ca
 """
     mocker.patch("builtins.open", mocker.mock_open(read_data=config_data))
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.makedirs")
 
-    token, paths, allowed_ids, plex_config, search_config = get_configuration()
+    token, paths, allowed_ids, plex_config, search_config, tmdb_config = get_configuration()
 
     assert token == "TEST_TOKEN"
     assert paths == {
@@ -41,6 +45,26 @@ preferences={"category": "movie"}
         "websites": ["site1"],
         "preferences": {"category": "movie"},
     }
+    assert tmdb_config == {"access_token": "TMDB_TEST_ACCESS_TOKEN", "region": "CA"}
+
+
+def test_get_configuration_tmdb_api_key_only(mocker):
+    config_data = """
+[telegram]
+bot_token=TEST_TOKEN
+
+[host]
+default_save_path=/downloads
+
+[tmdb]
+api_key=TMDB_TEST_API_KEY
+"""
+    mocker.patch("builtins.open", mocker.mock_open(read_data=config_data))
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch("os.makedirs")
+
+    _, _, _, _, _, tmdb_config = get_configuration()
+    assert tmdb_config == {"api_key": "TMDB_TEST_API_KEY", "region": "US"}
 
 
 def test_get_configuration_missing_file(mocker):

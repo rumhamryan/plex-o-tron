@@ -132,9 +132,71 @@ async def _start_download_task(download_data: DownloadData, application) -> None
     )
 
 
+async def queue_download_source(
+    application,
+    *,
+    chat_id: int,
+    source_dict: SourceDict,
+    message_id: int,
+    save_path: str | None = None,
+) -> tuple[bool, int]:
+    """
+    Queues a source for download without depending on callback workflow state.
+
+    Returns:
+    - started_download: True when queue processing can start this item immediately.
+    - position: queue position after enqueueing.
+    """
+    from . import process_queue_for_user, save_state
+
+    bot_data = application.bot_data
+    active_downloads = cast(dict[str, DownloadData], bot_data.setdefault("active_downloads", {}))
+    download_queues = cast(
+        dict[str, list[DownloadData]],
+        bot_data.setdefault("download_queues", {}),
+    )
+    save_paths = cast(dict[str, str], bot_data.setdefault("SAVE_PATHS", {}))
+
+    if save_path is None:
+        save_path = save_paths.get("default", "")
+    if not isinstance(save_path, str) or not save_path:
+        raise ValueError("A default save path is required before queueing downloads.")
+
+    chat_id_str = str(chat_id)
+
+    # If a currently active download is paused, requeue it.
+    if chat_id_str in active_downloads and active_downloads[chat_id_str].get("is_paused"):
+        logger.info("New download added while another is paused. Requeueing the paused one.")
+        active_data = active_downloads[chat_id_str]
+        active_data["requeued"] = True
+        if "task" in active_data and not active_data["task"].done():
+            active_data["task"].cancel()
+
+    download_data: DownloadData = {
+        "source_dict": source_dict,
+        "chat_id": chat_id,
+        "message_id": int(message_id),
+        "save_path": save_path,
+    }
+
+    if chat_id_str not in download_queues:
+        download_queues[chat_id_str] = []
+    download_queues[chat_id_str].append(download_data)
+    position = len(download_queues[chat_id_str])
+
+    is_truly_active = chat_id_str in active_downloads and not active_downloads[chat_id_str].get(
+        "requeued"
+    )
+    started_download = not is_truly_active
+
+    save_state(PERSISTENCE_FILE, active_downloads, download_queues)
+    await process_queue_for_user(chat_id, application)
+    return started_download, position
+
+
 async def add_download_to_queue(update, context) -> bool:
     """Adds a confirmed download to the user's queue."""
-    from . import process_queue_for_user, safe_edit_message, save_state
+    from . import safe_edit_message
 
     query = update.callback_query
     chat_id = query.message.chat_id
@@ -148,42 +210,21 @@ async def add_download_to_queue(update, context) -> bool:
         )
         return False
 
-    active_downloads = require_active_downloads(context.bot_data)
-    download_queues = require_download_queues(context.bot_data)
-    chat_id_str = str(chat_id)
-
-    # If a currently active download is paused, requeue it
-    if chat_id_str in active_downloads and active_downloads[chat_id_str].get("is_paused"):
-        logger.info("New download added while another is paused. Requeueing the paused one.")
-        active_data = active_downloads[chat_id_str]
-        active_data["requeued"] = True
-        if "task" in active_data and not active_data["task"].done():
-            active_data["task"].cancel()
-
-    save_paths = require_save_paths(context.bot_data)
-    download_data: DownloadData = {
-        "source_dict": pending_torrent,
-        "chat_id": chat_id,
-        "message_id": pending_torrent.get("message_id")
-        or pending_torrent.get("original_message_id"),
-        "save_path": save_paths["default"],
-    }
-
-    if chat_id_str not in download_queues:
-        download_queues[chat_id_str] = []
-    download_queues[chat_id_str].append(download_data)
-    position = len(download_queues[chat_id_str])
-
-    logger.info(f"User {chat_id_str} confirmed download. Queued at position {position}.")
-
-    is_truly_active = chat_id_str in active_downloads and not active_downloads[chat_id_str].get(
-        "requeued"
+    started_download, position = await queue_download_source(
+        context.application,
+        chat_id=chat_id,
+        source_dict=cast(SourceDict, pending_torrent),
+        message_id=int(
+            pending_torrent.get("message_id") or pending_torrent.get("original_message_id") or 0
+        ),
+        save_path=require_save_paths(context.bot_data)["default"],
     )
-    started_download = not is_truly_active
-    if is_truly_active:
-        message_text = format_download_queue_position(position)
-    else:
+    logger.info("User %s confirmed download. Queued at position %s.", chat_id, position)
+
+    if started_download:
         message_text = MSG_DOWNLOAD_NEXT_IN_LINE
+    else:
+        message_text = format_download_queue_position(position)
 
     await safe_edit_message(
         query.message,
@@ -191,8 +232,6 @@ async def add_download_to_queue(update, context) -> bool:
         parse_mode=ParseMode.MARKDOWN_V2,
         reply_markup=None,
     )
-    save_state(PERSISTENCE_FILE, active_downloads, download_queues)
-    await process_queue_for_user(chat_id, context.application)
     return started_download
 
 

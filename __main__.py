@@ -2,6 +2,7 @@
 
 # Ensure PTB env flags are set before importing python-telegram-bot
 from telegram_bot import _ptb_env  # noqa: F401
+import os
 import libtorrent as lt
 from telegram import Update
 from telegram.ext import (
@@ -45,7 +46,7 @@ def main() -> None:
     logger.info("Starting bot...")
 
     # Load configuration from config.ini.
-    token, save_paths, allowed_ids, plex_config, search_config = get_configuration()
+    token, save_paths, allowed_ids, plex_config, search_config, tmdb_config = get_configuration()
 
     # The Application object is the heart of the bot. We use `bot_data` to store
     # application-level state and configurations, making them accessible
@@ -73,11 +74,23 @@ def main() -> None:
     application.bot_data["SAVE_PATHS"] = save_paths
     application.bot_data["PLEX_CONFIG"] = plex_config
     application.bot_data["SEARCH_CONFIG"] = search_config
+    application.bot_data["TMDB_CONFIG"] = tmdb_config
     application.bot_data["ALLOWED_USER_IDS"] = allowed_ids
     # The 'persistence_file' key is removed from here as it's no longer needed.
     application.bot_data.setdefault("active_downloads", {})
     application.bot_data.setdefault("download_queues", {})
+    application.bot_data.setdefault("tracking_items", {})
+    application.bot_data.setdefault("tracking_in_progress_ids", set())
+    application.bot_data.setdefault("tracking_loop_task", None)
     application.bot_data.setdefault("is_shutting_down", False)
+
+    # Resolve TMDB auth from config.ini so operators can keep secrets in config.ini.
+    if "access_token" in tmdb_config:
+        os.environ["TMDB_ACCESS_TOKEN"] = tmdb_config["access_token"]
+    if "api_key" in tmdb_config:
+        os.environ["TMDB_API_KEY"] = tmdb_config["api_key"]
+    if "region" in tmdb_config:
+        os.environ["TMDB_REGION"] = tmdb_config["region"]
 
     # Initialize a single, long-lived libtorrent session for the application.
     logger.info("Creating global libtorrent session for the application.")

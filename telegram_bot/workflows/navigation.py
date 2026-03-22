@@ -12,8 +12,9 @@ from telegram.ext import ContextTypes
 from ..config import logger
 from ..utils import safe_send_message
 from .search_session import SearchSession, clear_search_session
+from .tracking_workflow.state import clear_tracking_workflow_state
 
-NavigationState = Literal["idle", "search", "delete", "link"]
+NavigationState = Literal["idle", "search", "delete", "link", "track"]
 
 CHAT_NAVIGATION_KEY = "chat_navigation"
 LEGACY_HOME_MENU_MESSAGES_KEY = "home_menu_messages"
@@ -50,7 +51,7 @@ def _coerce_message_id(value: Any) -> int | None:
 
 
 def _normalize_navigation_state(value: Any) -> NavigationState:
-    if value in {"idle", "search", "delete", "link"}:
+    if value in {"idle", "search", "delete", "link", "track"}:
         return cast(NavigationState, value)
     return DEFAULT_NAVIGATION_STATE
 
@@ -241,7 +242,7 @@ def mark_chat_idle(
 def mark_chat_workflow_active(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    workflow: Literal["search", "delete", "link"],
+    workflow: Literal["search", "delete", "link", "track"],
     *,
     prompt_message_id: int | None = None,
 ) -> dict[str, Any]:
@@ -304,6 +305,7 @@ def clear_all_workflow_state(user_data: MutableMapping[str, Any] | None) -> None
     clear_search_session(user_data)
     clear_delete_workflow_state(user_data)
     clear_link_workflow_state(user_data)
+    clear_tracking_workflow_state(user_data)
     user_data.pop("active_workflow", None)
 
 

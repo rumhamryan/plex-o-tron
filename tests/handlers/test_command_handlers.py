@@ -8,6 +8,7 @@ from telegram_bot.handlers.command_handlers import (
     launch_link_workflow,
     launch_plex_status,
     launch_search_workflow,
+    launch_tracking_workflow,
 )
 
 
@@ -44,6 +45,20 @@ async def test_launch_delete_workflow_sets_active_state(context):
     assert context.user_data.get("active_workflow") == "delete"
     assert context.bot_data["chat_navigation"][456]["state"] == "delete"
     assert context.bot_data["chat_navigation"][456]["active_prompt_message_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_launch_tracking_workflow_sets_active_state(mocker, context):
+    render_mock = mocker.patch(
+        "telegram_bot.handlers.command_handlers.render_tracking_menu",
+        AsyncMock(),
+    )
+
+    await launch_tracking_workflow(context, chat_id=456)
+
+    assert context.user_data.get("active_workflow") == "track"
+    assert context.bot_data["chat_navigation"][456]["state"] == "track"
+    render_mock.assert_awaited_once_with(context, 456)
 
 
 @pytest.mark.asyncio

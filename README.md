@@ -112,6 +112,23 @@ After installing the `dev` extra, execute the suite locally via:
 uv run pre-commit run --all-files
 ```
 
+### Optional TMDB Setup (Canonical: `config.ini`)
+
+To improve non-theatrical release-date resolution for scheduled movie tracking, configure TMDB in `config.ini`:
+
+```ini
+[tmdb]
+# Use ONE credential style:
+access_token = YOUR_TMDB_READ_ACCESS_TOKEN
+api_key = YOUR_TMDB_API_KEY
+region = US
+```
+
+Notes:
+* `access_token` is preferred.
+* `region` controls which region-specific release dates are chosen.
+* The bot reads this section at startup; no extra shell setup is required.
+
 ### Bot Commands
 
 The bot supports the following commands (with or without a leading slash):

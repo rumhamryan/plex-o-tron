@@ -100,6 +100,7 @@ async def test_unauthorized_callback_rejected_before_home_logic(
     [
         ("home_delete", "launch_delete_workflow"),
         ("home_link", "launch_link_workflow"),
+        ("home_track", "launch_tracking_workflow"),
     ],
 )
 async def test_home_workflow_actions_consume_menu_without_immediate_rerender(

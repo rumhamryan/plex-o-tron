@@ -22,6 +22,8 @@ from ..workflows.navigation import (
 )
 from ..workflows.search_session import SearchSession
 from ..workflows.search_workflow import handle_search_workflow
+from ..workflows.tracking_workflow.handlers import handle_tracking_workflow_message
+from ..workflows.tracking_workflow.state import TRACKING_NEXT_ACTION_KEY
 
 
 def _is_private_chat(update: Update) -> bool:
@@ -171,6 +173,14 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             await handle_link_message(update, context)
             return
         logger.info("Clearing stale link workflow state for user %s.", user.id)
+        await return_to_home(context, chat.id, source_message=message)
+        return
+
+    if active_state == "track":
+        if isinstance(user_data.get(TRACKING_NEXT_ACTION_KEY), str):
+            await handle_tracking_workflow_message(update, context)
+            return
+        logger.info("Clearing stale tracking workflow state for user %s.", user.id)
         await return_to_home(context, chat.id, source_message=message)
         return
 

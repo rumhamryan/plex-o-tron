@@ -24,11 +24,14 @@ def build_home_menu_markup() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Delete", callback_data="home_delete"),
             ],
             [
+                InlineKeyboardButton("Track", callback_data="home_track"),
                 InlineKeyboardButton("Link", callback_data="home_link"),
-                InlineKeyboardButton("Status", callback_data="home_status"),
             ],
             [
+                InlineKeyboardButton("Status", callback_data="home_status"),
                 InlineKeyboardButton("Restart", callback_data="home_restart"),
+            ],
+            [
                 InlineKeyboardButton("Help", callback_data="home_help"),
             ],
         ]
@@ -138,16 +141,16 @@ async def show_home_menu(
     canonical_message_id = get_home_menu_message_id(application, chat_id)
     if canonical_message_id is not None:
         try:
-            rendered = await context.bot.edit_message_text(
+            edited_result = await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=canonical_message_id,
                 text=text,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
-            if isinstance(rendered, Message):
-                set_home_menu_message_id(application, chat_id, rendered.message_id)
-                return rendered
+            if isinstance(edited_result, Message):
+                set_home_menu_message_id(application, chat_id, edited_result.message_id)
+                return edited_result
             return await context.bot.send_message(
                 chat_id=chat_id,
                 text=text,

@@ -15,6 +15,7 @@ MAX_TORRENT_SIZE_GB = MAX_TORRENT_SIZE_GIB
 ALLOWED_EXTENSIONS = [".mkv", ".mp4"]
 DELETION_ENABLED = True
 PERSISTENCE_FILE = "persistence.json"
+TRACKING_STATE_FILE = "tracking_state.json"
 LOG_SCRAPER_STATS = True
 
 # Setup basic logging
@@ -27,9 +28,18 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-def get_configuration() -> tuple[str, dict[str, str], list[int], dict[str, str], dict[str, Any]]:
+def get_configuration() -> (
+    tuple[
+        str,
+        dict[str, str],
+        list[int],
+        dict[str, str],
+        dict[str, Any],
+        dict[str, str],
+    ]
+):
     """
-    Reads bot token, paths, allowed IDs, Plex, and Search config from the
+    Reads bot token, paths, allowed IDs, Plex, Search, and TMDB config from the
     config.ini file. This function has been refactored to be more robust
     and provide clearer error messages.
     """
@@ -65,11 +75,12 @@ def get_configuration() -> tuple[str, dict[str, str], list[int], dict[str, str],
     )
 
     plex_config = _load_plex_config(config_for_parser)
+    tmdb_config = _load_tmdb_config(config_for_parser)
 
     if not search_config:
         logger.info("No [search] section found or it was empty. Search command now disabled.")
 
-    return token, paths, allowed_ids, plex_config, search_config
+    return token, paths, allowed_ids, plex_config, search_config, tmdb_config
 
 
 def _is_in_section(section_header: str, current_line: str, all_lines: list[str]) -> bool:
@@ -172,3 +183,26 @@ def _load_plex_config(config: configparser.ConfigParser) -> dict[str, str]:
             plex_config = {"url": plex_url, "token": plex_token}
             logger.info("[INFO] Plex configuration loaded successfully.")
     return plex_config
+
+
+def _load_tmdb_config(config: configparser.ConfigParser) -> dict[str, str]:
+    """Loads optional TMDB credentials and region settings."""
+    if not config.has_section("tmdb"):
+        return {}
+
+    access_token = config.get("tmdb", "access_token", fallback="").strip()
+    api_key = config.get("tmdb", "api_key", fallback="").strip()
+    region = config.get("tmdb", "region", fallback="US").strip().upper() or "US"
+
+    if not access_token and not api_key:
+        return {}
+
+    tmdb: dict[str, str] = {"region": region}
+    if access_token and access_token != "TMDB_ACCESS_TOKEN":
+        tmdb["access_token"] = access_token
+    if api_key and api_key != "TMDB_API_KEY":
+        tmdb["api_key"] = api_key
+    if len(tmdb) > 1:
+        logger.info("[CONFIG] TMDB configuration loaded successfully.")
+        return tmdb
+    return {}

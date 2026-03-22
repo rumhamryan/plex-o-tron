@@ -1,7 +1,7 @@
 # telegram_bot/services/download_manager/lifecycle.py
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 import libtorrent as lt
 from telegram.constants import ParseMode
@@ -11,6 +11,10 @@ from telegram.helpers import escape_markdown
 
 from telegram_bot.config import PERSISTENCE_FILE, logger
 from telegram_bot.domain.types import BatchMeta, DownloadData, SourceDict
+from telegram_bot.services.tracking.manager import (
+    mark_tracking_fulfilled,
+    mark_tracking_hourly_retry,
+)
 from telegram_bot.utils import sanitize_collection_name
 
 from .adapters import join_path, list_dir, path_exists, remove_file
@@ -42,6 +46,7 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
     )
 
     source_dict = download_data["source_dict"]
+    tracking_item_id = source_dict.get("tracking_item_id")
     chat_id = download_data["chat_id"]
     message_id = download_data["message_id"]
     initial_save_path = download_data["save_path"]
@@ -82,7 +87,7 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
 
             # Defer Plex scan if this download is part of a batch of episodes
             defer_scan = bool(source_dict.get("batch_id"))
-            message_text = await handle_successful_download(
+            post_processing = await handle_successful_download(
                 ti=ti,
                 parsed_info=source_dict.get("parsed_info", {}),
                 initial_download_path=initial_save_path,
@@ -90,26 +95,34 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
                 plex_config=get_plex_config(application.bot_data),
                 defer_scan=defer_scan,
             )
-            # Now that the media file has been moved, we can safely delete the originals.
-            logger.info(f"Removing torrent and deleting original files for: {clean_name}")
-            ses = application.bot_data["TORRENT_SESSION"]
-            handle = download_data.get("handle")
-            if handle and handle.is_valid():
-                # This flag tells libtorrent to remove the torrent and delete all its files.
-                ses.remove_torrent(handle, lt.session.delete_files)  # type: ignore
-            # If part of a season batch, update counters and maybe trigger a single scan.
-            message_text = await _update_batch_and_maybe_scan(
-                application,
-                source_dict,
-                message_text,
-                source_dict.get("parsed_info", {}),
-            )
+            message_text = str(post_processing.get("final_message", ""))
+            if post_processing.get("succeeded"):
+                # Now that the media file has been moved, we can safely delete the originals.
+                logger.info(f"Removing torrent and deleting original files for: {clean_name}")
+                ses = application.bot_data["TORRENT_SESSION"]
+                handle = download_data.get("handle")
+                if handle and handle.is_valid():
+                    # This flag tells libtorrent to remove the torrent and delete all its files.
+                    ses.remove_torrent(handle, lt.session.delete_files)  # type: ignore
+                # If part of a season batch, update counters and maybe trigger a single scan.
+                message_text = await _update_batch_and_maybe_scan(
+                    application,
+                    source_dict,
+                    message_text,
+                    source_dict.get("parsed_info", {}),
+                )
+                if isinstance(tracking_item_id, str):
+                    mark_tracking_fulfilled(application, item_id=tracking_item_id)
+            elif isinstance(tracking_item_id, str):
+                mark_tracking_hourly_retry(application, item_id=tracking_item_id)
 
         else:
             if not download_data.get("requeued"):
                 message_text = (
                     "❌ *Download Failed*\nAn unknown error occurred in the download manager\\."
                 )
+                if isinstance(tracking_item_id, str):
+                    mark_tracking_hourly_retry(application, item_id=tracking_item_id)
 
     except TimeoutError as e:
         if str(e) == "metadata_timeout":
@@ -133,6 +146,8 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
             message_text = (
                 f"❌ *Error*\nAn unexpected timeout occurred:\n`{escape_markdown(str(e))}`"
             )
+            if isinstance(tracking_item_id, str):
+                mark_tracking_hourly_retry(application, item_id=tracking_item_id)
 
     except asyncio.CancelledError:
         if download_data.get("requeued"):
@@ -159,6 +174,8 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
             message_text = (
                 f"⏹️ *Cancelled*\nDownload has been stopped for:\n`{escape_markdown(clean_name)}`"
             )
+            if isinstance(tracking_item_id, str):
+                mark_tracking_hourly_retry(application, item_id=tracking_item_id)
 
     except Exception as e:
         logger.error(
@@ -166,6 +183,8 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
             exc_info=True,
         )
         message_text = f"❌ *Error*\nAn unexpected error occurred:\n`{escape_markdown(str(e))}`"
+        if isinstance(tracking_item_id, str):
+            mark_tracking_hourly_retry(application, item_id=tracking_item_id)
 
     finally:
         # This block handles cleanup and queue processing
@@ -248,7 +267,7 @@ async def _update_batch_and_maybe_scan(
 
         finalization: dict[str, Any] = {}
         if media_type == "movie":
-            finalization = await finalize_movie_collection(application, collection_meta)
+            finalization = await finalize_movie_collection(cast(Any, application), collection_meta)
             reconciliation_lines = build_collection_reconciliation_lines(finalization)
             if reconciliation_lines:
                 info_line += "\n" + "\n".join(reconciliation_lines)

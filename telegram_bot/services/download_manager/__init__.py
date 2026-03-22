@@ -26,6 +26,7 @@ from .queue import (
     add_download_to_queue,
     add_season_to_queue,
     process_queue_for_user,
+    queue_download_source,
 )
 
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "cleanup_download_resources",
     "process_queue_for_user",
     "_start_download_task",
+    "queue_download_source",
     "add_download_to_queue",
     "add_season_to_queue",
     "add_collection_to_queue",

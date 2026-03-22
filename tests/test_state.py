@@ -113,6 +113,26 @@ async def test_post_init_renders_home_menu_for_allowed_users(mocker):
 
 
 @pytest.mark.asyncio
+async def test_post_init_loads_tracking_state_and_starts_scheduler(mocker):
+    application = Mock()
+    application.bot_data = {}
+    application.bot = Mock()
+
+    mocker.patch("telegram_bot.state.load_state", return_value=({}, {}))
+    load_tracking_mock = mocker.patch(
+        "telegram_bot.services.tracking.manager.load_tracking_state_into_bot_data"
+    )
+    start_scheduler_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.start_tracking_scheduler"
+    )
+
+    await post_init(application)
+
+    load_tracking_mock.assert_called_once_with(application)
+    start_scheduler_mock.assert_called_once_with(application)
+
+
+@pytest.mark.asyncio
 async def test_post_shutdown_cancels_tasks_and_saves_state(mocker):
     task = SimpleNamespace(cancel=mocker.Mock(), done=mocker.Mock(return_value=False))
 
@@ -126,8 +146,17 @@ async def test_post_shutdown_cancels_tasks_and_saves_state(mocker):
 
     mocker.patch("telegram_bot.state.asyncio.gather", new=AsyncMock())
     save_mock = mocker.patch("telegram_bot.state.save_state")
+    stop_scheduler_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.stop_tracking_scheduler",
+        new=AsyncMock(),
+    )
+    persist_tracking_mock = mocker.patch(
+        "telegram_bot.services.tracking.manager.persist_tracking_state_from_bot_data"
+    )
 
     await post_shutdown(application)  # This will no longer show an error
 
     task.cancel.assert_called_once()
     save_mock.assert_called_once()
+    stop_scheduler_mock.assert_awaited_once_with(application)
+    persist_tracking_mock.assert_called_once_with(application)

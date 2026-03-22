@@ -24,6 +24,7 @@ from ..ui.views import send_confirmation_prompt
 from ..workflows.delete_workflow import handle_delete_buttons
 from ..workflows.navigation import mark_chat_idle, return_to_home
 from ..workflows.search_workflow import handle_reject_season_pack, handle_search_buttons
+from ..workflows.tracking_workflow.handlers import handle_tracking_buttons
 from .command_handlers import (
     launch_delete_workflow,
     launch_help,
@@ -31,6 +32,7 @@ from .command_handlers import (
     launch_plex_restart,
     launch_plex_status,
     launch_search_workflow,
+    launch_tracking_workflow,
 )
 
 HOME_ACTIONS = {
@@ -40,6 +42,7 @@ HOME_ACTIONS = {
     "home_restart",
     "home_help",
     "home_link",
+    "home_track",
     "home_refresh",
 }
 
@@ -161,6 +164,8 @@ async def _route_home_action(
         await show_home_menu(context, chat_id)
     elif action == "home_link":
         await launch_link_workflow(context, chat_id)
+    elif action == "home_track":
+        await launch_tracking_workflow(context, chat_id)
     elif action == "home_refresh":
         await show_home_menu(context, chat_id)
     else:
@@ -191,6 +196,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if action.startswith("search_"):
         await handle_search_buttons(update, context)
+    elif action.startswith("track_"):
+        await handle_tracking_buttons(update, context)
 
     elif action.startswith("delete_") or action == "confirm_delete":
         await handle_delete_buttons(update, context)

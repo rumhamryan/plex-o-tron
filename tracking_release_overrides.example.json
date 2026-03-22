@@ -1,0 +1,15 @@
+{
+  "movies": [
+    {
+      "title": "Example Future Movie",
+      "year": 2026,
+      "availability_date": "2026-04-15",
+      "availability_source": "streaming"
+    },
+    {
+      "title": "Another Future Movie",
+      "availability_date": "2026-06-01",
+      "availability_source": "physical"
+    }
+  ]
+}

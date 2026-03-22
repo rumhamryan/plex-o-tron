@@ -791,23 +791,25 @@ async def _present_season_download_confirmation(
     rendered_summary = "\n".join(lines)
 
     if is_pack:
-        keyboard = [
+        reply_markup = InlineKeyboardMarkup(
             [
-                InlineKeyboardButton("✅ Confirm", callback_data="confirm_season_download"),
-                InlineKeyboardButton("⛔ Reject", callback_data="reject_season_pack"),
-                InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
+                [
+                    InlineKeyboardButton("✅ Confirm", callback_data="confirm_season_download"),
+                    InlineKeyboardButton("⛔ Reject", callback_data="reject_season_pack"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation"),
+                ]
             ]
-        ]
+        )
     else:
-        keyboard = confirm_cancel_keyboard(
+        reply_markup = confirm_cancel_keyboard(
             "✅ Confirm",
             "confirm_season_download",
-        ).inline_keyboard
+        )
 
     await safe_edit_message(
         message,
         text=rendered_summary,
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=reply_markup,
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     store = _get_user_data_store(context)

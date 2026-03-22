@@ -8,6 +8,7 @@ import libtorrent as lt
 from telegram.helpers import escape_markdown
 
 from telegram_bot.config import ALLOWED_EXTENSIONS, logger
+from telegram_bot.domain.types import PostProcessingResult
 from telegram_bot.services.scraping_service import fetch_episode_title_from_wikipedia
 from telegram_bot.ui.messages import format_media_summary
 from telegram_bot.utils import format_bytes, parse_torrent_name
@@ -21,6 +22,14 @@ from .validation import select_primary_media_file
 LOW_FREE_SPACE_USAGE_THRESHOLD_PERCENT = 85
 
 
+def _coerce_year(raw_year: Any) -> int | None:
+    if isinstance(raw_year, int):
+        return raw_year
+    if isinstance(raw_year, str) and raw_year.isdigit():
+        return int(raw_year)
+    return None
+
+
 async def handle_successful_download(
     ti: lt.torrent_info,  # type: ignore
     parsed_info: dict[str, Any],
@@ -29,7 +38,7 @@ async def handle_successful_download(
     plex_config: dict[str, str] | None,
     *,
     defer_scan: bool = False,
-) -> str:
+) -> PostProcessingResult:
     """
     Moves completed downloads to the correct media directory, renames them
     for Plex, and triggers a library scan.
@@ -39,6 +48,7 @@ async def handle_successful_download(
     season_pack_processed = 0
     scan_status_message = ""
     summary_title = _build_media_display_name(parsed_info)
+    year_value = _coerce_year(parsed_info.get("year"))
     is_season_pack = bool(parsed_info.get("is_season_pack"))
 
     try:
@@ -141,11 +151,18 @@ async def handle_successful_download(
 
     except Exception as e:
         logger.error("Post-processing failed: %s", e, exc_info=True)
-        return (
-            "❌ *Post-Processing Error*\n"
-            "Download completed but failed during file handling\\.\n\n"
-            f"`{escape_markdown(str(e))}`"
-        )
+        return {
+            "succeeded": False,
+            "final_message": (
+                "❌ *Post-Processing Error*\n"
+                "Download completed but failed during file handling\\.\n\n"
+                f"`{escape_markdown(str(e))}`"
+            ),
+            "destination_path": summary_destination,
+            "media_type": parsed_info.get("type"),
+            "title": summary_title,
+            "year": year_value,
+        }
 
     size_label = format_bytes(summary_size_bytes) if summary_size_bytes is not None else None
     destination_label = summary_destination.replace("\\", "/") if summary_destination else None
@@ -177,4 +194,11 @@ async def handle_successful_download(
         processed_label = season_pack_processed or 0
         season_note = f"\nProcessed and moved {processed_label} episodes from the season pack\\."
 
-    return f"{summary_text}{season_note}{scan_status_message}"
+    return {
+        "succeeded": True,
+        "final_message": f"{summary_text}{season_note}{scan_status_message}",
+        "destination_path": summary_destination,
+        "media_type": parsed_info.get("type"),
+        "title": summary_title,
+        "year": year_value,
+    }

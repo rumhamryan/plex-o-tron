@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 from types import SimpleNamespace
+from typing import Any
 
 from telegram.error import TelegramError
 from telegram.ext import Application
@@ -95,7 +96,8 @@ async def _render_home_menu_on_startup(application: Application) -> None:
             continue
 
         try:
-            await show_home_menu(context, chat_id)
+            startup_context: Any = context
+            await show_home_menu(startup_context, chat_id)
         except TelegramError as exc:
             logger.info(
                 "Could not render startup home menu for chat %s (likely no DM open yet): %s",
@@ -116,6 +118,8 @@ async def post_init(application: Application) -> None:
     from .services.download_manager import (
         download_task_wrapper,
     )  # Avoid circular import
+    from .services.tracking.manager import load_tracking_state_into_bot_data
+    from .services.tracking.scheduler import start_tracking_scheduler
 
     logger.info("--- Loading persisted state and resuming downloads ---")
     # --- Fix: Use the imported constant directly ---
@@ -137,6 +141,10 @@ async def post_init(application: Application) -> None:
             download_data["task"] = task
 
     logger.info("--- Resume process finished ---")
+
+    load_tracking_state_into_bot_data(application)
+    start_tracking_scheduler(application)
+
     await _render_home_menu_on_startup(application)
 
 
@@ -146,6 +154,8 @@ async def post_shutdown(application: Application) -> None:
     This function is called by the ApplicationBuilder.
     """
     logger.info("--- Shutting down: Signalling active tasks to stop ---")
+    from .services.tracking.manager import persist_tracking_state_from_bot_data
+    from .services.tracking.scheduler import stop_tracking_scheduler
 
     # Set a global flag to indicate shutdown is in progress
     application.bot_data["is_shutting_down"] = True
@@ -167,6 +177,9 @@ async def post_shutdown(application: Application) -> None:
 
         # Wait for all tasks to acknowledge cancellation
         await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+
+    await stop_tracking_scheduler(application)
+    persist_tracking_state_from_bot_data(application)
 
     # Final state save before exiting
     # --- Fix: Use the imported constant directly ---

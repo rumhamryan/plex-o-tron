@@ -5,6 +5,8 @@ from telegram import Message, Update
 
 from telegram_bot.handlers.message_handlers import handle_link_message, handle_user_message
 from telegram_bot.workflows.navigation import mark_chat_workflow_active, return_to_home
+from telegram_bot.workflows.tracking_workflow.handlers import TRACKING_AWAIT_MOVIE_TITLE
+from telegram_bot.workflows.tracking_workflow.state import TRACKING_NEXT_ACTION_KEY
 
 
 @pytest.mark.asyncio
@@ -95,6 +97,28 @@ async def test_active_delete_text_routes_to_delete_workflow(mocker, make_message
     await handle_user_message(update, context)
 
     delete_mock.assert_awaited_once_with(update, context)
+
+
+@pytest.mark.asyncio
+async def test_active_track_text_routes_to_tracking_workflow(mocker, make_message, context):
+    msg = make_message("future movie")
+    update = Update(update_id=1, message=msg)
+
+    mark_chat_workflow_active(context, msg.chat_id, "track")
+    context.user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_MOVIE_TITLE
+
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    tracking_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.handle_tracking_workflow_message",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    tracking_mock.assert_awaited_once_with(update, context)
 
 
 @pytest.mark.asyncio

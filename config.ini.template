@@ -11,6 +11,14 @@ allowed_user_ids = USER_ID_1, USER_ID_2
 plex_url = http://192.168.0.121:32400
 plex_token = PLEX_TOKEN
 
+[tmdb]
+# (Optional) TMDB credentials for non-theatrical release date cross-reference.
+# Use ONE of these credentials:
+access_token = TMDB_ACCESS_TOKEN
+api_key = TMDB_API_KEY
+# Region influences which release dates are selected (default US).
+region = US
+
 [host]
 # Define absolute paths for your media. Use forward slashes for both OSes.
 default_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Unsorted
