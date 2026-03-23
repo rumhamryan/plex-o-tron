@@ -46,7 +46,7 @@ def test_candidate_summary_line_movie_escapes_markdown_reserved_characters():
     assert line.endswith("Date: TBD")
 
 
-def test_candidate_summary_line_tv_includes_schedule_mode_and_dates():
+def test_candidate_summary_line_tv_includes_next_air_only():
     line = _candidate_summary_line(
         {
             "target_kind": "tv",
@@ -56,7 +56,9 @@ def test_candidate_summary_line_tv_includes_schedule_mode_and_dates():
         }
     )
     assert "\\- Future Show" in line
-    assert "ongoing\\_next\\_episode" in line
+    assert "Mode:" not in line
+    assert "First Air:" not in line
+    assert "Next Air:" in line
     assert "2026\\-07\\-02" in line
 
 
@@ -251,6 +253,56 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
 
 
 @pytest.mark.asyncio
+async def test_tracking_workflow_tv_multi_select_hides_mode_and_first_air_lines(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.safe_edit_message",
+        AsyncMock(),
+    )
+
+    start_message = make_message(message_id=80)
+    start_query = make_callback_query("track_schedule_tv", start_message)
+    start_update = Update(update_id=1, callback_query=start_query)
+    await handle_tracking_buttons(start_update, context)
+
+    candidates = [
+        {
+            "target_kind": "tv",
+            "title": "Future Show A",
+            "canonical_title": "Future Show A",
+            "tmdb_series_id": 1001,
+            "first_air_date": date(2020, 1, 1),
+            "next_air_date": date(2026, 7, 2),
+        },
+        {
+            "target_kind": "tv",
+            "title": "Future Show B",
+            "canonical_title": "Future Show B",
+            "tmdb_series_id": 1002,
+            "first_air_date": date(2021, 2, 2),
+            "next_air_date": None,
+        },
+    ]
+    mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.TV_ONGOING_TRACKING_ADAPTER.resolve_candidates_from_user_input",
+        AsyncMock(return_value=candidates),
+    )
+
+    user_message = make_message("Future Show", message_id=81)
+    text_update = Update(update_id=2, message=user_message)
+    await handle_tracking_workflow_message(text_update, context)
+
+    latest_text = edit_mock.await_args_list[-1].kwargs["text"]
+    assert "Select A TV Show To Schedule" in latest_text
+    assert "Mode:" not in latest_text
+    assert "First Air:" not in latest_text
+    assert "Next Air:" in latest_text
+
+
+@pytest.mark.asyncio
 async def test_tracking_workflow_schedules_tv_ongoing_item(
     mocker, make_message, make_callback_query, context
 ):
@@ -304,12 +356,13 @@ async def test_tracking_workflow_schedules_tv_ongoing_item(
     assert item["target_payload"]["tmdb_series_id"] == 1234
     assert item["target_payload"]["episode_cursor"] is None
     assert item["target_payload"]["pending_episode"] is None
+    assert item["target_payload"]["pending_episode_air_date"] == "2026-06-15"
     assert item["next_check_at_utc"] is not None
     return_home_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_tracking_review_message_does_not_repeat_item_list(
+async def test_tracking_review_message_includes_item_summary_and_tv_next_air(
     mocker, make_message, make_callback_query, context
 ):
     context.application.bot_data = context.bot_data
@@ -322,7 +375,12 @@ async def test_tracking_review_message_does_not_repeat_item_list(
         "telegram_bot.workflows.tracking_workflow.handlers.tracking_manager.list_tracking_items",
         return_value=[
             {"id": "abc123", "target_kind": "movie", "display_title": "Movie One"},
-            {"id": "def456", "target_kind": "tv", "display_title": "Show Two"},
+            {
+                "id": "def456",
+                "target_kind": "tv",
+                "display_title": "Show Two",
+                "target_payload": {"pending_episode_air_date": "2026-07-02"},
+            },
         ],
     )
 
@@ -333,8 +391,10 @@ async def test_tracking_review_message_does_not_repeat_item_list(
 
     text = edit_mock.await_args.kwargs["text"]
     assert "Active Scheduled Items" in text
-    assert "Movie One" not in text
-    assert "Show Two" not in text
+    assert "Movie One" in text
+    assert "Show Two" in text
+    assert "Next Air" in text
+    assert "2026\\-07\\-02" in text
     keyboard = edit_mock.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[-1][0].callback_data == "cancel_operation"
 

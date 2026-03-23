@@ -547,6 +547,7 @@ def create_tv_tracking_item(
     tmdb_series_id: int,
     title: str | None = None,
     episode_cursor: dict[str, int] | None = None,
+    next_air_date: date | None = None,
     now_utc: datetime | None = None,
 ) -> TrackingItem:
     now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
@@ -558,7 +559,9 @@ def create_tv_tracking_item(
         "episode_cursor": _coerce_episode_ref(episode_cursor),
         "pending_episode": None,
         "pending_episode_title": None,
-        "pending_episode_air_date": None,
+        "pending_episode_air_date": next_air_date.isoformat()
+        if isinstance(next_air_date, date)
+        else None,
     }
     return create_tracking_item(
         application,

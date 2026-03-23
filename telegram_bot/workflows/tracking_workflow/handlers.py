@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping
-from datetime import date
+from datetime import date, datetime
 from typing import Any, cast
 
 from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
@@ -72,22 +72,12 @@ def _candidate_summary_line(candidate: Mapping[str, Any]) -> str:
     escaped_title = escape_markdown(title, version=2)
 
     if target_kind == "tv":
-        first_air = candidate.get("first_air_date")
-        if isinstance(first_air, date):
-            first_air_text = first_air.isoformat()
-        else:
-            first_air_text = "unknown"
         next_air = candidate.get("next_air_date")
         if isinstance(next_air, date):
             next_air_text = next_air.isoformat()
         else:
             next_air_text = "TBD"
-        return (
-            f"\\- {escaped_title}\n"
-            "  Mode: ongoing\\_next\\_episode\n"
-            f"  First Air: {escape_markdown(first_air_text, version=2)}\n"
-            f"  Next Air: {escape_markdown(next_air_text, version=2)}"
-        )
+        return f"\\- {escaped_title}\n  Next Air: {escape_markdown(next_air_text, version=2)}"
 
     year = candidate.get("year")
     year_text = f" \\({int(year)}\\)" if isinstance(year, int) else ""
@@ -107,6 +97,21 @@ def _candidate_summary_line(candidate: Mapping[str, Any]) -> str:
     return f"\\- {escaped_title}{year_text}\n  Source: {escaped_source}\n  Date: {escaped_date}"
 
 
+def _candidate_selection_summary_line(candidate: Mapping[str, Any]) -> str:
+    target_kind = str(candidate.get("target_kind") or "movie").lower()
+    if target_kind != "tv":
+        return _candidate_summary_line(candidate)
+
+    title = str(candidate.get("canonical_title") or candidate.get("title") or "Item")
+    escaped_title = escape_markdown(title, version=2)
+    next_air = candidate.get("next_air_date")
+    if isinstance(next_air, date):
+        next_air_text = next_air.isoformat()
+    else:
+        next_air_text = "TBD"
+    return f"\\- {escaped_title}\n  Next Air: {escape_markdown(next_air_text, version=2)}"
+
+
 def _candidate_button_label(candidate: Mapping[str, Any]) -> str:
     title = str(candidate.get("canonical_title") or candidate.get("title") or "Item")
     target_kind = str(candidate.get("target_kind") or "movie").lower()
@@ -117,6 +122,35 @@ def _candidate_button_label(candidate: Mapping[str, Any]) -> str:
     if len(title) > 45:
         title = f"{title[:42]}..."
     return title
+
+
+def _tracking_review_item_summary_line(item: TrackingItem) -> str:
+    target_kind = str(item.get("target_kind") or "movie").lower()
+    icon = "📺" if target_kind == "tv" else "🎬"
+    title = tracking_manager.get_tracking_display_title(item)
+    escaped_title = escape_markdown(title, version=2)
+
+    if target_kind != "tv":
+        return f"\\- {icon} {escaped_title}"
+
+    payload = item.get("target_payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    pending_air_date = payload_dict.get("pending_episode_air_date")
+    if isinstance(pending_air_date, date):
+        next_air_text = pending_air_date.isoformat()
+    elif isinstance(pending_air_date, str) and pending_air_date.strip():
+        raw_value = pending_air_date.strip()
+        try:
+            parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+            next_air_text = parsed.date().isoformat()
+        except ValueError:
+            next_air_text = raw_value
+    else:
+        next_air_text = "TBD"
+
+    return (
+        f"\\- {icon} {escaped_title}\n" f"  Next Air: {escape_markdown(next_air_text, version=2)}"
+    )
 
 
 def _tracking_review_keyboard(items: list[TrackingItem]) -> InlineKeyboardMarkup:
@@ -217,7 +251,9 @@ async def _render_tracking_review(query: CallbackQuery, context: ContextTypes.DE
     await safe_edit_message(
         query.message,
         text=(
-            "*Active Scheduled Items*\n\nChoose a scheduled item below if you want to cancel it\\."
+            "*Active Scheduled Items*\n\n"
+            + "\n".join(_tracking_review_item_summary_line(item) for item in items)
+            + "\n\nChoose a scheduled item below if you want to cancel it\\."
         ),
         reply_markup=_tracking_review_keyboard(items),
         parse_mode=ParseMode.MARKDOWN_V2,
@@ -349,6 +385,7 @@ async def _handle_confirm_candidate(
             canonical_title=str(selected.get("canonical_title") or selected.get("title") or ""),
             tmdb_series_id=tmdb_series_id,
             title=str(selected.get("title") or selected.get("canonical_title") or ""),
+            next_air_date=selected.get("next_air_date"),
         )
 
     created_title = tracking_manager.get_tracking_display_title(created)
@@ -604,7 +641,7 @@ async def handle_tracking_workflow_message(
         "*Select A TV Show To Schedule*" if target_kind == "tv" else "*Select A Movie To Schedule*"
     )
     lines = [header, ""]
-    lines.extend(_candidate_summary_line(candidate) for candidate in schedulable[:8])
+    lines.extend(_candidate_selection_summary_line(candidate) for candidate in schedulable[:8])
     rows = [
         [
             InlineKeyboardButton(
