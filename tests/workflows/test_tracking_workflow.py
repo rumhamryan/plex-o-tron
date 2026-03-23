@@ -7,7 +7,6 @@ from telegram import CallbackQuery, Update
 from telegram_bot.workflows.tracking_workflow.handlers import (
     TRACKING_AWAIT_MOVIE_TITLE,
     _candidate_summary_line,
-    _format_tracking_item_line,
     _tracking_menu_text,
     handle_tracking_buttons,
     handle_tracking_workflow_message,
@@ -34,21 +33,6 @@ def test_candidate_summary_line_escapes_markdown_reserved_characters():
     assert " (2030)" not in line
 
 
-def test_tracking_item_line_escapes_markdown_reserved_characters():
-    line = _format_tracking_item_line(
-        {
-            "canonical_title": "Project Hail Mary (film)",
-            "year": 2026,
-            "status": "waiting_release_window",
-            "next_check_at_utc": "2026-04-28T19:00:00Z",
-        },
-        1,
-    )
-    assert "\\(film\\)" in line
-    assert " \\(2026\\)" in line
-    assert " (2026)" not in line
-
-
 @pytest.mark.asyncio
 async def test_tracking_workflow_schedules_valid_future_movie(
     mocker, make_message, make_callback_query, context
@@ -57,6 +41,10 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     mocker.patch.object(CallbackQuery, "answer", AsyncMock())
     edit_mock = mocker.patch(
         "telegram_bot.workflows.tracking_workflow.handlers.safe_edit_message",
+        AsyncMock(),
+    )
+    return_home_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.return_to_home",
         AsyncMock(),
     )
     mocker.patch(
@@ -96,13 +84,10 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     )
     assert TRACKING_NEXT_ACTION_KEY not in context.user_data
     assert len(context.user_data.get("tracking_candidates", [])) == 1
-
-    pick_query = make_callback_query("track_pick_0", start_message)
-    pick_update = Update(update_id=3, callback_query=pick_query)
-    await handle_tracking_buttons(pick_update, context)
+    assert context.user_data.get("tracking_selected_candidate_index") == 0
 
     confirm_query = make_callback_query("track_confirm", start_message)
-    confirm_update = Update(update_id=4, callback_query=confirm_query)
+    confirm_update = Update(update_id=3, callback_query=confirm_query)
     await handle_tracking_buttons(confirm_update, context)
 
     tracking_items = context.bot_data.get("tracking_items", {})
@@ -117,8 +102,11 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     assert item["next_check_at_utc"] is not None
     assert item["fulfillment_state"] == "pending"
 
-    final_text = edit_mock.await_args_list[-1].kwargs["text"]
-    assert "Scheduled tracking created" in final_text
+    return_home_mock.assert_awaited_once()
+    success_message = return_home_mock.await_args.kwargs["message_text"]
+    assert isinstance(success_message, str)
+    assert "Schedule created" in success_message
+    assert "Future Movie" in success_message
 
 
 @pytest.mark.asyncio
@@ -167,6 +155,135 @@ async def test_tracking_workflow_rejects_already_released_movie(
     )
     create_mock.assert_not_called()
     assert not context.bot_data.get("tracking_items")
-    assert TRACKING_NEXT_ACTION_KEY not in context.user_data
+    assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) == TRACKING_AWAIT_MOVIE_TITLE
     rejection_text = edit_mock.await_args_list[-1].kwargs["text"].lower()
     assert "already released" in rejection_text or "no future release" in rejection_text
+    assert "send another movie title" in rejection_text
+    keyboard = edit_mock.await_args_list[-1].kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].callback_data == "cancel_operation"
+
+
+@pytest.mark.asyncio
+async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.safe_edit_message",
+        AsyncMock(),
+    )
+
+    start_message = make_message(message_id=50)
+    start_query = make_callback_query("track_schedule_movie", start_message)
+    start_update = Update(update_id=1, callback_query=start_query)
+    await handle_tracking_buttons(start_update, context)
+
+    candidates = [
+        {
+            "title": "Future Movie A",
+            "canonical_title": "Future Movie A",
+            "year": 2030,
+            "is_released": False,
+            "release_date_status": "confirmed",
+            "availability_date": date(2030, 1, 2),
+            "availability_source": "streaming",
+        },
+        {
+            "title": "Future Movie B",
+            "canonical_title": "Future Movie B",
+            "year": 2031,
+            "is_released": False,
+            "release_date_status": "confirmed",
+            "availability_date": date(2031, 3, 12),
+            "availability_source": "physical",
+        },
+    ]
+    mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.movie_release_dates.find_movie_tracking_candidates",
+        AsyncMock(return_value=candidates),
+    )
+
+    context.bot.send_message = AsyncMock()
+    user_message = make_message("Future Movie", message_id=51)
+    text_update = Update(update_id=2, message=user_message)
+    await handle_tracking_workflow_message(text_update, context)
+
+    assert context.user_data.get("tracking_selected_candidate_index") is None
+    latest_text = edit_mock.await_args_list[-1].kwargs["text"]
+    assert "Select A Movie To Schedule" in latest_text
+    keyboard = edit_mock.await_args_list[-1].kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[-1][0].callback_data == "cancel_operation"
+
+
+@pytest.mark.asyncio
+async def test_tracking_review_message_does_not_repeat_item_list(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.safe_edit_message",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.tracking_manager.list_tracking_items",
+        return_value=[
+            {
+                "id": "abc123",
+                "canonical_title": "Movie One",
+            },
+            {
+                "id": "def456",
+                "canonical_title": "Movie Two",
+            },
+        ],
+    )
+
+    message = make_message(message_id=70)
+    review_query = make_callback_query("track_review", message)
+    review_update = Update(update_id=1, callback_query=review_query)
+    await handle_tracking_buttons(review_update, context)
+
+    text = edit_mock.await_args.kwargs["text"]
+    assert "Active Scheduled Items" in text
+    assert "Movie One" not in text
+    assert "Movie Two" not in text
+    keyboard = edit_mock.await_args.kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[-1][0].callback_data == "cancel_operation"
+
+
+@pytest.mark.asyncio
+async def test_tracking_cancel_confirm_exits_to_home_and_removes_item(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    return_home_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.return_to_home",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.tracking.manager.persist_tracking_state_from_bot_data",
+        return_value=None,
+    )
+
+    context.bot_data["tracking_items"] = {
+        "trk_1234": {
+            "id": "trk_1234",
+            "chat_id": 456,
+            "canonical_title": "Future Movie",
+            "title": "Future Movie",
+            "status": "waiting_release_window",
+            "created_at_utc": "2026-03-23T00:00:00Z",
+        }
+    }
+
+    message = make_message(message_id=90)
+    confirm_query = make_callback_query("track_cancel_confirm_trk_1234", message)
+    confirm_update = Update(update_id=1, callback_query=confirm_query)
+    await handle_tracking_buttons(confirm_update, context)
+
+    assert "trk_1234" not in context.bot_data["tracking_items"]
+    return_home_mock.assert_awaited_once()
+    assert return_home_mock.await_args.kwargs["message_text"] == "✅ Scheduled item cancelled\\."

@@ -24,7 +24,7 @@ def build_home_menu_markup() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Delete", callback_data="home_delete"),
             ],
             [
-                InlineKeyboardButton("Track", callback_data="home_track"),
+                InlineKeyboardButton("Schedule", callback_data="home_track"),
                 InlineKeyboardButton("Link", callback_data="home_link"),
             ],
             [

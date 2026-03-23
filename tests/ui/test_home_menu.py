@@ -17,6 +17,7 @@ from telegram_bot.ui.home_menu import (
 def test_build_home_menu_markup_layout():
     markup = build_home_menu_markup()
     callback_rows = [[button.callback_data for button in row] for row in markup.inline_keyboard]
+    label_rows = [[button.text for button in row] for row in markup.inline_keyboard]
 
     assert callback_rows == [
         ["home_search", "home_delete"],
@@ -24,6 +25,7 @@ def test_build_home_menu_markup_layout():
         ["home_status", "home_restart"],
         ["home_help"],
     ]
+    assert label_rows[1][0] == "Schedule"
 
 
 def test_home_menu_message_id_storage():

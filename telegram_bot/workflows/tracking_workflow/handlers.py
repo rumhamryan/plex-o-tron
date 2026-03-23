@@ -14,11 +14,16 @@ from telegram_bot.domain.types import TrackingItem
 from telegram_bot.services.tracking import manager as tracking_manager
 from telegram_bot.services.tracking import movie_release_dates
 from telegram_bot.services.tracking.movie_release_dates import MovieTrackingResolution
-from telegram_bot.ui.keyboards import cancel_only_keyboard, confirm_cancel_keyboard
+from telegram_bot.ui.keyboards import (
+    cancel_only_keyboard,
+    confirm_cancel_keyboard,
+    single_column_keyboard,
+)
 from telegram_bot.utils import safe_edit_message
 from telegram_bot.workflows.navigation import (
     get_active_prompt_message_id,
     mark_chat_workflow_active,
+    return_to_home,
     set_active_prompt_message_id,
 )
 
@@ -40,11 +45,10 @@ def _get_user_data_store(context: ContextTypes.DEFAULT_TYPE) -> MutableMapping[s
 
 
 def _tracking_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+    return single_column_keyboard(
         [
-            [InlineKeyboardButton("🎬 Schedule Movie", callback_data="track_schedule_movie")],
-            [InlineKeyboardButton("📋 Review Scheduled Items", callback_data="track_review")],
-            [InlineKeyboardButton("🏠 Back Home", callback_data="cancel_operation")],
+            ("🎬 Schedule Movie", "track_schedule_movie"),
+            ("📋 Review Scheduled Items", "track_review"),
         ]
     )
 
@@ -91,18 +95,6 @@ def _candidate_button_label(candidate: Mapping[str, Any]) -> str:
     return title
 
 
-def _format_tracking_item_line(item: Mapping[str, Any], index: int) -> str:
-    title = str(item.get("canonical_title") or item.get("title") or "Movie")
-    year = item.get("year")
-    status = str(item.get("status") or "unknown")
-    next_check = str(item.get("next_check_at_utc") or "n/a")
-    year_text = f" \\({int(year)}\\)" if isinstance(year, int) else ""
-    return (
-        f"{index}\\. *{escape_markdown(title, version=2)}*{year_text}\n"
-        f"Status: `{escape_markdown(status, version=2)}` \\| Next: `{escape_markdown(next_check, version=2)}`"
-    )
-
-
 def _tracking_review_keyboard(items: list[TrackingItem]) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for item in items:
@@ -118,7 +110,7 @@ def _tracking_review_keyboard(items: list[TrackingItem]) -> InlineKeyboardMarkup
                 )
             ]
         )
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="track_back")])
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -177,17 +169,18 @@ async def _render_tracking_review(query: CallbackQuery, context: ContextTypes.DE
             query.message,
             text="No active scheduled items\\.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ Back", callback_data="track_back")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
-    lines = ["*Active Scheduled Items*", ""]
-    lines.extend(_format_tracking_item_line(item, idx) for idx, item in enumerate(items, start=1))
     await safe_edit_message(
         query.message,
-        text="\n\n".join(lines),
+        text=(
+            "*Active Scheduled Items*\n\n"
+            "Choose a scheduled item below if you want to cancel it\\."
+        ),
         reply_markup=_tracking_review_keyboard(items),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -209,7 +202,7 @@ async def _handle_pick_candidate(query: CallbackQuery, context: ContextTypes.DEF
             query.message,
             text="This selection has expired\\. Please start again\\.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ Back", callback_data="track_back")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -237,8 +230,6 @@ async def _handle_pick_candidate(query: CallbackQuery, context: ContextTypes.DEF
         reply_markup=confirm_cancel_keyboard(
             "✅ Confirm Schedule",
             "track_confirm",
-            cancel_label="⬅️ Back",
-            cancel_callback="track_back",
         ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -257,7 +248,7 @@ async def _handle_confirm_candidate(
             query.message,
             text="This selection has expired\\. Please schedule again\\.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ Back", callback_data="track_back")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -274,7 +265,7 @@ async def _handle_confirm_candidate(
                 "Only future releases can be scheduled\\."
             ),
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ Back", callback_data="track_back")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -290,21 +281,16 @@ async def _handle_confirm_candidate(
         title=str(selected.get("title") or selected.get("canonical_title") or ""),
     )
     clear_tracking_workflow_state(user_data)
-    mark_chat_workflow_active(context, query.message.chat_id, "track")
-    await safe_edit_message(
-        query.message,
-        text=(
-            "✅ Scheduled tracking created\\.\n\n"
+    await return_to_home(
+        context,
+        query.message.chat_id,
+        source_message=query.message,
+        message_text=(
+            "✅ Schedule created\\.\n\n"
             f"*{escape_markdown(str(created.get('canonical_title') or 'Movie'), version=2)}* "
-            f"will be monitored until fulfillment or manual cancellation\\."
+            "will be monitored until fulfillment or manual cancellation\\."
         ),
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("📋 Review Scheduled Items", callback_data="track_review")],
-                [InlineKeyboardButton("⬅️ Back To Tracking Menu", callback_data="track_back")],
-            ]
-        ),
-        parse_mode=ParseMode.MARKDOWN_V2,
+        message_parse_mode=ParseMode.MARKDOWN_V2,
     )
 
 
@@ -320,7 +306,7 @@ async def _handle_cancel_item(query: CallbackQuery, context: ContextTypes.DEFAUL
             query.message,
             text="That scheduled item is no longer available\\.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ Back", callback_data="track_review")]]
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
@@ -332,8 +318,6 @@ async def _handle_cancel_item(query: CallbackQuery, context: ContextTypes.DEFAUL
         reply_markup=confirm_cancel_keyboard(
             "✅ Yes, Cancel",
             f"track_cancel_confirm_{item_id}",
-            cancel_label="⬅️ Back",
-            cancel_callback="track_review",
         ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -353,13 +337,12 @@ async def _handle_cancel_item_confirm(
         chat_id=query.message.chat_id,
     )
     if cancelled:
-        await safe_edit_message(
-            query.message,
-            text="✅ Scheduled item cancelled\\.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("📋 Review Scheduled Items", callback_data="track_review")]]
-            ),
-            parse_mode=ParseMode.MARKDOWN_V2,
+        await return_to_home(
+            context,
+            query.message.chat_id,
+            source_message=query.message,
+            message_text="✅ Scheduled item cancelled\\.",
+            message_parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
@@ -367,7 +350,7 @@ async def _handle_cancel_item_confirm(
         query.message,
         text="That scheduled item could not be cancelled\\.",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("📋 Review Scheduled Items", callback_data="track_review")]]
+            [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
         ),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -451,19 +434,19 @@ async def handle_tracking_workflow_message(
     candidates = await movie_release_dates.find_movie_tracking_candidates(title_query)
     schedulable = [item for item in candidates if not item.get("is_released")]
     if not schedulable:
-        clear_tracking_workflow_state(user_data)
+        user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_MOVIE_TITLE
+        user_data.pop(TRACKING_CANDIDATES_KEY, None)
+        user_data.pop(TRACKING_SELECTED_INDEX_KEY, None)
         await safe_edit_message(
             context.bot,
             text=(
                 "❌ This title appears to be already released, or no future release metadata "
                 "could be confirmed\\.\n\n"
-                "Try another movie title\\."
+                "Send another movie title, or tap Cancel to exit\\."
             ),
             chat_id=chat_id,
             message_id=prompt_message_id,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ Back", callback_data="track_back")]]
-            ),
+            reply_markup=cancel_only_keyboard(),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -471,6 +454,27 @@ async def handle_tracking_workflow_message(
     user_data[TRACKING_CANDIDATES_KEY] = schedulable
     user_data.pop(TRACKING_SELECTED_INDEX_KEY, None)
     user_data.pop(TRACKING_NEXT_ACTION_KEY, None)
+
+    if len(schedulable) == 1:
+        user_data[TRACKING_SELECTED_INDEX_KEY] = 0
+        single_candidate = cast(MovieTrackingResolution, schedulable[0])
+        await safe_edit_message(
+            context.bot,
+            text=(
+                "*Confirm Schedule*\n\n"
+                f"{_candidate_summary_line(single_candidate)}\n\n"
+                "Start tracking this movie?"
+            ),
+            chat_id=chat_id,
+            message_id=prompt_message_id,
+            reply_markup=confirm_cancel_keyboard(
+                "✅ Confirm Schedule",
+                "track_confirm",
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        set_active_prompt_message_id(context, chat_id, prompt_message_id)
+        return
 
     lines = ["*Select A Movie To Schedule*", ""]
     lines.extend(_candidate_summary_line(candidate) for candidate in schedulable[:8])
@@ -483,7 +487,7 @@ async def handle_tracking_workflow_message(
         ]
         for idx, candidate in enumerate(schedulable[:8])
     ]
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="track_back")])
+    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
 
     await safe_edit_message(
         context.bot,

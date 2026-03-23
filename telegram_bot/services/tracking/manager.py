@@ -225,7 +225,8 @@ def cancel_tracking_item(
     chat_id: int | None = None,
     now_utc: datetime | None = None,
 ) -> bool:
-    item = get_tracking_item(application, item_id)
+    items = get_tracking_items(application.bot_data)
+    item = items.get(item_id)
     if not item:
         return False
     if chat_id is not None and int(item.get("chat_id", 0) or 0) != int(chat_id):
@@ -233,12 +234,12 @@ def cancel_tracking_item(
     if item.get("status") in TERMINAL_TRACKING_STATES:
         return False
 
-    now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
-    item["status"] = "cancelled"  # type: ignore[typeddict-item]
-    item["next_check_at_utc"] = None
-    item["last_checked_at_utc"] = isoformat_utc(now)
+    # Remove from memory + persistence so user-initiated cancel truly deletes
+    # the schedule rather than leaving a cancelled record on disk.
+    items.pop(item_id, None)
+    get_tracking_in_progress_ids(application.bot_data).discard(item_id)
     persist_tracking_state_from_bot_data(application)
-    logger.info("[TRACKING] Cancelled item %s.", item_id)
+    logger.info("[TRACKING] Cancelled and removed item %s.", item_id)
     return True
 
 
