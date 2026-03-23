@@ -8,6 +8,7 @@ from requests import exceptions as requests_exceptions
 from telegram_bot.services.plex_service import (
     get_plex_server_status,
     ensure_collection_contains_movies,
+    get_existing_episodes_for_season,
     wait_for_movies_to_be_available,
 )
 
@@ -423,3 +424,28 @@ async def test_wait_for_movies_to_be_available_times_out(mocker):
 
     assert result is False
     sleep_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_existing_episodes_for_season_supports_suffix_season_directory(tmp_path):
+    season_dir = tmp_path / "Rick and Morty" / "Season 01 (2013-2014)"
+    season_dir.mkdir(parents=True)
+    (season_dir / "s01e01 - Pilot.mp4").write_text("data", encoding="utf-8")
+    (season_dir / "s01e02 - Lawnmower Dog.mp4").write_text("data", encoding="utf-8")
+    (season_dir / "notes.txt").write_text("ignore", encoding="utf-8")
+
+    context = Mock()
+    context.bot_data = {
+        "SAVE_PATHS": {
+            "tv_shows": str(tmp_path),
+            "default": str(tmp_path),
+        }
+    }
+
+    existing = await get_existing_episodes_for_season(
+        context,
+        show_title="Rick and Morty",
+        season=1,
+    )
+
+    assert existing == {1, 2}

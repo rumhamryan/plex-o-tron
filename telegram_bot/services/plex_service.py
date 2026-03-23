@@ -517,7 +517,23 @@ async def get_existing_episodes_for_season(
         # Mirror media_manager sanitization for show directory name
         invalid_chars = r'<>:"/\\|?*'
         safe_show = "".join(c for c in show_title if c not in invalid_chars)
-        season_dir = join_path(tv_root, safe_show, f"Season {int(season):02d}")
+        show_dir = join_path(tv_root, safe_show)
+        if not is_dir(show_dir):
+            return existing
+
+        season_dir = join_path(show_dir, f"Season {int(season):02d}")
+        if not is_dir(season_dir):
+            # Accept common season directory variants such as:
+            # "Season 1", "Season 01 (2013-2014)", or "Season 01 - Extras".
+            season_label_pattern = re.compile(rf"(?i)^season[\s._-]*0*{int(season)}\b")
+            for entry in list_dir(show_dir):
+                candidate = join_path(show_dir, entry)
+                if not is_dir(candidate):
+                    continue
+                if season_label_pattern.search(entry):
+                    season_dir = candidate
+                    break
+
         if not is_dir(season_dir):
             return existing
 
