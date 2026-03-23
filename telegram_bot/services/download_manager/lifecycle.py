@@ -12,7 +12,7 @@ from telegram.helpers import escape_markdown
 from telegram_bot.config import PERSISTENCE_FILE, logger
 from telegram_bot.domain.types import BatchMeta, DownloadData, SourceDict
 from telegram_bot.services.tracking.manager import (
-    mark_tracking_fulfilled,
+    mark_tracking_fulfillment_success,
     mark_tracking_hourly_retry,
 )
 from telegram_bot.utils import sanitize_collection_name
@@ -112,7 +112,11 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
                     source_dict.get("parsed_info", {}),
                 )
                 if isinstance(tracking_item_id, str):
-                    mark_tracking_fulfilled(application, item_id=tracking_item_id)
+                    mark_tracking_fulfillment_success(
+                        application,
+                        item_id=tracking_item_id,
+                        parsed_info=source_dict.get("parsed_info", {}),
+                    )
             elif isinstance(tracking_item_id, str):
                 mark_tracking_hourly_retry(application, item_id=tracking_item_id)
 

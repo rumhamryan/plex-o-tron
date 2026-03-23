@@ -12,8 +12,10 @@ from telegram.helpers import escape_markdown
 from telegram_bot.config import logger
 from telegram_bot.domain.types import TrackingItem
 from telegram_bot.services.tracking import manager as tracking_manager
-from telegram_bot.services.tracking import movie_release_dates
-from telegram_bot.services.tracking.movie_release_dates import MovieTrackingResolution
+from telegram_bot.services.tracking.targets import (
+    MOVIE_TRACKING_ADAPTER,
+    TV_ONGOING_TRACKING_ADAPTER,
+)
 from telegram_bot.ui.keyboards import (
     cancel_only_keyboard,
     confirm_cancel_keyboard,
@@ -31,10 +33,12 @@ from .state import (
     TRACKING_CANDIDATES_KEY,
     TRACKING_NEXT_ACTION_KEY,
     TRACKING_SELECTED_INDEX_KEY,
+    TRACKING_TARGET_KIND_KEY,
     clear_tracking_workflow_state,
 )
 
 TRACKING_AWAIT_MOVIE_TITLE = "await_movie_title"
+TRACKING_AWAIT_TV_TITLE = "await_tv_title"
 TRACKING_CALLBACK_PREFIX = "track_"
 
 
@@ -47,7 +51,8 @@ def _get_user_data_store(context: ContextTypes.DEFAULT_TYPE) -> MutableMapping[s
 def _tracking_menu_keyboard() -> InlineKeyboardMarkup:
     return single_column_keyboard(
         [
-            ("🎬 Schedule Movie", "track_schedule_movie"),
+            ("🎬 Schedule Movie (Future Release)", "track_schedule_movie"),
+            ("📺 Schedule TV Show (Ongoing Next Episodes)", "track_schedule_tv"),
             ("📋 Review Scheduled Items", "track_review"),
         ]
     )
@@ -56,17 +61,39 @@ def _tracking_menu_keyboard() -> InlineKeyboardMarkup:
 def _tracking_menu_text() -> str:
     return (
         "*Auto\\-Download Tracking*\n\n"
-        "Schedule unreleased movies, review active schedules, or cancel any schedule\\."
+        "Schedule future movie releases or ongoing TV next\\-episode tracking\\.\n"
+        "You can also review and cancel active schedules\\."
     )
 
 
 def _candidate_summary_line(candidate: Mapping[str, Any]) -> str:
-    title = str(candidate.get("canonical_title") or candidate.get("title") or "Movie")
+    target_kind = str(candidate.get("target_kind") or "movie").lower()
+    title = str(candidate.get("canonical_title") or candidate.get("title") or "Item")
+    escaped_title = escape_markdown(title, version=2)
+
+    if target_kind == "tv":
+        first_air = candidate.get("first_air_date")
+        if isinstance(first_air, date):
+            first_air_text = first_air.isoformat()
+        else:
+            first_air_text = "unknown"
+        next_air = candidate.get("next_air_date")
+        if isinstance(next_air, date):
+            next_air_text = next_air.isoformat()
+        else:
+            next_air_text = "TBD"
+        return (
+            f"\\- {escaped_title}\n"
+            "  Mode: ongoing\\_next\\_episode\n"
+            f"  First Air: {escape_markdown(first_air_text, version=2)}\n"
+            f"  Next Air: {escape_markdown(next_air_text, version=2)}"
+        )
+
     year = candidate.get("year")
+    year_text = f" \\({int(year)}\\)" if isinstance(year, int) else ""
     date_value = candidate.get("availability_date")
     source = candidate.get("availability_source")
 
-    year_text = f" \\({int(year)}\\)" if isinstance(year, int) else ""
     if isinstance(source, str) and source.strip():
         source_label = source.strip()
     elif isinstance(date_value, date):
@@ -75,21 +102,18 @@ def _candidate_summary_line(candidate: Mapping[str, Any]) -> str:
         source_label = "metadata-only checks"
 
     date_label = date_value.isoformat() if isinstance(date_value, date) else "TBD"
-    escaped_title = escape_markdown(title, version=2)
     escaped_source = escape_markdown(source_label, version=2)
     escaped_date = escape_markdown(date_label, version=2)
-    return (
-        f"\\- {escaped_title}{year_text}\n"
-        f"  Source: {escaped_source}\n"
-        f"  Date: {escaped_date}"
-    )
+    return f"\\- {escaped_title}{year_text}\n  Source: {escaped_source}\n  Date: {escaped_date}"
 
 
 def _candidate_button_label(candidate: Mapping[str, Any]) -> str:
-    title = str(candidate.get("canonical_title") or candidate.get("title") or "Movie")
-    year = candidate.get("year")
-    if isinstance(year, int):
-        title = f"{title} ({year})"
+    title = str(candidate.get("canonical_title") or candidate.get("title") or "Item")
+    target_kind = str(candidate.get("target_kind") or "movie").lower()
+    if target_kind == "movie":
+        year = candidate.get("year")
+        if isinstance(year, int):
+            title = f"{title} ({year})"
     if len(title) > 45:
         title = f"{title[:42]}..."
     return title
@@ -99,13 +123,15 @@ def _tracking_review_keyboard(items: list[TrackingItem]) -> InlineKeyboardMarkup
     rows: list[list[InlineKeyboardButton]] = []
     for item in items:
         item_id = str(item.get("id"))
-        title = str(item.get("canonical_title") or item.get("title") or "Movie")
-        if len(title) > 26:
-            title = f"{title[:23]}..."
+        target_kind = str(item.get("target_kind") or "movie").lower()
+        icon = "🎬" if target_kind == "movie" else "📺"
+        title = tracking_manager.get_tracking_display_title(item)
+        if len(title) > 22:
+            title = f"{title[:19]}..."
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🛑 Cancel: {title}",
+                    f"🛑 Cancel: {icon} {title}",
                     callback_data=f"track_cancel_{item_id}",
                 )
             ]
@@ -140,19 +166,33 @@ async def render_tracking_menu(
     set_active_prompt_message_id(context, chat_id, sent.message_id)
 
 
-async def _handle_schedule_prompt(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_schedule_prompt(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    target_kind: str,
+) -> None:
     if not isinstance(query.message, Message):
         return
     user_data = _get_user_data_store(context)
     mark_chat_workflow_active(context, query.message.chat_id, "track")
     clear_tracking_workflow_state(user_data)
-    user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_MOVIE_TITLE
-    await safe_edit_message(
-        query.message,
-        text=(
+    user_data[TRACKING_TARGET_KIND_KEY] = target_kind
+    if target_kind == "tv":
+        user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_TV_TITLE
+        prompt_text = (
+            "📺 Send the TV show title to track for ongoing next\\-episode auto\\-download\\.\n\n"
+            "This mode follows the next unretrieved released episode for the show\\."
+        )
+    else:
+        user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_MOVIE_TITLE
+        prompt_text = (
             "🎬 Send the movie title you want to track for automatic future download\\.\n\n"
             "Only unreleased movies can be scheduled\\."
-        ),
+        )
+    await safe_edit_message(
+        query.message,
+        text=prompt_text,
         reply_markup=cancel_only_keyboard(),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -178,8 +218,7 @@ async def _render_tracking_review(query: CallbackQuery, context: ContextTypes.DE
     await safe_edit_message(
         query.message,
         text=(
-            "*Active Scheduled Items*\n\n"
-            "Choose a scheduled item below if you want to cancel it\\."
+            "*Active Scheduled Items*\n\nChoose a scheduled item below if you want to cancel it\\."
         ),
         reply_markup=_tracking_review_keyboard(items),
         parse_mode=ParseMode.MARKDOWN_V2,
@@ -190,6 +229,15 @@ def _parse_callback_suffix(data: str, prefix: str) -> str | None:
     if not data.startswith(prefix):
         return None
     return data[len(prefix) :]
+
+
+def _confirm_prompt_text(candidate: Mapping[str, Any]) -> str:
+    target_kind = str(candidate.get("target_kind") or "movie").lower()
+    if target_kind == "tv":
+        footer = "Start tracking this TV show for ongoing next episodes?"
+    else:
+        footer = "Start tracking this movie?"
+    return f"*Confirm Schedule*\n\n{_candidate_summary_line(candidate)}\n\n{footer}"
 
 
 async def _handle_pick_candidate(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -218,25 +266,19 @@ async def _handle_pick_candidate(query: CallbackQuery, context: ContextTypes.DEF
     if not (0 <= index < len(candidates)):
         return
 
-    candidate = cast(MovieTrackingResolution, candidates[index])
+    candidate = cast(dict[str, Any], candidates[index])
     user_data[TRACKING_SELECTED_INDEX_KEY] = index
     await safe_edit_message(
         query.message,
-        text=(
-            "*Confirm Schedule*\n\n"
-            f"{_candidate_summary_line(candidate)}\n\n"
-            "Start tracking this movie?"
-        ),
-        reply_markup=confirm_cancel_keyboard(
-            "✅ Confirm Schedule",
-            "track_confirm",
-        ),
+        text=_confirm_prompt_text(candidate),
+        reply_markup=confirm_cancel_keyboard("✅ Confirm Schedule", "track_confirm"),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
 
 async def _handle_confirm_candidate(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     if not isinstance(query.message, Message):
         return
@@ -253,33 +295,64 @@ async def _handle_confirm_candidate(
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
-
     if not (0 <= selected_index < len(candidates)):
         return
-    selected = cast(MovieTrackingResolution, candidates[selected_index])
-    if selected.get("is_released"):
-        await safe_edit_message(
-            query.message,
-            text=(
-                "❌ This movie appears to be already released for streaming or Blu\\-ray/DVD\\.\n"
-                "Only future releases can be scheduled\\."
-            ),
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-            ),
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-        return
 
-    created = tracking_manager.create_movie_tracking_item(
-        context.application,
-        chat_id=query.message.chat_id,
-        canonical_title=str(selected.get("canonical_title") or selected.get("title") or ""),
-        year=selected.get("year"),
-        availability_date=selected.get("availability_date"),
-        availability_source=selected.get("availability_source"),
-        title=str(selected.get("title") or selected.get("canonical_title") or ""),
+    selected = cast(dict[str, Any], candidates[selected_index])
+    target_kind = str(
+        selected.get("target_kind") or user_data.get(TRACKING_TARGET_KIND_KEY) or "movie"
     )
+    target_kind = target_kind.lower()
+
+    if target_kind == "movie":
+        if selected.get("is_released"):
+            await safe_edit_message(
+                query.message,
+                text=(
+                    "❌ This movie appears to be already released for streaming or Blu\\-ray/DVD\\.\n"
+                    "Only future releases can be scheduled\\."
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+
+        created = tracking_manager.create_movie_tracking_item(
+            context.application,
+            chat_id=query.message.chat_id,
+            canonical_title=str(selected.get("canonical_title") or selected.get("title") or ""),
+            year=selected.get("year"),
+            availability_date=selected.get("availability_date"),
+            availability_source=selected.get("availability_source"),
+            title=str(selected.get("title") or selected.get("canonical_title") or ""),
+        )
+    else:
+        tmdb_series_id = selected.get("tmdb_series_id")
+        if not isinstance(tmdb_series_id, int) or tmdb_series_id <= 0:
+            await safe_edit_message(
+                query.message,
+                text=(
+                    "❌ This TV selection does not include a valid TMDB series id\\.\n"
+                    "Please start again and choose another show\\."
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+
+        created = tracking_manager.create_tv_tracking_item(
+            context.application,
+            chat_id=query.message.chat_id,
+            canonical_title=str(selected.get("canonical_title") or selected.get("title") or ""),
+            tmdb_series_id=tmdb_series_id,
+            title=str(selected.get("title") or selected.get("canonical_title") or ""),
+        )
+
+    created_title = tracking_manager.get_tracking_display_title(created)
     clear_tracking_workflow_state(user_data)
     await return_to_home(
         context,
@@ -287,7 +360,7 @@ async def _handle_confirm_candidate(
         source_message=query.message,
         message_text=(
             "✅ Schedule created\\.\n\n"
-            f"*{escape_markdown(str(created.get('canonical_title') or 'Movie'), version=2)}* "
+            f"*{escape_markdown(created_title, version=2)}* "
             "will be monitored until fulfillment or manual cancellation\\."
         ),
         message_parse_mode=ParseMode.MARKDOWN_V2,
@@ -311,20 +384,18 @@ async def _handle_cancel_item(query: CallbackQuery, context: ContextTypes.DEFAUL
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
-    title = str(item.get("canonical_title") or item.get("title") or "Movie")
+    title = tracking_manager.get_tracking_display_title(item)
     await safe_edit_message(
         query.message,
-        text=(f"Cancel this scheduled item\\?\n\n*{escape_markdown(title, version=2)}*"),
-        reply_markup=confirm_cancel_keyboard(
-            "✅ Yes, Cancel",
-            f"track_cancel_confirm_{item_id}",
-        ),
+        text=f"Cancel this scheduled item\\?\n\n*{escape_markdown(title, version=2)}*",
+        reply_markup=confirm_cancel_keyboard("✅ Yes, Cancel", f"track_cancel_confirm_{item_id}"),
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
 
 async def _handle_cancel_item_confirm(
-    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     if not isinstance(query.message, Message):
         return
@@ -373,7 +444,10 @@ async def handle_tracking_buttons(update: Update, context: ContextTypes.DEFAULT_
         await render_tracking_menu(context, query.message.chat_id, target_message=query.message)
         return
     if action == "track_schedule_movie":
-        await _handle_schedule_prompt(query, context)
+        await _handle_schedule_prompt(query, context, target_kind="movie")
+        return
+    if action == "track_schedule_tv":
+        await _handle_schedule_prompt(query, context, target_kind="tv")
         return
     if action == "track_review":
         clear_tracking_workflow_state(user_data)
@@ -395,8 +469,36 @@ async def handle_tracking_buttons(update: Update, context: ContextTypes.DEFAULT_
     logger.warning("Unhandled tracking callback action: %s", action)
 
 
+def _active_target_kind(user_data: MutableMapping[str, Any]) -> str:
+    raw_kind = str(user_data.get(TRACKING_TARGET_KIND_KEY) or "movie").strip().lower()
+    return "tv" if raw_kind == "tv" else "movie"
+
+
+async def _resolve_tracking_candidates(
+    *,
+    title_query: str,
+    target_kind: str,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> list[dict[str, Any]]:
+    now_utc = tracking_manager.utc_now(
+        context.application.bot_data.get(tracking_manager.TRACKING_NOW_PROVIDER_KEY)
+    )
+    if target_kind == "tv":
+        return await TV_ONGOING_TRACKING_ADAPTER.resolve_candidates_from_user_input(
+            title_query,
+            application=context.application,
+            now_utc=now_utc,
+        )
+    return await MOVIE_TRACKING_ADAPTER.resolve_candidates_from_user_input(
+        title_query,
+        application=context.application,
+        now_utc=now_utc,
+    )
+
+
 async def handle_tracking_workflow_message(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Handles text input for tracking workflow prompts."""
     message = update.message
@@ -405,7 +507,7 @@ async def handle_tracking_workflow_message(
 
     user_data = _get_user_data_store(context)
     next_action = user_data.get(TRACKING_NEXT_ACTION_KEY)
-    if next_action != TRACKING_AWAIT_MOVIE_TITLE:
+    if next_action not in {TRACKING_AWAIT_MOVIE_TITLE, TRACKING_AWAIT_TV_TITLE}:
         return
 
     title_query = message.text.strip()
@@ -416,40 +518,70 @@ async def handle_tracking_workflow_message(
 
     chat_id = message.chat_id
     prompt_message_id = get_active_prompt_message_id(context, chat_id)
+    target_kind = _active_target_kind(user_data)
+    loading_text = (
+        "🔎 Looking up release metadata..."
+        if target_kind == "movie"
+        else "🔎 Looking up TMDB show metadata..."
+    )
     if isinstance(prompt_message_id, int):
         await safe_edit_message(
             context.bot,
-            text="🔎 Looking up release metadata...",
+            text=loading_text,
             chat_id=chat_id,
             message_id=prompt_message_id,
         )
     else:
         status_message = await context.bot.send_message(
             chat_id=chat_id,
-            text="🔎 Looking up release metadata...",
+            text=loading_text,
         )
         prompt_message_id = status_message.message_id
         set_active_prompt_message_id(context, chat_id, prompt_message_id)
 
-    candidates = await movie_release_dates.find_movie_tracking_candidates(title_query)
-    schedulable = [item for item in candidates if not item.get("is_released")]
-    if not schedulable:
-        user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_MOVIE_TITLE
-        user_data.pop(TRACKING_CANDIDATES_KEY, None)
-        user_data.pop(TRACKING_SELECTED_INDEX_KEY, None)
-        await safe_edit_message(
-            context.bot,
-            text=(
-                "❌ This title appears to be already released, or no future release metadata "
-                "could be confirmed\\.\n\n"
-                "Send another movie title, or tap Cancel to exit\\."
-            ),
-            chat_id=chat_id,
-            message_id=prompt_message_id,
-            reply_markup=cancel_only_keyboard(),
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-        return
+    candidates = await _resolve_tracking_candidates(
+        title_query=title_query,
+        target_kind=target_kind,
+        context=context,
+    )
+    if target_kind == "movie":
+        schedulable = [candidate for candidate in candidates if not candidate.get("is_released")]
+        if not schedulable:
+            user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_MOVIE_TITLE
+            user_data.pop(TRACKING_CANDIDATES_KEY, None)
+            user_data.pop(TRACKING_SELECTED_INDEX_KEY, None)
+            await safe_edit_message(
+                context.bot,
+                text=(
+                    "❌ This title appears to be already released, or no future release metadata "
+                    "could be confirmed\\.\n\n"
+                    "Send another movie title, or tap Cancel to exit\\."
+                ),
+                chat_id=chat_id,
+                message_id=prompt_message_id,
+                reply_markup=cancel_only_keyboard(),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+    else:
+        schedulable = candidates
+        if not schedulable:
+            user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_TV_TITLE
+            user_data.pop(TRACKING_CANDIDATES_KEY, None)
+            user_data.pop(TRACKING_SELECTED_INDEX_KEY, None)
+            await safe_edit_message(
+                context.bot,
+                text=(
+                    "❌ No matching TV show could be resolved from TMDB\\.\n\n"
+                    "Verify the show title, ensure TMDB credentials are configured, "
+                    "then send another TV show title\\."
+                ),
+                chat_id=chat_id,
+                message_id=prompt_message_id,
+                reply_markup=cancel_only_keyboard(),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
 
     user_data[TRACKING_CANDIDATES_KEY] = schedulable
     user_data.pop(TRACKING_SELECTED_INDEX_KEY, None)
@@ -457,26 +589,22 @@ async def handle_tracking_workflow_message(
 
     if len(schedulable) == 1:
         user_data[TRACKING_SELECTED_INDEX_KEY] = 0
-        single_candidate = cast(MovieTrackingResolution, schedulable[0])
+        single_candidate = cast(dict[str, Any], schedulable[0])
         await safe_edit_message(
             context.bot,
-            text=(
-                "*Confirm Schedule*\n\n"
-                f"{_candidate_summary_line(single_candidate)}\n\n"
-                "Start tracking this movie?"
-            ),
+            text=_confirm_prompt_text(single_candidate),
             chat_id=chat_id,
             message_id=prompt_message_id,
-            reply_markup=confirm_cancel_keyboard(
-                "✅ Confirm Schedule",
-                "track_confirm",
-            ),
+            reply_markup=confirm_cancel_keyboard("✅ Confirm Schedule", "track_confirm"),
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         set_active_prompt_message_id(context, chat_id, prompt_message_id)
         return
 
-    lines = ["*Select A Movie To Schedule*", ""]
+    header = (
+        "*Select A TV Show To Schedule*" if target_kind == "tv" else "*Select A Movie To Schedule*"
+    )
+    lines = [header, ""]
     lines.extend(_candidate_summary_line(candidate) for candidate in schedulable[:8])
     rows = [
         [

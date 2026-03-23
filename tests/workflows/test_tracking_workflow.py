@@ -6,12 +6,16 @@ from telegram import CallbackQuery, Update
 
 from telegram_bot.workflows.tracking_workflow.handlers import (
     TRACKING_AWAIT_MOVIE_TITLE,
+    TRACKING_AWAIT_TV_TITLE,
     _candidate_summary_line,
     _tracking_menu_text,
     handle_tracking_buttons,
     handle_tracking_workflow_message,
 )
-from telegram_bot.workflows.tracking_workflow.state import TRACKING_NEXT_ACTION_KEY
+from telegram_bot.workflows.tracking_workflow.state import (
+    TRACKING_NEXT_ACTION_KEY,
+    TRACKING_TARGET_KIND_KEY,
+)
 
 
 def test_tracking_menu_text_escapes_markdown_reserved_characters():
@@ -19,9 +23,10 @@ def test_tracking_menu_text_escapes_markdown_reserved_characters():
     assert "Auto\\-Download" in menu_text
 
 
-def test_candidate_summary_line_escapes_markdown_reserved_characters():
+def test_candidate_summary_line_movie_escapes_markdown_reserved_characters():
     line = _candidate_summary_line(
         {
+            "target_kind": "movie",
             "canonical_title": "Future Movie",
             "year": 2030,
             "availability_date": None,
@@ -30,7 +35,20 @@ def test_candidate_summary_line_escapes_markdown_reserved_characters():
     assert line.startswith("\\- Future Movie \\(2030\\)\n")
     assert "\n  Source: metadata\\-only checks\n" in line
     assert line.endswith("Date: TBD")
-    assert " (2030)" not in line
+
+
+def test_candidate_summary_line_tv_includes_schedule_mode_and_dates():
+    line = _candidate_summary_line(
+        {
+            "target_kind": "tv",
+            "canonical_title": "Future Show",
+            "first_air_date": date(2020, 1, 1),
+            "next_air_date": date(2026, 7, 2),
+        }
+    )
+    assert "\\- Future Show" in line
+    assert "ongoing\\_next\\_episode" in line
+    assert "2026\\-07\\-02" in line
 
 
 @pytest.mark.asyncio
@@ -57,8 +75,11 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     start_update = Update(update_id=1, callback_query=start_query)
     await handle_tracking_buttons(start_update, context)
     assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) == TRACKING_AWAIT_MOVIE_TITLE
+    assert context.user_data.get(TRACKING_TARGET_KIND_KEY) == "movie"
 
     candidate = {
+        "target_kind": "movie",
+        "schedule_mode": "future_release",
         "title": "Future Movie",
         "canonical_title": "Future Movie",
         "year": 2030,
@@ -68,7 +89,7 @@ async def test_tracking_workflow_schedules_valid_future_movie(
         "availability_source": "streaming",
     }
     mocker.patch(
-        "telegram_bot.workflows.tracking_workflow.handlers.movie_release_dates.find_movie_tracking_candidates",
+        "telegram_bot.workflows.tracking_workflow.handlers.MOVIE_TRACKING_ADAPTER.resolve_candidates_from_user_input",
         AsyncMock(return_value=[candidate]),
     )
 
@@ -94,11 +115,12 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     assert len(tracking_items) == 1
     item = next(iter(tracking_items.values()))
     assert item["target_kind"] == "movie"
+    assert item["schedule_mode"] == "future_release"
     assert item["canonical_title"] == "Future Movie"
     assert item["year"] == 2030
     assert item["release_date_status"] == "confirmed"
     assert item["availability_date"] == "2030-01-02"
-    assert item["status"] == "waiting_release_window"
+    assert item["status"] == "awaiting_window"
     assert item["next_check_at_utc"] is not None
     assert item["fulfillment_state"] == "pending"
 
@@ -130,6 +152,7 @@ async def test_tracking_workflow_rejects_already_released_movie(
     assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) == TRACKING_AWAIT_MOVIE_TITLE
 
     released_candidate = {
+        "target_kind": "movie",
         "title": "Old Movie",
         "canonical_title": "Old Movie",
         "year": 2010,
@@ -139,7 +162,7 @@ async def test_tracking_workflow_rejects_already_released_movie(
         "availability_source": "physical",
     }
     mocker.patch(
-        "telegram_bot.workflows.tracking_workflow.handlers.movie_release_dates.find_movie_tracking_candidates",
+        "telegram_bot.workflows.tracking_workflow.handlers.MOVIE_TRACKING_ADAPTER.resolve_candidates_from_user_input",
         AsyncMock(return_value=[released_candidate]),
     )
     context.bot.send_message = AsyncMock()
@@ -181,6 +204,7 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
 
     candidates = [
         {
+            "target_kind": "movie",
             "title": "Future Movie A",
             "canonical_title": "Future Movie A",
             "year": 2030,
@@ -190,6 +214,7 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
             "availability_source": "streaming",
         },
         {
+            "target_kind": "movie",
             "title": "Future Movie B",
             "canonical_title": "Future Movie B",
             "year": 2031,
@@ -200,7 +225,7 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
         },
     ]
     mocker.patch(
-        "telegram_bot.workflows.tracking_workflow.handlers.movie_release_dates.find_movie_tracking_candidates",
+        "telegram_bot.workflows.tracking_workflow.handlers.MOVIE_TRACKING_ADAPTER.resolve_candidates_from_user_input",
         AsyncMock(return_value=candidates),
     )
 
@@ -217,6 +242,64 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
 
 
 @pytest.mark.asyncio
+async def test_tracking_workflow_schedules_tv_ongoing_item(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    return_home_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.return_to_home",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.tracking.manager.persist_tracking_state_from_bot_data",
+        return_value=None,
+    )
+
+    start_message = make_message(message_id=100)
+    start_query = make_callback_query("track_schedule_tv", start_message)
+    start_update = Update(update_id=1, callback_query=start_query)
+    await handle_tracking_buttons(start_update, context)
+    assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) == TRACKING_AWAIT_TV_TITLE
+    assert context.user_data.get(TRACKING_TARGET_KIND_KEY) == "tv"
+
+    tv_candidate = {
+        "target_kind": "tv",
+        "schedule_mode": "ongoing_next_episode",
+        "title": "Future Show",
+        "canonical_title": "Future Show",
+        "tmdb_series_id": 1234,
+        "first_air_date": date(2021, 1, 1),
+        "next_air_date": date(2026, 6, 15),
+    }
+    mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.TV_ONGOING_TRACKING_ADAPTER.resolve_candidates_from_user_input",
+        AsyncMock(return_value=[tv_candidate]),
+    )
+
+    user_message = make_message("Future Show", message_id=101)
+    text_update = Update(update_id=2, message=user_message)
+    await handle_tracking_workflow_message(text_update, context)
+
+    confirm_query = make_callback_query("track_confirm", start_message)
+    confirm_update = Update(update_id=3, callback_query=confirm_query)
+    await handle_tracking_buttons(confirm_update, context)
+
+    tracking_items = context.bot_data.get("tracking_items", {})
+    assert len(tracking_items) == 1
+    item = next(iter(tracking_items.values()))
+    assert item["target_kind"] == "tv"
+    assert item["schedule_mode"] == "ongoing_next_episode"
+    assert item["display_title"] == "Future Show"
+    assert item["status"] == "awaiting_metadata"
+    assert item["target_payload"]["tmdb_series_id"] == 1234
+    assert item["target_payload"]["episode_cursor"] is None
+    assert item["target_payload"]["pending_episode"] is None
+    assert item["next_check_at_utc"] is not None
+    return_home_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_tracking_review_message_does_not_repeat_item_list(
     mocker, make_message, make_callback_query, context
 ):
@@ -229,14 +312,8 @@ async def test_tracking_review_message_does_not_repeat_item_list(
     mocker.patch(
         "telegram_bot.workflows.tracking_workflow.handlers.tracking_manager.list_tracking_items",
         return_value=[
-            {
-                "id": "abc123",
-                "canonical_title": "Movie One",
-            },
-            {
-                "id": "def456",
-                "canonical_title": "Movie Two",
-            },
+            {"id": "abc123", "target_kind": "movie", "display_title": "Movie One"},
+            {"id": "def456", "target_kind": "tv", "display_title": "Show Two"},
         ],
     )
 
@@ -248,7 +325,7 @@ async def test_tracking_review_message_does_not_repeat_item_list(
     text = edit_mock.await_args.kwargs["text"]
     assert "Active Scheduled Items" in text
     assert "Movie One" not in text
-    assert "Movie Two" not in text
+    assert "Show Two" not in text
     keyboard = edit_mock.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[-1][0].callback_data == "cancel_operation"
 
@@ -272,10 +349,14 @@ async def test_tracking_cancel_confirm_exits_to_home_and_removes_item(
         "trk_1234": {
             "id": "trk_1234",
             "chat_id": 456,
+            "target_kind": "movie",
+            "display_title": "Future Movie",
             "canonical_title": "Future Movie",
             "title": "Future Movie",
-            "status": "waiting_release_window",
+            "status": "awaiting_window",
             "created_at_utc": "2026-03-23T00:00:00Z",
+            "target_payload": {"canonical_title": "Future Movie"},
+            "retry": {"consecutive_failures": 0, "last_error": None},
         }
     }
 

@@ -9,6 +9,9 @@ __all__ = [
     "DownloadData",
     "BatchCollectionMeta",
     "BatchMeta",
+    "TrackingTargetKind",
+    "TrackingScheduleMode",
+    "TrackingStatus",
     "TrackingItem",
     "TrackingStateFile",
     "PostProcessingResult",
@@ -56,37 +59,79 @@ class BatchMeta(TypedDict, total=False):
     collection: NotRequired[BatchCollectionMeta]
 
 
+TrackingTargetKind = Literal["movie", "tv"]
+TrackingScheduleMode = Literal["future_release", "ongoing_next_episode"]
+
 TrackingStatus = Literal[
-    "pending_date",
-    "waiting_release_window",
-    "watching_release",
+    # v2 states
+    "awaiting_metadata",
+    "awaiting_window",
+    "searching",
     "waiting_fulfillment",
     "fulfilled",
     "cancelled",
+    # legacy v1 states kept for tolerant coercion/compatibility
+    "pending_date",
+    "waiting_release_window",
+    "watching_release",
 ]
 TrackingReleaseDateStatus = Literal["unknown", "confirmed"]
 TrackingAvailabilitySource = Literal["streaming", "physical"]
 TrackingFulfillmentState = Literal["pending", "fulfilled"]
 
 
+class TrackingEpisodeRef(TypedDict):
+    season: int
+    episode: int
+
+
+class TrackingRetryState(TypedDict, total=False):
+    consecutive_failures: int
+    last_error: str | None
+
+
+class TrackingTargetPayload(TypedDict, total=False):
+    # Shared
+    canonical_title: str
+
+    # Movie
+    year: NotRequired[int | None]
+    release_date_status: NotRequired[TrackingReleaseDateStatus]
+    availability_date: NotRequired[str | None]
+    availability_source: NotRequired[TrackingAvailabilitySource | None]
+
+    # TV
+    tmdb_series_id: NotRequired[int]
+    episode_cursor: NotRequired[TrackingEpisodeRef | None]
+    pending_episode: NotRequired[TrackingEpisodeRef | None]
+    pending_episode_title: NotRequired[str | None]
+    pending_episode_air_date: NotRequired[str | None]
+
+
 class TrackingItem(TypedDict, total=False):
     id: str
     chat_id: int
-    target_kind: Literal["movie"]
+    target_kind: TrackingTargetKind
+    schedule_mode: TrackingScheduleMode
     target_identity: str
-    title: str
-    canonical_title: str
-    year: NotRequired[int | None]
-    release_date_status: TrackingReleaseDateStatus
-    availability_date: NotRequired[str | None]
-    availability_source: NotRequired[TrackingAvailabilitySource | None]
+    display_title: str
     status: TrackingStatus
     next_check_at_utc: NotRequired[str | None]
     last_checked_at_utc: NotRequired[str | None]
     created_at_utc: str
     fulfilled_at_utc: NotRequired[str | None]
-    fulfillment_state: TrackingFulfillmentState
     linked_download_message_id: NotRequired[int | None]
+    target_payload: TrackingTargetPayload
+    retry: TrackingRetryState
+
+    # Compatibility fields retained for existing read paths/logging/tests.
+    title: NotRequired[str]
+    canonical_title: NotRequired[str]
+    year: NotRequired[int | None]
+    release_date_status: NotRequired[TrackingReleaseDateStatus]
+    availability_date: NotRequired[str | None]
+    availability_source: NotRequired[TrackingAvailabilitySource | None]
+    fulfillment_state: NotRequired[TrackingFulfillmentState]
 
 
 class TrackingStateFile(TypedDict):

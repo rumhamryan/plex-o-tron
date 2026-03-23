@@ -1,0 +1,6 @@
+- There is a bug where if you cancel an operation, there is no menu, the user sends the term 'search':
+Mar 16 22:21:42 pc python[2242]: [2026-03-16 22:21:42] [INFO] [WIKI_CACHE] MISS movie_franchise for 'Search'
+Mar 16 22:22:01 pc python[2242]: [2026-03-16 22:22:01] [INFO] [COLLECTION] Prompting use/cancel confirmation for 'Search Party' with titles: On the Record (2020), An American Pickle (2020), On the Trail: Inside the 2020 Primaries (2020), Class Action Park (2020), Unpregnant (2020), Charm City Kings (2020), The Witches (2020), Superintelligence (2020), Let Them All Talk (2020), Locked Down (2021), Zack Snyder's Justice League (2021), LFG (2021), Women Is Losers (2021), Harry Potter 20th Anniversary: Return to Hogwarts (2022), A Christmas Story Christmas (2022), Bama Rush (2023), Glitch: The Rise & Fall of HQ Trivia (2023), Turtles All the Way Down (2024), Am I OK? (2024), Super/Man: The Christopher Reeve Story (2024), 'Salem's Lot (2024), Caddo Lake (2024), Sweethearts (2024), The Parenting (2025), Aztec Batman: Clash of Empires (2025)
+
+
+- if the user taps "review" in the TRACKING workflow, and there are not items to review leave a persistent message stating so and exit the workflow to the home menu

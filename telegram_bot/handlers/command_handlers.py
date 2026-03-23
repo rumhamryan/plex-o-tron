@@ -26,7 +26,7 @@ def get_help_message_text() -> str:
         "Use the buttons to:\n"
         "\\- Search for movies or TV shows\n"
         "\\- Delete media from your library\n"
-        "\\- Schedule unreleased movies for auto-download\n"
+        "\\- Schedule future movies and ongoing TV next episodes for auto-download\n"
         "\\- Check Plex status\n"
         "\\- Restart Plex\n"
         "\\- Start the guided link intake flow\n\n"

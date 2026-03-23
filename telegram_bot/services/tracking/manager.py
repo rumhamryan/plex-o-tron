@@ -7,7 +7,17 @@ from uuid import uuid4
 from telegram.ext import Application
 
 from telegram_bot.config import TRACKING_STATE_FILE, logger
-from telegram_bot.domain.types import TrackingItem
+from telegram_bot.domain.types import (
+    TrackingAvailabilitySource,
+    TrackingEpisodeRef,
+    TrackingItem,
+    TrackingReleaseDateStatus,
+    TrackingRetryState,
+    TrackingScheduleMode,
+    TrackingStatus,
+    TrackingTargetKind,
+    TrackingTargetPayload,
+)
 
 from .persistence import load_tracking_state, save_tracking_state
 
@@ -16,6 +26,8 @@ TRACKING_IN_PROGRESS_KEY = "tracking_in_progress_ids"
 TRACKING_LOOP_TASK_KEY = "tracking_loop_task"
 TRACKING_TIMEZONE_KEY = "tracking_timezone"
 TRACKING_NOW_PROVIDER_KEY = "tracking_now_provider"
+
+TRACKING_FULFILLMENT_WATCHDOG_HOURS = 6
 TERMINAL_TRACKING_STATES = {"fulfilled", "cancelled"}
 
 
@@ -107,7 +119,7 @@ def calculate_release_day_first_check_utc(
     local_timezone: timezone | Any,
     now_utc: datetime,
 ) -> datetime:
-    """First permitted torrent search time: local noon on release date."""
+    """First permitted search time for a release window: local noon on release day."""
     noon_local = datetime.combine(availability_day, time(hour=12), tzinfo=local_timezone)
     noon_utc = noon_local.astimezone(timezone.utc)
 
@@ -128,6 +140,193 @@ def calculate_next_weekly_metadata_check(now_utc: datetime) -> datetime:
     return now_utc.astimezone(timezone.utc) + timedelta(days=7)
 
 
+def calculate_fulfillment_watchdog_check(now_utc: datetime) -> datetime:
+    return now_utc.astimezone(timezone.utc) + timedelta(hours=TRACKING_FULFILLMENT_WATCHDOG_HOURS)
+
+
+def _normalize_display_title(title: str | None, fallback: str) -> str:
+    candidate = (title or "").strip()
+    if candidate:
+        return candidate
+    normalized_fallback = (fallback or "").strip()
+    return normalized_fallback or "Unknown"
+
+
+def _coerce_episode_ref(value: Any) -> TrackingEpisodeRef | None:
+    if not isinstance(value, dict):
+        return None
+    season = value.get("season")
+    episode = value.get("episode")
+    if isinstance(season, int) and isinstance(episode, int) and season > 0 and episode > 0:
+        return {"season": season, "episode": episode}
+    return None
+
+
+def _coerce_release_date_status(value: Any) -> TrackingReleaseDateStatus:
+    return "confirmed" if value == "confirmed" else "unknown"
+
+
+def _coerce_availability_source(value: Any) -> TrackingAvailabilitySource | None:
+    source = str(value).strip().lower() if isinstance(value, str) else ""
+    if source == "streaming":
+        return "streaming"
+    if source == "physical":
+        return "physical"
+    return None
+
+
+def _clone_target_payload(source: TrackingTargetPayload) -> TrackingTargetPayload:
+    cloned: TrackingTargetPayload = {}
+    cloned.update(source)
+    return cloned
+
+
+def _ensure_target_payload(item: TrackingItem) -> TrackingTargetPayload:
+    payload = item.get("target_payload")
+    if isinstance(payload, dict):
+        return payload
+    new_payload: TrackingTargetPayload = {}
+    item["target_payload"] = new_payload
+    return new_payload
+
+
+def _ensure_retry(item: TrackingItem) -> TrackingRetryState:
+    raw_retry = item.get("retry")
+    if isinstance(raw_retry, dict):
+        consecutive = raw_retry.get("consecutive_failures")
+        if not isinstance(consecutive, int) or consecutive < 0:
+            raw_retry["consecutive_failures"] = 0
+        if "last_error" not in raw_retry:
+            raw_retry["last_error"] = None
+        return raw_retry
+
+    retry: TrackingRetryState = {
+        "consecutive_failures": 0,
+        "last_error": None,
+    }
+    item["retry"] = retry
+    return retry
+
+
+def _movie_title_and_year(item: TrackingItem) -> tuple[str, int | None]:
+    payload = _ensure_target_payload(item)
+    canonical_title = str(
+        payload.get("canonical_title")
+        or item.get("canonical_title")
+        or item.get("display_title")
+        or ""
+    ).strip()
+    if not canonical_title:
+        canonical_title = "Unknown"
+    raw_year = payload.get("year", item.get("year"))
+    year = raw_year if isinstance(raw_year, int) else None
+    return canonical_title, year
+
+
+def _sync_movie_compatibility_fields(item: TrackingItem) -> None:
+    payload = _ensure_target_payload(item)
+    canonical_title, year = _movie_title_and_year(item)
+    item["canonical_title"] = canonical_title
+    item["title"] = str(item.get("display_title") or canonical_title)
+    item["year"] = year
+    item["release_date_status"] = _coerce_release_date_status(payload.get("release_date_status"))
+    item["availability_date"] = payload.get("availability_date")
+    item["availability_source"] = _coerce_availability_source(payload.get("availability_source"))
+    item["fulfillment_state"] = "fulfilled" if item.get("status") == "fulfilled" else "pending"  # type: ignore[typeddict-item]
+
+
+def _sync_tv_compatibility_fields(item: TrackingItem) -> None:
+    payload = _ensure_target_payload(item)
+    canonical_title = str(
+        payload.get("canonical_title")
+        or item.get("display_title")
+        or item.get("title")
+        or "Unknown"
+    ).strip()
+    item["canonical_title"] = canonical_title or "Unknown"
+    item["title"] = str(item.get("display_title") or canonical_title or "Unknown")
+    item["year"] = None
+    item["release_date_status"] = "unknown"
+    item["availability_date"] = None
+    item["availability_source"] = None
+    item["fulfillment_state"] = "fulfilled" if item.get("status") == "fulfilled" else "pending"  # type: ignore[typeddict-item]
+
+
+def get_tracking_target_kind(item: TrackingItem) -> TrackingTargetKind:
+    raw_kind = str(item.get("target_kind") or "").strip().lower()
+    return "tv" if raw_kind == "tv" else "movie"
+
+
+def get_tracking_schedule_mode(item: TrackingItem) -> str:
+    raw_mode = str(item.get("schedule_mode") or "").strip().lower()
+    if raw_mode in {"future_release", "ongoing_next_episode"}:
+        return raw_mode
+    return "future_release" if get_tracking_target_kind(item) == "movie" else "ongoing_next_episode"
+
+
+def get_tracking_display_title(item: TrackingItem) -> str:
+    value = item.get("display_title")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    canonical = str(item.get("canonical_title") or item.get("title") or "").strip()
+    return canonical or "Unknown"
+
+
+def create_tracking_item(
+    application: Application,
+    *,
+    chat_id: int,
+    target_kind: TrackingTargetKind,
+    schedule_mode: TrackingScheduleMode,
+    target_identity: str,
+    display_title: str,
+    target_payload: TrackingTargetPayload,
+    status: TrackingStatus,
+    next_check_at_utc: datetime | None,
+    now_utc: datetime | None = None,
+) -> TrackingItem:
+    """Creates and persists a generic tracking item."""
+    items = get_tracking_items(application.bot_data)
+    now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
+    item_id = _next_tracking_item_id(items)
+    initial_retry: TrackingRetryState = {"consecutive_failures": 0, "last_error": None}
+
+    item: TrackingItem = {
+        "id": item_id,
+        "chat_id": int(chat_id),
+        "target_kind": target_kind,
+        "schedule_mode": schedule_mode,
+        "target_identity": target_identity,
+        "display_title": _normalize_display_title(
+            display_title, str(target_payload.get("canonical_title"))
+        ),
+        "status": status,
+        "next_check_at_utc": isoformat_utc(next_check_at_utc) if next_check_at_utc else None,
+        "last_checked_at_utc": None,
+        "created_at_utc": isoformat_utc(now),
+        "fulfilled_at_utc": None,
+        "linked_download_message_id": None,
+        "target_payload": _clone_target_payload(target_payload),
+        "retry": initial_retry,
+    }
+
+    if target_kind == "movie":
+        _sync_movie_compatibility_fields(item)
+    else:
+        _sync_tv_compatibility_fields(item)
+
+    items[item_id] = item
+    persist_tracking_state_from_bot_data(application)
+    logger.info(
+        "[TRACKING] Created %s item %s for '%s' (status=%s).",
+        target_kind,
+        item_id,
+        get_tracking_display_title(item),
+        status,
+    )
+    return item
+
+
 def create_movie_tracking_item(
     application: Application,
     *,
@@ -139,65 +338,87 @@ def create_movie_tracking_item(
     title: str | None = None,
     now_utc: datetime | None = None,
 ) -> TrackingItem:
-    """Creates and persists a new movie tracking item."""
-    items = get_tracking_items(application.bot_data)
+    """Backwards-compatible movie-specific creator on top of the generic schema."""
     now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
-    item_id = _next_tracking_item_id(items)
-    local_timezone = get_tracking_timezone(application.bot_data)
+    normalized_title = canonical_title.strip() or (title or "").strip() or "Unknown"
 
     if isinstance(availability_date, date):
         first_check = calculate_release_day_first_check_utc(
             availability_date,
-            local_timezone=local_timezone,
+            local_timezone=get_tracking_timezone(application.bot_data),
             now_utc=now,
         )
-        status = "watching_release" if first_check <= now else "waiting_release_window"
-        next_check = now if status == "watching_release" else first_check
-        release_status = "confirmed"
+        status: TrackingStatus = "searching" if first_check <= now else "awaiting_window"
+        next_check = now if status == "searching" else first_check
+        release_status: TrackingReleaseDateStatus = "confirmed"
         availability_iso = availability_date.isoformat()
+        source = _coerce_availability_source(availability_source)
     else:
-        status = "pending_date"
+        status = "awaiting_metadata"
         next_check = calculate_next_weekly_metadata_check(now)
         release_status = "unknown"
         availability_iso = None
-        availability_source = None
+        source = None
 
-    normalized_title = canonical_title.strip() or (title or "").strip() or "Unknown"
     identity = (
         f"movie:{normalized_title.casefold()}:{year}"
         if isinstance(year, int)
         else f"movie:{normalized_title.casefold()}"
     )
-
-    item: TrackingItem = {
-        "id": item_id,
-        "chat_id": int(chat_id),
-        "target_kind": "movie",
-        "target_identity": identity,
-        "title": title or normalized_title,
+    payload: TrackingTargetPayload = {
         "canonical_title": normalized_title,
         "year": year,
-        "release_date_status": release_status,  # type: ignore[typeddict-item]
+        "release_date_status": release_status,
         "availability_date": availability_iso,
-        "availability_source": availability_source,  # type: ignore[typeddict-item]
-        "status": status,  # type: ignore[typeddict-item]
-        "next_check_at_utc": isoformat_utc(next_check),
-        "last_checked_at_utc": None,
-        "created_at_utc": isoformat_utc(now),
-        "fulfilled_at_utc": None,
-        "fulfillment_state": "pending",
-        "linked_download_message_id": None,
+        "availability_source": source,
     }
-    items[item_id] = item
-    persist_tracking_state_from_bot_data(application)
-    logger.info(
-        "[TRACKING] Created item %s for '%s' (year=%s, status=%s).",
-        item_id,
-        normalized_title,
-        year,
-        status,
+    return create_tracking_item(
+        application,
+        chat_id=chat_id,
+        target_kind="movie",
+        schedule_mode="future_release",
+        target_identity=identity,
+        display_title=title or normalized_title,
+        target_payload=payload,
+        status=status,
+        next_check_at_utc=next_check,
+        now_utc=now,
     )
-    return item
+
+
+def create_tv_tracking_item(
+    application: Application,
+    *,
+    chat_id: int,
+    canonical_title: str,
+    tmdb_series_id: int,
+    title: str | None = None,
+    episode_cursor: dict[str, int] | None = None,
+    now_utc: datetime | None = None,
+) -> TrackingItem:
+    now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
+    normalized_title = canonical_title.strip() or (title or "").strip() or "Unknown"
+
+    payload: TrackingTargetPayload = {
+        "canonical_title": normalized_title,
+        "tmdb_series_id": int(tmdb_series_id),
+        "episode_cursor": _coerce_episode_ref(episode_cursor),
+        "pending_episode": None,
+        "pending_episode_title": None,
+        "pending_episode_air_date": None,
+    }
+    return create_tracking_item(
+        application,
+        chat_id=chat_id,
+        target_kind="tv",
+        schedule_mode="ongoing_next_episode",
+        target_identity=f"tv:tmdb:{int(tmdb_series_id)}",
+        display_title=title or normalized_title,
+        target_payload=payload,
+        status="awaiting_metadata",
+        next_check_at_utc=now,
+        now_utc=now,
+    )
 
 
 def get_tracking_item(application: Application, item_id: str) -> TrackingItem | None:
@@ -234,8 +455,6 @@ def cancel_tracking_item(
     if item.get("status") in TERMINAL_TRACKING_STATES:
         return False
 
-    # Remove from memory + persistence so user-initiated cancel truly deletes
-    # the schedule rather than leaving a cancelled record on disk.
     items.pop(item_id, None)
     get_tracking_in_progress_ids(application.bot_data).discard(item_id)
     persist_tracking_state_from_bot_data(application)
@@ -248,17 +467,32 @@ def mark_tracking_waiting_fulfillment(
     *,
     item_id: str,
     linked_message_id: int | None = None,
+    pending_episode: dict[str, int] | None = None,
+    pending_episode_title: str | None = None,
     now_utc: datetime | None = None,
 ) -> bool:
     item = get_tracking_item(application, item_id)
     if not item or item.get("status") in TERMINAL_TRACKING_STATES:
         return False
+
     now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
     item["status"] = "waiting_fulfillment"  # type: ignore[typeddict-item]
-    item["next_check_at_utc"] = None
+    item["next_check_at_utc"] = isoformat_utc(calculate_fulfillment_watchdog_check(now))
     item["last_checked_at_utc"] = isoformat_utc(now)
     if linked_message_id is not None:
         item["linked_download_message_id"] = int(linked_message_id)
+
+    payload = _ensure_target_payload(item)
+    if pending_episode is not None:
+        payload["pending_episode"] = _coerce_episode_ref(pending_episode)
+    if isinstance(pending_episode_title, str):
+        payload["pending_episode_title"] = pending_episode_title.strip() or None
+    _ensure_retry(item)["last_error"] = None
+
+    if get_tracking_target_kind(item) == "movie":
+        _sync_movie_compatibility_fields(item)
+    else:
+        _sync_tv_compatibility_fields(item)
     persist_tracking_state_from_bot_data(application)
     logger.info("[TRACKING] Item %s is now waiting for fulfillment.", item_id)
     return True
@@ -268,15 +502,25 @@ def mark_tracking_hourly_retry(
     application: Application,
     *,
     item_id: str,
+    error_message: str | None = None,
     now_utc: datetime | None = None,
 ) -> bool:
     item = get_tracking_item(application, item_id)
     if not item or item.get("status") in TERMINAL_TRACKING_STATES:
         return False
+
     now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
-    item["status"] = "watching_release"  # type: ignore[typeddict-item]
+    item["status"] = "searching"  # type: ignore[typeddict-item]
     item["next_check_at_utc"] = isoformat_utc(calculate_next_hourly_check(now))
     item["last_checked_at_utc"] = isoformat_utc(now)
+    retry = _ensure_retry(item)
+    retry["consecutive_failures"] = int(retry.get("consecutive_failures") or 0) + 1
+    retry["last_error"] = error_message
+
+    if get_tracking_target_kind(item) == "movie":
+        _sync_movie_compatibility_fields(item)
+    else:
+        _sync_tv_compatibility_fields(item)
     persist_tracking_state_from_bot_data(application)
     logger.info("[TRACKING] Item %s scheduled for next hourly check.", item_id)
     return True
@@ -286,18 +530,29 @@ def mark_tracking_weekly_metadata_retry(
     application: Application,
     *,
     item_id: str,
+    error_message: str | None = None,
     now_utc: datetime | None = None,
 ) -> bool:
     item = get_tracking_item(application, item_id)
     if not item or item.get("status") in TERMINAL_TRACKING_STATES:
         return False
+
     now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
-    item["status"] = "pending_date"  # type: ignore[typeddict-item]
-    item["release_date_status"] = "unknown"  # type: ignore[typeddict-item]
-    item["availability_date"] = None
-    item["availability_source"] = None
+    item["status"] = "awaiting_metadata"  # type: ignore[typeddict-item]
     item["next_check_at_utc"] = isoformat_utc(calculate_next_weekly_metadata_check(now))
     item["last_checked_at_utc"] = isoformat_utc(now)
+    retry = _ensure_retry(item)
+    retry["consecutive_failures"] = int(retry.get("consecutive_failures") or 0) + 1
+    retry["last_error"] = error_message
+
+    if get_tracking_target_kind(item) == "movie":
+        payload = _ensure_target_payload(item)
+        payload["release_date_status"] = "unknown"
+        payload["availability_date"] = None
+        payload["availability_source"] = None
+        _sync_movie_compatibility_fields(item)
+    else:
+        _sync_tv_compatibility_fields(item)
     persist_tracking_state_from_bot_data(application)
     logger.info("[TRACKING] Item %s remains in metadata-only mode.", item_id)
     return True
@@ -322,18 +577,23 @@ def set_tracking_release_window(
         now_utc=now,
     )
     if first_check <= now:
-        status = "watching_release"
+        status = "searching"
         next_check = now
     else:
-        status = "waiting_release_window"
+        status = "awaiting_window"
         next_check = first_check
 
-    item["release_date_status"] = "confirmed"  # type: ignore[typeddict-item]
-    item["availability_date"] = availability_date.isoformat()
-    item["availability_source"] = availability_source  # type: ignore[typeddict-item]
+    payload = _ensure_target_payload(item)
+    payload["release_date_status"] = "confirmed"
+    payload["availability_date"] = availability_date.isoformat()
+    payload["availability_source"] = _coerce_availability_source(availability_source)
+
     item["status"] = status  # type: ignore[typeddict-item]
     item["next_check_at_utc"] = isoformat_utc(next_check)
     item["last_checked_at_utc"] = isoformat_utc(now)
+    _ensure_retry(item)["last_error"] = None
+    _sync_movie_compatibility_fields(item)
+
     persist_tracking_state_from_bot_data(application)
     logger.info(
         "[TRACKING] Item %s release window updated to %s (%s).",
@@ -353,12 +613,89 @@ def mark_tracking_fulfilled(
     item = get_tracking_item(application, item_id)
     if not item or item.get("status") in TERMINAL_TRACKING_STATES:
         return False
+
     now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
     item["status"] = "fulfilled"  # type: ignore[typeddict-item]
     item["fulfillment_state"] = "fulfilled"  # type: ignore[typeddict-item]
     item["fulfilled_at_utc"] = isoformat_utc(now)
     item["last_checked_at_utc"] = isoformat_utc(now)
     item["next_check_at_utc"] = None
+    payload = _ensure_target_payload(item)
+    payload["pending_episode"] = None
+    payload["pending_episode_title"] = None
+    payload["pending_episode_air_date"] = None
+    _ensure_retry(item)["last_error"] = None
+
+    if get_tracking_target_kind(item) == "movie":
+        _sync_movie_compatibility_fields(item)
+    else:
+        _sync_tv_compatibility_fields(item)
     persist_tracking_state_from_bot_data(application)
     logger.info("[TRACKING] Item %s fulfilled.", item_id)
+    return True
+
+
+def _extract_episode_ref_from_parsed_info(
+    parsed_info: dict[str, Any] | None,
+) -> TrackingEpisodeRef | None:
+    if not isinstance(parsed_info, dict):
+        return None
+    return _coerce_episode_ref(parsed_info)
+
+
+def mark_tracking_fulfillment_success(
+    application: Application,
+    *,
+    item_id: str,
+    parsed_info: dict[str, Any] | None = None,
+    now_utc: datetime | None = None,
+) -> bool:
+    """Applies post-processing success transitions for both movie and TV schedules."""
+    item = get_tracking_item(application, item_id)
+    if not item or item.get("status") in TERMINAL_TRACKING_STATES:
+        return False
+
+    if get_tracking_schedule_mode(item) != "ongoing_next_episode":
+        return mark_tracking_fulfilled(application, item_id=item_id, now_utc=now_utc)
+
+    now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
+    payload = _ensure_target_payload(item)
+    episode_ref = _coerce_episode_ref(
+        payload.get("pending_episode")
+    ) or _extract_episode_ref_from_parsed_info(parsed_info)
+    if episode_ref is None:
+        logger.warning(
+            "[TRACKING] TV item %s fulfilled without episode metadata; scheduling hourly retry.",
+            item_id,
+        )
+        return mark_tracking_hourly_retry(
+            application,
+            item_id=item_id,
+            error_message="tracking_fulfillment_missing_episode_metadata",
+            now_utc=now,
+        )
+
+    payload["episode_cursor"] = episode_ref
+    payload["pending_episode"] = None
+    payload["pending_episode_title"] = None
+    payload["pending_episode_air_date"] = None
+
+    item["status"] = "awaiting_metadata"  # type: ignore[typeddict-item]
+    item["next_check_at_utc"] = isoformat_utc(now)
+    item["last_checked_at_utc"] = isoformat_utc(now)
+    item["linked_download_message_id"] = None
+    item["fulfilled_at_utc"] = None
+    item["fulfillment_state"] = "pending"  # type: ignore[typeddict-item]
+    retry = _ensure_retry(item)
+    retry["consecutive_failures"] = 0
+    retry["last_error"] = None
+    _sync_tv_compatibility_fields(item)
+
+    persist_tracking_state_from_bot_data(application)
+    logger.info(
+        "[TRACKING] TV item %s advanced cursor to S%02dE%02d.",
+        item_id,
+        episode_ref["season"],
+        episode_ref["episode"],
+    )
     return True

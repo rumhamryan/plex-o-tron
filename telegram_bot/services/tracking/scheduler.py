@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -12,74 +12,59 @@ from telegram_bot.domain.types import SourceDict, TrackingItem
 from telegram_bot.services.download_manager.queue import queue_download_source
 from telegram_bot.services.search_logic import orchestrate_searches
 
-from . import movie_release_dates, selection
 from .manager import (
     TERMINAL_TRACKING_STATES,
     TRACKING_LOOP_TASK_KEY,
     TRACKING_NOW_PROVIDER_KEY,
-    calculate_release_day_first_check_utc,
     get_tracking_in_progress_ids,
     get_tracking_item,
     get_tracking_items,
-    get_tracking_timezone,
-    isoformat_utc,
-    mark_tracking_hourly_retry,
-    mark_tracking_waiting_fulfillment,
-    mark_tracking_weekly_metadata_retry,
+    get_tracking_target_kind,
     parse_utc_iso,
     persist_tracking_state_from_bot_data,
-    set_tracking_release_window,
     utc_now,
 )
+from .targets import get_tracking_adapter_for_item
+from .targets.base import TrackingSearchRequest, TrackingTargetAdapter
 
 TRACKING_SCHEDULER_INTERVAL_SECONDS = 60
 
 
-def _parse_iso_date(value: str | None) -> date | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
-
-
 def _is_due(item: TrackingItem, now_utc: datetime) -> bool:
     status = str(item.get("status") or "")
-    if status in TERMINAL_TRACKING_STATES or status == "waiting_fulfillment":
+    if status in TERMINAL_TRACKING_STATES:
         return False
+
     next_check = parse_utc_iso(item.get("next_check_at_utc"))
     if next_check is None:
-        return status == "watching_release"
+        return status in {"awaiting_metadata", "awaiting_window", "searching"}
     return next_check <= now_utc
 
 
 def _build_search_context(application: Application) -> Any:
     return SimpleNamespace(
-        bot_data=application.bot_data, application=application, bot=application.bot
+        bot_data=application.bot_data,
+        application=application,
+        bot=application.bot,
     )
 
 
-def _build_source_dict(item: TrackingItem, candidate: dict[str, Any]) -> SourceDict | None:
+def _build_source_dict(
+    *,
+    item: TrackingItem,
+    candidate: dict[str, Any],
+    search_request: TrackingSearchRequest,
+) -> SourceDict | None:
     page_url = candidate.get("page_url")
     if not isinstance(page_url, str) or not page_url:
         return None
-
-    canonical_title = str(item.get("canonical_title") or item.get("title") or "Movie")
-    parsed_info: dict[str, Any] = {"type": "movie", "title": canonical_title}
-    year = item.get("year")
-    if isinstance(year, int):
-        parsed_info["year"] = year
-        clean_name = f"{canonical_title} ({year})"
-    else:
-        clean_name = canonical_title
-
+    parsed_info = dict(search_request.parsed_info)
     return {
         "value": page_url,
         "type": "magnet" if page_url.startswith("magnet:") else "url",
         "parsed_info": parsed_info,
         "info_url": candidate.get("info_url"),
-        "clean_name": clean_name,
+        "clean_name": search_request.clean_name,
         "tracking_item_id": str(item.get("id")),
     }
 
@@ -89,24 +74,29 @@ async def _queue_candidate_for_tracking_item(
     *,
     item: TrackingItem,
     candidate: dict[str, Any],
+    search_request: TrackingSearchRequest,
+    adapter: TrackingTargetAdapter,
     now_utc: datetime,
 ) -> None:
-    source_dict = _build_source_dict(item, candidate)
+    item_id = str(item.get("id"))
+    source_dict = _build_source_dict(item=item, candidate=candidate, search_request=search_request)
     if source_dict is None:
-        mark_tracking_hourly_retry(
+        adapter.on_queue_failure(
             application,
-            item_id=str(item.get("id")),
+            item=item,
             now_utc=now_utc,
+            error_message="tracking_candidate_missing_page_url",
         )
         return
 
     chat_id = int(item.get("chat_id", 0) or 0)
     if chat_id <= 0:
-        logger.warning("[TRACKING] Item %s has invalid chat id; skipping.", item.get("id"))
-        mark_tracking_hourly_retry(
+        logger.warning("[TRACKING] Item %s has invalid chat id; skipping.", item_id)
+        adapter.on_queue_failure(
             application,
-            item_id=str(item.get("id")),
+            item=item,
             now_utc=now_utc,
+            error_message="tracking_item_invalid_chat_id",
         )
         return
 
@@ -119,7 +109,9 @@ async def _queue_candidate_for_tracking_item(
         message_id = status_message.message_id
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[TRACKING] Could not send queue status message for item %s: %s", item["id"], exc
+            "[TRACKING] Could not send queue status message for item %s: %s",
+            item_id,
+            exc,
         )
 
     try:
@@ -130,45 +122,59 @@ async def _queue_candidate_for_tracking_item(
             message_id=message_id,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[TRACKING] Failed to queue item %s: %s", item["id"], exc)
-        mark_tracking_hourly_retry(
+        logger.exception("[TRACKING] Failed to queue item %s: %s", item_id, exc)
+        adapter.on_queue_failure(
             application,
-            item_id=str(item["id"]),
+            item=item,
             now_utc=now_utc,
+            error_message="tracking_queue_failure",
         )
         return
 
-    mark_tracking_waiting_fulfillment(
+    adapter.on_queue_success(
         application,
-        item_id=str(item["id"]),
-        linked_message_id=message_id if message_id > 0 else None,
+        item=item,
         now_utc=now_utc,
+        linked_message_id=message_id if message_id > 0 else None,
+        selected_candidate=candidate,
+        search_request=search_request,
     )
 
 
 async def _attempt_release_search(
-    application: Application, *, item: TrackingItem, now_utc: datetime
+    application: Application,
+    *,
+    item: TrackingItem,
+    adapter: TrackingTargetAdapter,
+    now_utc: datetime,
 ) -> None:
-    query = str(item.get("canonical_title") or item.get("title") or "").strip()
-    if not query:
-        mark_tracking_hourly_retry(application, item_id=str(item["id"]), now_utc=now_utc)
+    search_request = adapter.build_search_request(item=item)
+    if search_request is None:
+        adapter.on_queue_failure(
+            application,
+            item=item,
+            now_utc=now_utc,
+            error_message="tracking_missing_search_request",
+        )
         return
 
-    search_kwargs: dict[str, Any] = {}
-    if isinstance(item.get("year"), int):
-        search_kwargs["year"] = str(item["year"])
-
     context = _build_search_context(application)
-    results = await orchestrate_searches(query, "movie", context, **search_kwargs)
-    selected = selection.select_best_auto_download_candidate(
+    results = await orchestrate_searches(
+        search_request.query,
+        search_request.media_type,
+        context,
+        **search_request.search_kwargs,
+    )
+    selected = adapter.select_candidate(
         results,
         search_config=application.bot_data.get("SEARCH_CONFIG", {}),
     )
     if selected is None:
-        mark_tracking_hourly_retry(
+        adapter.on_queue_failure(
             application,
-            item_id=str(item["id"]),
+            item=item,
             now_utc=now_utc,
+            error_message="tracking_no_top_tier_candidate",
         )
         return
 
@@ -176,86 +182,78 @@ async def _attempt_release_search(
         application,
         item=item,
         candidate=selected,
+        search_request=search_request,
+        adapter=adapter,
         now_utc=now_utc,
     )
 
 
-async def _process_pending_date_item(
-    application: Application, *, item: TrackingItem, now_utc: datetime
+async def _process_waiting_fulfillment_item(
+    application: Application,
+    *,
+    item: TrackingItem,
+    adapter: TrackingTargetAdapter,
+    now_utc: datetime,
 ) -> None:
-    local_today = now_utc.astimezone(get_tracking_timezone(application.bot_data)).date()
-    resolved = await movie_release_dates.resolve_movie_tracking_target(
-        str(item.get("canonical_title") or item.get("title") or ""),
-        year=item.get("year"),
-        today=local_today,
-    )
-
-    availability_date = resolved.get("availability_date")
-    if availability_date is None:
-        mark_tracking_weekly_metadata_retry(
-            application,
-            item_id=str(item["id"]),
-            now_utc=now_utc,
-        )
-        return
-
-    set_tracking_release_window(
+    """Watchdog fallback: if fulfillment confirmation stalls, resume searching."""
+    adapter.on_queue_failure(
         application,
-        item_id=str(item["id"]),
-        availability_date=availability_date,
-        availability_source=resolved.get("availability_source"),
+        item=item,
         now_utc=now_utc,
+        error_message="tracking_fulfillment_timeout_watchdog",
     )
-
-    refreshed = get_tracking_item(application, str(item["id"]))
-    if refreshed and refreshed.get("status") == "watching_release":
-        await _attempt_release_search(application, item=refreshed, now_utc=now_utc)
-
-
-async def _process_waiting_release_window_item(
-    application: Application, *, item: TrackingItem, now_utc: datetime
-) -> None:
-    release_day = _parse_iso_date(item.get("availability_date"))
-    if release_day is None:
-        mark_tracking_weekly_metadata_retry(
-            application,
-            item_id=str(item["id"]),
-            now_utc=now_utc,
-        )
-        return
-
-    first_check = calculate_release_day_first_check_utc(
-        release_day,
-        local_timezone=get_tracking_timezone(application.bot_data),
-        now_utc=now_utc,
-    )
-    if first_check > now_utc:
-        item["next_check_at_utc"] = isoformat_utc(first_check)
-        item["last_checked_at_utc"] = isoformat_utc(now_utc)
-        return
-
-    item["status"] = "watching_release"  # type: ignore[typeddict-item]
-    item["next_check_at_utc"] = isoformat_utc(now_utc)
-    item["last_checked_at_utc"] = isoformat_utc(now_utc)
-    await _attempt_release_search(application, item=item, now_utc=now_utc)
 
 
 async def _process_due_item(
-    application: Application, item: TrackingItem, *, now_utc: datetime
+    application: Application,
+    item: TrackingItem,
+    *,
+    now_utc: datetime,
 ) -> None:
+    item_id = str(item.get("id") or "")
+    adapter = get_tracking_adapter_for_item(item)
+    if adapter is None:
+        logger.warning(
+            "[TRACKING] Item %s has unsupported target kind '%s'.",
+            item_id or "(unknown)",
+            get_tracking_target_kind(item),
+        )
+        return
+
     status = str(item.get("status") or "")
-    item["last_checked_at_utc"] = isoformat_utc(now_utc)
-
-    if status == "pending_date":
-        await _process_pending_date_item(application, item=item, now_utc=now_utc)
+    if status in {"awaiting_metadata", "awaiting_window"}:
+        refreshed = await adapter.refresh_target_metadata(
+            application,
+            item=item,
+            now_utc=now_utc,
+        )
+        current_item = refreshed or get_tracking_item(application, item_id) or item
+        current_status = str(current_item.get("status") or "")
+        if current_status == "searching" and _is_due(current_item, now_utc):
+            await _attempt_release_search(
+                application,
+                item=current_item,
+                adapter=adapter,
+                now_utc=now_utc,
+            )
         return
 
-    if status == "waiting_release_window":
-        await _process_waiting_release_window_item(application, item=item, now_utc=now_utc)
+    if status == "searching":
+        await _attempt_release_search(
+            application,
+            item=item,
+            adapter=adapter,
+            now_utc=now_utc,
+        )
         return
 
-    if status == "watching_release":
-        await _attempt_release_search(application, item=item, now_utc=now_utc)
+    if status == "waiting_fulfillment":
+        await _process_waiting_fulfillment_item(
+            application,
+            item=item,
+            adapter=adapter,
+            now_utc=now_utc,
+        )
 
 
 async def run_tracking_scheduler_tick(
@@ -277,6 +275,7 @@ async def run_tracking_scheduler_tick(
         item = items.get(item_id)
         if not item:
             continue
+
         in_progress.add(item_id)
         try:
             await _process_due_item(application, item, now_utc=now)
