@@ -8,6 +8,7 @@ from telegram_bot.workflows.tracking_workflow.handlers import (
     TRACKING_AWAIT_MOVIE_TITLE,
     TRACKING_AWAIT_TV_TITLE,
     _candidate_summary_line,
+    _tracking_menu_keyboard,
     _tracking_menu_text,
     handle_tracking_buttons,
     handle_tracking_workflow_message,
@@ -21,6 +22,14 @@ from telegram_bot.workflows.tracking_workflow.state import (
 def test_tracking_menu_text_escapes_markdown_reserved_characters():
     menu_text = _tracking_menu_text()
     assert "Auto\\-Download" in menu_text
+
+
+def test_tracking_menu_keyboard_uses_compact_schedule_labels():
+    keyboard = _tracking_menu_keyboard()
+    rows = keyboard.inline_keyboard
+    assert rows[0][0].text == "🎬 Schedule Movie"
+    assert rows[1][0].text == "📺 Schedule TV Show"
+    assert rows[2][0].text == "📋 Review Scheduled Items"
 
 
 def test_candidate_summary_line_movie_escapes_markdown_reserved_characters():
@@ -328,6 +337,36 @@ async def test_tracking_review_message_does_not_repeat_item_list(
     assert "Show Two" not in text
     keyboard = edit_mock.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[-1][0].callback_data == "cancel_operation"
+
+
+@pytest.mark.asyncio
+async def test_tracking_review_with_no_items_returns_home_with_notice(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    return_home_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.return_to_home",
+        AsyncMock(),
+    )
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.safe_edit_message",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.tracking_manager.list_tracking_items",
+        return_value=[],
+    )
+
+    message = make_message(message_id=71)
+    review_query = make_callback_query("track_review", message)
+    review_update = Update(update_id=1, callback_query=review_query)
+    await handle_tracking_buttons(review_update, context)
+
+    return_home_mock.assert_awaited_once()
+    assert return_home_mock.await_args.kwargs["source_message"] is message
+    assert "No scheduled items to review" in return_home_mock.await_args.kwargs["message_text"]
+    edit_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

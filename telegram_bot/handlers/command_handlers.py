@@ -158,12 +158,16 @@ async def launch_plex_restart(
         text="Plex Restart: 🟡 Sending restart command...",
     )
     success, message = await restart_plex_server()
-    final_text = (
-        "✅ *Plex Restart Successful*"
-        if success
-        else f"❌ *Plex Restart Failed*\n\n{escape_markdown(message, version=2)}"
+    if success:
+        await status_message.edit_text(
+            text="✅ *Plex Restart Successful*",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    await status_message.edit_text(
+        text=f"❌ Plex Restart Failed\n\n{message}",
     )
-    await status_message.edit_text(text=final_text, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 def _get_message_chat_id(update: Update) -> int | None:

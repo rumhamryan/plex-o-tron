@@ -6,6 +6,7 @@ from telegram_bot.handlers.command_handlers import (
     get_help_message_text,
     launch_delete_workflow,
     launch_link_workflow,
+    launch_plex_restart,
     launch_plex_status,
     launch_search_workflow,
     launch_tracking_workflow,
@@ -75,6 +76,50 @@ async def test_launch_plex_status_calls_service(mocker, context):
 
     service_mock.assert_awaited_once_with(context)
     status_msg.edit_text.assert_awaited_once_with(text="All good", parse_mode="MarkdownV2")
+
+
+@pytest.mark.asyncio
+async def test_launch_plex_restart_success_uses_markdown(mocker, context):
+    status_msg = AsyncMock()
+    context.bot.send_message.return_value = status_msg
+    restart_mock = mocker.patch(
+        "telegram_bot.handlers.command_handlers.restart_plex_server",
+        AsyncMock(return_value=(True, "")),
+    )
+
+    await launch_plex_restart(context, chat_id=456)
+
+    restart_mock.assert_awaited_once_with()
+    status_msg.edit_text.assert_awaited_once_with(
+        text="✅ *Plex Restart Successful*",
+        parse_mode="MarkdownV2",
+    )
+
+
+@pytest.mark.asyncio
+async def test_launch_plex_restart_failure_sends_plain_details(mocker, context):
+    status_msg = AsyncMock()
+    context.bot.send_message.return_value = status_msg
+    restart_mock = mocker.patch(
+        "telegram_bot.handlers.command_handlers.restart_plex_server",
+        AsyncMock(
+            return_value=(
+                False,
+                "Restart script failed.\n\nScript output:\nError: Could not locate Plex executable.",
+            )
+        ),
+    )
+
+    await launch_plex_restart(context, chat_id=456)
+
+    restart_mock.assert_awaited_once_with()
+    status_msg.edit_text.assert_awaited_once_with(
+        text=(
+            "❌ Plex Restart Failed\n\n"
+            "Restart script failed.\n\nScript output:\n"
+            "Error: Could not locate Plex executable."
+        )
+    )
 
 
 def test_help_text_does_not_advertise_command_or_idle_link_entrypoints():

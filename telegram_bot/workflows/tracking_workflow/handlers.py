@@ -51,8 +51,8 @@ def _get_user_data_store(context: ContextTypes.DEFAULT_TYPE) -> MutableMapping[s
 def _tracking_menu_keyboard() -> InlineKeyboardMarkup:
     return single_column_keyboard(
         [
-            ("🎬 Schedule Movie (Future Release)", "track_schedule_movie"),
-            ("📺 Schedule TV Show (Ongoing Next Episodes)", "track_schedule_tv"),
+            ("🎬 Schedule Movie", "track_schedule_movie"),
+            ("📺 Schedule TV Show", "track_schedule_tv"),
             ("📋 Review Scheduled Items", "track_review"),
         ]
     )
@@ -205,13 +205,12 @@ async def _render_tracking_review(query: CallbackQuery, context: ContextTypes.DE
     chat_id = query.message.chat_id
     items = tracking_manager.list_tracking_items(context.application, chat_id=chat_id)
     if not items:
-        await safe_edit_message(
-            query.message,
-            text="No active scheduled items\\.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
-            ),
-            parse_mode=ParseMode.MARKDOWN_V2,
+        await return_to_home(
+            context,
+            chat_id,
+            source_message=query.message,
+            message_text="No scheduled items to review\\.",
+            message_parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 

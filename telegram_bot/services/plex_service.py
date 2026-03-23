@@ -64,6 +64,39 @@ _NUMBER_WORD_TOKENS = {
 _PLEX_COLLECTION_STOPWORDS = {"collection", "film", "films", "movie", "movies"}
 
 
+def _compact_subprocess_output(
+    output: str | None,
+    *,
+    max_lines: int = 12,
+    max_chars: int = 1500,
+) -> str:
+    """Normalize subprocess output for concise user-facing error messages."""
+    if not isinstance(output, str):
+        return "No script output was captured."
+
+    normalized = output.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return "No script output was captured."
+
+    lines = [line.strip() for line in normalized.split("\n") if line.strip()]
+    if not lines:
+        return "No script output was captured."
+
+    truncated = False
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        truncated = True
+
+    summary = "\n".join(lines)
+    if len(summary) > max_chars:
+        summary = summary[: max_chars - 3].rstrip() + "..."
+        truncated = True
+
+    if truncated:
+        summary += "\n(output truncated)"
+    return summary
+
+
 def _should_suppress_plex_error(exc: Exception) -> bool:
     """Return True when the exception stems from transient Plex connectivity issues."""
     suppressible = (
@@ -422,7 +455,7 @@ async def restart_plex_server() -> tuple[bool, str]:
         logger.error(f"[PLEX RESTART] {error_msg}")
         return (
             False,
-            f"The `{script_name}` script was not found.",
+            f"The '{script_name}' script was not found.",
         )
 
     if is_linux:
@@ -442,22 +475,27 @@ async def restart_plex_server() -> tuple[bool, str]:
     except subprocess.CalledProcessError as e:
         error_output = e.stderr or e.stdout
         logger.error(f"[PLEX RESTART] Script failed to execute: {error_output}")
+        output_summary = _compact_subprocess_output(error_output)
         if is_linux:
             return False, (
-                "This almost always means the `sudoers` rule for `restart_plex.sh` is "
-                "incorrect or missing.\n\n*Details:*\n`{}`"
-            ).format(escape_markdown(error_output, version=2))
+                "Restart script failed. This usually means the sudoers rule for "
+                "restart_plex.sh is missing or incorrect.\n\n"
+                "Script output:\n"
+                f"{output_summary}"
+            )
         else:
             return False, (
-                "The PowerShell script failed. Ensure you are running the bot with "
-                "Administrator privileges to restart services.\n\n*Details:*\n`{}`"
-            ).format(escape_markdown(error_output, version=2))
+                "Restart script failed. Verify Plex is installed and run the bot with "
+                "Administrator privileges when service control is required.\n\n"
+                "Script output:\n"
+                f"{output_summary}"
+            )
 
     except Exception as e:
         logger.error(f"[PLEX RESTART] An unexpected error occurred: {e}")
         return (
             False,
-            f"An unexpected error occurred:\n`{escape_markdown(str(e), version=2)}`",
+            f"An unexpected error occurred while attempting Plex restart:\n{e}",
         )
 
 
