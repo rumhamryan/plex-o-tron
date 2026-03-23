@@ -138,6 +138,42 @@ def _normalize_collection_lookup_key(value: str) -> str:
     return " ".join(tokens) if tokens else normalized
 
 
+def _resolve_tv_show_directory(tv_root: str, show_title: str) -> str | None:
+    """Resolve a TV show directory when punctuation or separators differ."""
+    invalid_chars = r'<>:"/\\|?*'
+    safe_show = "".join(c for c in show_title if c not in invalid_chars).strip()
+    if safe_show:
+        direct_path = join_path(tv_root, safe_show)
+        if is_dir(direct_path):
+            return direct_path
+
+    normalized_target = _normalize_plex_title(show_title)
+    if not normalized_target:
+        return None
+
+    best_path: str | None = None
+    best_score = 0.0
+    for entry in list_dir(tv_root):
+        candidate_path = join_path(tv_root, entry)
+        if not is_dir(candidate_path):
+            continue
+
+        normalized_entry = _normalize_plex_title(entry)
+        if not normalized_entry:
+            continue
+        if normalized_entry == normalized_target:
+            return candidate_path
+
+        score = _title_token_overlap_ratio(show_title, entry)
+        if normalized_target in normalized_entry or normalized_entry in normalized_target:
+            score = max(score, 0.95)
+        if score > best_score:
+            best_score = score
+            best_path = candidate_path
+
+    return best_path if best_score >= 0.85 else None
+
+
 def _title_token_overlap_ratio(left: str, right: str) -> float:
     left_tokens = set(_normalize_plex_title(left).split())
     right_tokens = set(_normalize_plex_title(right).split())
@@ -514,13 +550,11 @@ async def get_existing_episodes_for_season(
         if not tv_root:
             return existing
 
-        # Mirror media_manager sanitization for show directory name
-        invalid_chars = r'<>:"/\\|?*'
-        safe_show = "".join(c for c in show_title if c not in invalid_chars)
-        show_dir = join_path(tv_root, safe_show)
-        if not is_dir(show_dir):
+        show_dir = _resolve_tv_show_directory(tv_root, show_title)
+        if not show_dir:
             return existing
 
+        season_scan_dirs: list[str] = []
         season_dir = join_path(show_dir, f"Season {int(season):02d}")
         if not is_dir(season_dir):
             # Accept common season directory variants such as:
@@ -534,21 +568,28 @@ async def get_existing_episodes_for_season(
                     season_dir = candidate
                     break
 
-        if not is_dir(season_dir):
-            return existing
+        if is_dir(season_dir):
+            season_scan_dirs.append(season_dir)
+        else:
+            # Some libraries place episode files directly under the show directory.
+            season_scan_dirs.append(show_dir)
 
         pat = re.compile(r"(?i)\bS(\d{1,2})E(\d{1,2})\b")
-        for fname in list_dir(season_dir):
-            m = pat.search(fname)
-            if not m:
-                continue
-            try:
-                s_num = int(m.group(1))
-                e_num = int(m.group(2))
-                if s_num == int(season):
-                    existing.add(e_num)
-            except Exception:
-                continue
+        for scan_dir in season_scan_dirs:
+            for fname in list_dir(scan_dir):
+                candidate_path = join_path(scan_dir, fname)
+                if is_dir(candidate_path):
+                    continue
+                m = pat.search(fname)
+                if not m:
+                    continue
+                try:
+                    s_num = int(m.group(1))
+                    e_num = int(m.group(2))
+                    if s_num == int(season):
+                        existing.add(e_num)
+                except Exception:
+                    continue
     except Exception as e:
         logger.warning(f"Filesystem episode check failed: {e}")
 

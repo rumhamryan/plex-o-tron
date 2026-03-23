@@ -388,6 +388,7 @@ async def _handle_confirm_candidate(
             next_air_date=selected.get("next_air_date"),
         )
 
+    created_type = "TV Show" if created.get("target_kind") == "tv" else "Movie"
     created_title = tracking_manager.get_tracking_display_title(created)
     clear_tracking_workflow_state(user_data)
     await return_to_home(
@@ -396,8 +397,9 @@ async def _handle_confirm_candidate(
         source_message=query.message,
         message_text=(
             "✅ Schedule created\\.\n\n"
-            f"*{escape_markdown(created_title, version=2)}* "
-            "will be monitored until fulfillment or manual cancellation\\."
+            f"Type: *{escape_markdown(created_type, version=2)}*\n"
+            f"Name: *{escape_markdown(created_title, version=2)}*\n\n"
+            "This item will be monitored until fulfillment or manual cancellation\\."
         ),
         message_parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -438,6 +440,9 @@ async def _handle_cancel_item_confirm(
     item_id = _parse_callback_suffix(query.data or "", "track_cancel_confirm_")
     if not item_id:
         return
+    item = tracking_manager.get_tracking_item(context.application, item_id)
+    cancelled_type = "TV Show" if item and item.get("target_kind") == "tv" else "Movie"
+    cancelled_title = tracking_manager.get_tracking_display_title(item) if item else "Unknown"
     cancelled = tracking_manager.cancel_tracking_item(
         context.application,
         item_id=item_id,
@@ -448,7 +453,11 @@ async def _handle_cancel_item_confirm(
             context,
             query.message.chat_id,
             source_message=query.message,
-            message_text="✅ Scheduled item cancelled\\.",
+            message_text=(
+                "✅ Scheduled item cancelled\\.\n\n"
+                f"Type: *{escape_markdown(cancelled_type, version=2)}*\n"
+                f"Name: *{escape_markdown(cancelled_title, version=2)}*"
+            ),
             message_parse_mode=ParseMode.MARKDOWN_V2,
         )
         return

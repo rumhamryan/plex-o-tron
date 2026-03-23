@@ -139,7 +139,8 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     success_message = return_home_mock.await_args.kwargs["message_text"]
     assert isinstance(success_message, str)
     assert "Schedule created" in success_message
-    assert "Future Movie" in success_message
+    assert "Type: *Movie*" in success_message
+    assert "Name: *Future Movie*" in success_message
 
 
 @pytest.mark.asyncio
@@ -359,6 +360,11 @@ async def test_tracking_workflow_schedules_tv_ongoing_item(
     assert item["target_payload"]["pending_episode_air_date"] == "2026-06-15"
     assert item["next_check_at_utc"] is not None
     return_home_mock.assert_awaited_once()
+    success_message = return_home_mock.await_args.kwargs["message_text"]
+    assert isinstance(success_message, str)
+    assert "Schedule created" in success_message
+    assert "Type: *TV Show*" in success_message
+    assert "Name: *Future Show*" in success_message
 
 
 @pytest.mark.asyncio
@@ -466,4 +472,8 @@ async def test_tracking_cancel_confirm_exits_to_home_and_removes_item(
 
     assert "trk_1234" not in context.bot_data["tracking_items"]
     return_home_mock.assert_awaited_once()
-    assert return_home_mock.await_args.kwargs["message_text"] == "✅ Scheduled item cancelled\\."
+    success_message = return_home_mock.await_args.kwargs["message_text"]
+    assert isinstance(success_message, str)
+    assert "Scheduled item cancelled" in success_message
+    assert "Type: *Movie*" in success_message
+    assert "Name: *Future Movie*" in success_message

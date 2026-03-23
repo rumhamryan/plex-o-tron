@@ -449,3 +449,31 @@ async def test_get_existing_episodes_for_season_supports_suffix_season_directory
     )
 
     assert existing == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_get_existing_episodes_for_season_supports_root_episode_files_and_show_name_variants(
+    tmp_path,
+):
+    show_dir = tmp_path / "Daredevil - Born Again"
+    show_dir.mkdir(parents=True)
+    (show_dir / "s1e01 - Heavens Half Hour.mkv").write_text("data", encoding="utf-8")
+    (show_dir / "s01e02 - Optics.mkv").write_text("data", encoding="utf-8")
+    (show_dir / "s02e01 - Wrong Season.mkv").write_text("data", encoding="utf-8")
+    (show_dir / "README.txt").write_text("ignore", encoding="utf-8")
+
+    context = Mock()
+    context.bot_data = {
+        "SAVE_PATHS": {
+            "tv_shows": str(tmp_path),
+            "default": str(tmp_path),
+        }
+    }
+
+    existing = await get_existing_episodes_for_season(
+        context,
+        show_title="Daredevil: Born Again",
+        season=1,
+    )
+
+    assert existing == {1, 2}
