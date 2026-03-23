@@ -87,12 +87,108 @@ def get_tracking_in_progress_ids(bot_data: dict[str, Any]) -> set[str]:
     return store
 
 
+def _coerce_allowed_user_ids(bot_data: dict[str, Any]) -> set[int] | None:
+    raw_allowed = bot_data.get("ALLOWED_USER_IDS")
+    if not isinstance(raw_allowed, list) or not raw_allowed:
+        return None
+
+    allowed_ids: set[int] = set()
+    for raw_value in raw_allowed:
+        if isinstance(raw_value, int):
+            allowed_ids.add(raw_value)
+            continue
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip()
+            if normalized.startswith("-"):
+                normalized = normalized[1:]
+            if normalized.isdigit():
+                allowed_ids.add(int(raw_value.strip()))
+    return allowed_ids or None
+
+
+def _prune_tracking_items_for_allowed_users(
+    items: dict[str, TrackingItem],
+    *,
+    allowed_user_ids: set[int] | None,
+) -> int:
+    if not allowed_user_ids:
+        return 0
+
+    removed_ids: list[str] = []
+    for item_id, item in items.items():
+        chat_id_raw = item.get("chat_id")
+        if isinstance(chat_id_raw, int):
+            chat_id = chat_id_raw
+        elif isinstance(chat_id_raw, str):
+            normalized = chat_id_raw.strip()
+            chat_id = int(normalized) if normalized.lstrip("-").isdigit() else None
+        else:
+            chat_id = None
+        if chat_id in allowed_user_ids:
+            continue
+        removed_ids.append(item_id)
+
+    for item_id in removed_ids:
+        items.pop(item_id, None)
+    return len(removed_ids)
+
+
+def _prune_duplicate_active_targets(items: dict[str, TrackingItem]) -> int:
+    groups: dict[tuple[int, str, str, str], list[TrackingItem]] = {}
+    for item in items.values():
+        if item.get("status") in TERMINAL_TRACKING_STATES:
+            continue
+        chat_id_raw = item.get("chat_id")
+        if not isinstance(chat_id_raw, int):
+            continue
+        target_identity = str(item.get("target_identity") or "").strip()
+        if not target_identity:
+            continue
+        key = (
+            chat_id_raw,
+            str(item.get("target_kind") or "").strip().lower(),
+            str(item.get("schedule_mode") or "").strip().lower(),
+            target_identity.casefold(),
+        )
+        groups.setdefault(key, []).append(item)
+
+    duplicate_ids: list[str] = []
+    for grouped_items in groups.values():
+        if len(grouped_items) <= 1:
+            continue
+        grouped_items.sort(
+            key=lambda entry: (
+                str(entry.get("created_at_utc") or ""),
+                str(entry.get("id") or ""),
+            )
+        )
+        duplicate_ids.extend(str(item.get("id") or "") for item in grouped_items[1:])
+
+    for item_id in duplicate_ids:
+        if item_id:
+            items.pop(item_id, None)
+    return len([item_id for item_id in duplicate_ids if item_id])
+
+
 def load_tracking_state_into_bot_data(
     application: Application,
     *,
     file_path: str = TRACKING_STATE_FILE,
 ) -> dict[str, TrackingItem]:
     items = load_tracking_state(file_path)
+    allowed_user_ids = _coerce_allowed_user_ids(application.bot_data)
+    removed_for_user_policy = _prune_tracking_items_for_allowed_users(
+        items,
+        allowed_user_ids=allowed_user_ids,
+    )
+    removed_duplicates = _prune_duplicate_active_targets(items)
+    if removed_for_user_policy or removed_duplicates:
+        save_tracking_state(file_path, items)
+        logger.info(
+            "[TRACKING] Pruned tracking state entries (unauthorized=%d, duplicates=%d).",
+            removed_for_user_policy,
+            removed_duplicates,
+        )
     application.bot_data[TRACKING_ITEMS_KEY] = items
     application.bot_data.setdefault(TRACKING_IN_PROGRESS_KEY, set())
     return items
@@ -272,6 +368,47 @@ def get_tracking_display_title(item: TrackingItem) -> str:
     return canonical or "Unknown"
 
 
+def _find_existing_active_tracking_item(
+    items: dict[str, TrackingItem],
+    *,
+    chat_id: int,
+    target_kind: TrackingTargetKind,
+    schedule_mode: TrackingScheduleMode,
+    target_identity: str,
+) -> TrackingItem | None:
+    identity_key = target_identity.strip().casefold()
+    if not identity_key:
+        return None
+
+    def _coerce_chat_id(raw_value: Any) -> int | None:
+        if isinstance(raw_value, int):
+            return raw_value
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip()
+            if normalized.lstrip("-").isdigit():
+                return int(normalized)
+        return None
+
+    candidates = [
+        item
+        for item in items.values()
+        if _coerce_chat_id(item.get("chat_id")) == int(chat_id)
+        and str(item.get("target_identity") or "").strip().casefold() == identity_key
+        and get_tracking_target_kind(item) == target_kind
+        and get_tracking_schedule_mode(item) == schedule_mode
+        and item.get("status") not in TERMINAL_TRACKING_STATES
+    ]
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda entry: (
+            str(entry.get("created_at_utc") or ""),
+            str(entry.get("id") or ""),
+        )
+    )
+    return candidates[0]
+
+
 def create_tracking_item(
     application: Application,
     *,
@@ -287,6 +424,22 @@ def create_tracking_item(
 ) -> TrackingItem:
     """Creates and persists a generic tracking item."""
     items = get_tracking_items(application.bot_data)
+    existing_item = _find_existing_active_tracking_item(
+        items,
+        chat_id=int(chat_id),
+        target_kind=target_kind,
+        schedule_mode=schedule_mode,
+        target_identity=target_identity,
+    )
+    if existing_item is not None:
+        logger.info(
+            "[TRACKING] Reusing existing %s item %s for '%s'.",
+            target_kind,
+            str(existing_item.get("id") or "(unknown)"),
+            get_tracking_display_title(existing_item),
+        )
+        return existing_item
+
     now = now_utc or utc_now(application.bot_data.get(TRACKING_NOW_PROVIDER_KEY))
     item_id = _next_tracking_item_id(items)
     initial_retry: TrackingRetryState = {"consecutive_failures": 0, "last_error": None}

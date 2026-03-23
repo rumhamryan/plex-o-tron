@@ -85,6 +85,8 @@ async def test_post_init_resumes_persisted_download(mocker):
     )
     show_home_mock = mocker.patch("telegram_bot.ui.home_menu.show_home_menu", new=AsyncMock())
     create_task_mock = mocker.patch("telegram_bot.state.asyncio.create_task")
+    mocker.patch("telegram_bot.services.tracking.manager.load_tracking_state_into_bot_data")
+    mocker.patch("telegram_bot.services.tracking.scheduler.start_tracking_scheduler")
 
     await post_init(application)  # This will no longer show an error
 
@@ -104,6 +106,8 @@ async def test_post_init_renders_home_menu_for_allowed_users(mocker):
 
     mocker.patch("telegram_bot.state.load_state", return_value=({}, {}))
     show_home_mock = mocker.patch("telegram_bot.ui.home_menu.show_home_menu", new=AsyncMock())
+    mocker.patch("telegram_bot.services.tracking.manager.load_tracking_state_into_bot_data")
+    mocker.patch("telegram_bot.services.tracking.scheduler.start_tracking_scheduler")
 
     await post_init(application)
 
