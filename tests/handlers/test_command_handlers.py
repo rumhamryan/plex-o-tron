@@ -126,3 +126,4 @@ def test_help_text_does_not_advertise_command_or_idle_link_entrypoints():
     message = get_help_message_text().lower()
     assert "/search" not in message
     assert "just paste a magnet" not in message
+    assert "auto\\-download" in message

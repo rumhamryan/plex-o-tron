@@ -134,6 +134,8 @@ def test_save_and_load_tracking_state_v2_roundtrip(tmp_path):
     }
 
     save_tracking_state(str(state_file), items)
+    serialized_text = state_file.read_text(encoding="utf-8")
+    assert serialized_text.endswith("\n")
     raw = json.loads(state_file.read_text(encoding="utf-8"))
     assert raw["version"] == 2
 

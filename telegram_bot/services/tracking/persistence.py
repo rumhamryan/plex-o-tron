@@ -448,6 +448,7 @@ def save_tracking_state(file_path: str, items: dict[str, TrackingItem]) -> None:
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, sort_keys=True)
+            f.write("\n")
         logger.info("Saved %d tracking item(s) to '%s'.", len(serializable_items), file_path)
     except OSError as exc:
         logger.error("Could not save tracking state '%s': %s", file_path, exc)
