@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import date
 from unittest.mock import AsyncMock
 
@@ -139,95 +138,6 @@ async def test_resolve_movie_tracking_target_uses_wikipedia_when_tmdb_unavailabl
 
     assert resolved["release_date_status"] == "confirmed"
     assert resolved["availability_date"] == date(2026, 6, 10)
-    assert resolved["availability_source"] == "physical"
-    assert resolved["is_released"] is False
-
-
-@pytest.mark.asyncio
-async def test_resolve_movie_tracking_target_uses_manual_override_without_tmdb(mocker, tmp_path):
-    overrides_path = tmp_path / "tracking_release_overrides.json"
-    overrides_path.write_text(
-        json.dumps(
-            {
-                "movies": [
-                    {
-                        "title": "Future Movie",
-                        "year": 2026,
-                        "availability_date": "2026-04-07",
-                        "availability_source": "streaming",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    mocker.patch.dict(
-        "os.environ",
-        {"TRACKING_RELEASE_OVERRIDES_FILE": str(overrides_path)},
-    )
-    mocker.patch(
-        "telegram_bot.services.tracking.movie_release_dates._resolve_movie_page_html",
-        AsyncMock(return_value=(None, "Future Movie")),
-    )
-    tmdb_mock = mocker.patch(
-        "telegram_bot.services.tracking.movie_release_dates._resolve_tmdb_availability",
-        AsyncMock(return_value=(None, None)),
-    )
-
-    resolved = await movie_release_dates.resolve_movie_tracking_target(
-        "Future Movie",
-        year=2026,
-        today=date(2026, 3, 21),
-    )
-
-    assert tmdb_mock.await_count == 0
-    assert resolved["release_date_status"] == "confirmed"
-    assert resolved["availability_date"] == date(2026, 4, 7)
-    assert resolved["availability_source"] == "streaming"
-    assert resolved["is_released"] is False
-
-
-@pytest.mark.asyncio
-async def test_resolve_movie_tracking_target_uses_manual_title_only_override(mocker, tmp_path):
-    overrides_path = tmp_path / "tracking_release_overrides.json"
-    overrides_path.write_text(
-        json.dumps(
-            {
-                "movies": [
-                    {
-                        "title": "Future Movie",
-                        "availability_date": "2026-04-21",
-                        "availability_source": "physical",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    mocker.patch.dict(
-        "os.environ",
-        {"TRACKING_RELEASE_OVERRIDES_FILE": str(overrides_path)},
-    )
-    mocker.patch(
-        "telegram_bot.services.tracking.movie_release_dates._resolve_movie_page_html",
-        AsyncMock(return_value=(None, "Future Movie")),
-    )
-    tmdb_mock = mocker.patch(
-        "telegram_bot.services.tracking.movie_release_dates._resolve_tmdb_availability",
-        AsyncMock(return_value=(None, None)),
-    )
-
-    resolved = await movie_release_dates.resolve_movie_tracking_target(
-        "Future Movie",
-        year=2031,
-        today=date(2026, 3, 21),
-    )
-
-    assert tmdb_mock.await_count == 0
-    assert resolved["release_date_status"] == "confirmed"
-    assert resolved["availability_date"] == date(2026, 4, 21)
     assert resolved["availability_source"] == "physical"
     assert resolved["is_released"] is False
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import re
 from datetime import date, datetime
@@ -37,8 +36,6 @@ PHYSICAL_KEYWORDS = (
 TMDB_DIGITAL_RELEASE_TYPE = 4
 TMDB_PHYSICAL_RELEASE_TYPE = 5
 TMDB_API_BASE_URL = "https://api.themoviedb.org/3"
-DEFAULT_TRACKING_RELEASE_OVERRIDES_FILE = "tracking_release_overrides.json"
-TRACKING_RELEASE_OVERRIDES_ENV = "TRACKING_RELEASE_OVERRIDES_FILE"
 
 
 class MovieTrackingResolution(TypedDict):
@@ -96,93 +93,6 @@ def _extract_tmdb_result_year(value: Any) -> int | None:
     if not year_text.isdigit():
         return None
     return int(year_text)
-
-
-def _parse_availability_source(value: Any) -> Literal["streaming", "physical"] | None:
-    if not isinstance(value, str):
-        return None
-    lowered = value.strip().casefold()
-    if lowered == "streaming":
-        return "streaming"
-    if lowered == "physical":
-        return "physical"
-    return None
-
-
-def _load_manual_release_overrides(
-    file_path: str,
-) -> dict[tuple[str, int | None], tuple[date, Literal["streaming", "physical"]]]:
-    if not os.path.exists(file_path):
-        return {}
-    try:
-        with open(file_path, encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except Exception:  # noqa: BLE001
-        return {}
-
-    entries = payload.get("movies") if isinstance(payload, dict) else None
-    if not isinstance(entries, list):
-        return {}
-
-    overrides: dict[tuple[str, int | None], tuple[date, Literal["streaming", "physical"]]] = {}
-    for raw in entries:
-        if not isinstance(raw, dict):
-            continue
-
-        title = raw.get("title")
-        if not isinstance(title, str) or not title.strip():
-            continue
-
-        year_raw = raw.get("year")
-        year: int | None
-        if isinstance(year_raw, int):
-            year = year_raw
-        elif isinstance(year_raw, str) and year_raw.strip().isdigit():
-            year = int(year_raw.strip())
-        else:
-            year = None
-
-        date_raw = raw.get("availability_date")
-        if not isinstance(date_raw, str):
-            continue
-        availability_date = _parse_iso_to_date(date_raw)
-        if availability_date is None:
-            continue
-
-        source = _parse_availability_source(raw.get("availability_source"))
-        if source is None:
-            continue
-
-        normalized = _normalize_title(title, year).casefold()
-        overrides[(normalized, year)] = (availability_date, source)
-
-    return overrides
-
-
-def _resolve_manual_override(
-    title: str,
-    *,
-    year: int | None,
-) -> tuple[date | None, Literal["streaming", "physical"] | None]:
-    file_path = (
-        os.getenv(TRACKING_RELEASE_OVERRIDES_ENV) or DEFAULT_TRACKING_RELEASE_OVERRIDES_FILE
-    ).strip()
-    if not file_path:
-        return None, None
-
-    overrides = _load_manual_release_overrides(file_path)
-    if not overrides:
-        return None, None
-
-    normalized = _normalize_title(title, year).casefold()
-    if isinstance(year, int):
-        direct = overrides.get((normalized, year))
-        if direct is not None:
-            return direct
-    fallback = overrides.get((normalized, None))
-    if fallback is not None:
-        return fallback
-    return None, None
 
 
 def _extract_earliest_availability_from_html(
@@ -483,19 +393,6 @@ async def resolve_movie_tracking_target(
     availability_source: Literal["streaming", "physical"] | None = None
     if html:
         availability_date, availability_source = _extract_earliest_availability_from_html(html)
-
-    manual_date, manual_source = _resolve_manual_override(canonical_title, year=year)
-    if manual_date is None and canonical_title != title:
-        manual_date, manual_source = _resolve_manual_override(title, year=year)
-    if manual_date is not None and manual_source is not None:
-        availability_date, availability_source = manual_date, manual_source
-        logger.info(
-            "[TRACKING] Using manual release override for '%s' (%s): %s (%s).",
-            canonical_title,
-            year,
-            availability_date,
-            availability_source,
-        )
 
     if availability_date is None:
         tmdb_lookup_title = (
