@@ -52,15 +52,42 @@ async def download_task_wrapper(download_data: DownloadData, application: Applic
     initial_save_path = download_data["save_path"]
     clean_name = source_dict.get("clean_name", "Download")
     message_text = "No message"
+    parsed_info = source_dict.get("parsed_info", {})
 
     reporter = ProgressReporter(
         application,
         chat_id,
         message_id,
-        source_dict.get("parsed_info", {}),
+        parsed_info,
         clean_name,
         download_data,
     )
+
+    if isinstance(parsed_info, dict) and parsed_info.get("type") == "tv":
+        season = parsed_info.get("season")
+        episode = parsed_info.get("episode")
+        title = str(parsed_info.get("title") or clean_name)
+        try:
+            season_num = int(season or 0)
+            episode_num = int(episode or 0)
+        except (TypeError, ValueError):
+            logger.info("[DOWNLOAD] Starting TV download: %s", title)
+        else:
+            episode_title = parsed_info.get("episode_title")
+            episode_suffix = (
+                f" - {episode_title.strip()}"
+                if isinstance(episode_title, str) and episode_title.strip()
+                else ""
+            )
+            logger.info(
+                "[DOWNLOAD] Starting TV download: %s S%02dE%02d%s",
+                title,
+                season_num,
+                episode_num,
+                episode_suffix,
+            )
+    else:
+        logger.info("[DOWNLOAD] Starting download: %s", clean_name)
 
     try:
         success, ti = await download_with_progress(

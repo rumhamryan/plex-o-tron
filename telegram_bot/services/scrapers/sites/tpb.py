@@ -14,6 +14,7 @@ from ..adapters import fetch_page
 _API_URL = "https://apibay.org/q.php"
 _DEFAULT_LIMIT = 40
 _FUZZ_THRESHOLD = 88
+_DEFAULT_MIN_SEEDERS = 20
 _STOP_WORDS = {"the", "a", "an", "of", "and"}
 
 _TPB_TRACKERS = [
@@ -39,6 +40,16 @@ def _safe_int(value: Any) -> int:
         return parsed if parsed >= 0 else 0
     except (TypeError, ValueError):
         return 0
+
+
+def _coerce_non_negative_int(value: Any, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
 
 
 async def scrape_tpb(
@@ -76,6 +87,7 @@ async def scrape_tpb(
         limit_value = _DEFAULT_LIMIT
 
     max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GIB))
+    min_seeders = _coerce_non_negative_int(kwargs.get("min_seeders"), default=_DEFAULT_MIN_SEEDERS)
 
     try:
         response = await fetch_page(
@@ -119,12 +131,14 @@ async def scrape_tpb(
         preferences=preferences,
         limit=limit_value,
         max_size_gib=max_size_gib,
+        min_seeders=min_seeders,
     )
     logger.info(
-        "[SCRAPER] TPB: Found %d torrents for query '%s' from %s.",
+        "[SCRAPER] TPB: Found %d torrents for query '%s' from %s (min_seeders=%d).",
         len(results),
         query,
         response.url,
+        min_seeders,
     )
 
     return results
@@ -139,6 +153,7 @@ def _transform_results(
     preferences: dict[str, Any],
     limit: int,
     max_size_gib: float,
+    min_seeders: int,
 ) -> list[dict[str, Any]]:
     target_info = parse_torrent_name(base_filter or query)
     target_title = target_info.get("title") or base_filter or query
@@ -195,7 +210,7 @@ def _transform_results(
             continue
 
         seeders = _safe_int(entry.get("seeders"))
-        if seeders < 20:
+        if seeders < min_seeders:
             continue
         leechers = _safe_int(entry.get("leechers"))
         uploader = entry.get("username") or "Anonymous"

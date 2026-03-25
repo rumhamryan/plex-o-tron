@@ -477,3 +477,27 @@ async def test_get_existing_episodes_for_season_supports_root_episode_files_and_
     )
 
     assert existing == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_get_existing_episodes_for_season_avoids_parent_series_false_match(tmp_path):
+    old_show_season = tmp_path / "Daredevil" / "Season 01"
+    old_show_season.mkdir(parents=True)
+    (old_show_season / "s01e01 - Into the Ring.mkv").write_text("data", encoding="utf-8")
+    (old_show_season / "s01e02 - Cut Man.mkv").write_text("data", encoding="utf-8")
+
+    context = Mock()
+    context.bot_data = {
+        "SAVE_PATHS": {
+            "tv_shows": str(tmp_path),
+            "default": str(tmp_path),
+        }
+    }
+
+    existing = await get_existing_episodes_for_season(
+        context,
+        show_title="Daredevil: Born Again",
+        season=1,
+    )
+
+    assert existing == set()

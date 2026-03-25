@@ -244,3 +244,38 @@ async def test_orchestrate_searches_uses_tpb_scraper(mocker):
     # Query forwarded as-is; base_query_for_filter also included.
     assert call.args[0] == "Movie"
     assert call.kwargs.get("base_query_for_filter") == "Movie"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_respects_min_seeders_override(mocker):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "TPB",
+                "enabled": True,
+                "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0",
+            }
+        ]
+    )
+
+    mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_tpb",
+        new=AsyncMock(
+            return_value=[
+                {
+                    "title": "Movie 1080p",
+                    "score": 9,
+                    "source": "tpb",
+                    "seeders": 4,
+                    "leechers": 200,
+                }
+            ]
+        ),
+    )
+
+    strict_results = await orchestrate_searches("Movie", "movie", ctx)
+    assert strict_results == []
+
+    relaxed_results = await orchestrate_searches("Movie", "movie", ctx, min_seeders=0)
+    assert len(relaxed_results) == 1
+    assert relaxed_results[0]["source"] == "tpb"

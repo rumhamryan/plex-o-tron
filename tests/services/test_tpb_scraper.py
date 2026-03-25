@@ -143,6 +143,42 @@ async def test_scrape_tpb_matches_season_and_episode(mocker):
 
 
 @pytest.mark.asyncio
+async def test_scrape_tpb_respects_min_seeders_override(mocker):
+    data = [
+        {
+            "id": "21",
+            "name": "Example Show S02E01 1080p WEBRip x264-SceneTeam",
+            "info_hash": "ABC123AAA111ABC123ABC123ABC123ABC123BBB1",
+            "seeders": "4",
+            "leechers": "200",
+            "size": str(2 * 1024**3),
+            "username": "SceneTeam",
+            "category": "208",
+        },
+    ]
+    fake_client = FakeAsyncClient(response=FakeResponse(data))
+    mocker.patch(
+        "telegram_bot.services.scrapers.adapters.create_async_client", return_value=fake_client
+    )
+
+    context = _ctx()
+    base = "Example Show S02E01"
+    default_results = await scrape_tpb(base, "tv", "unused", context, base_query_for_filter=base)
+    assert default_results == []
+
+    relaxed_results = await scrape_tpb(
+        base,
+        "tv",
+        "unused",
+        context,
+        base_query_for_filter=base,
+        min_seeders=0,
+    )
+    assert len(relaxed_results) == 1
+    assert relaxed_results[0]["seeders"] == 4
+
+
+@pytest.mark.asyncio
 async def test_scrape_tpb_handles_http_errors(mocker):
     fake_client = FakeAsyncClient(error=httpx.HTTPError("boom"))
     mocker.patch(

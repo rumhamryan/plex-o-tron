@@ -162,6 +162,49 @@ def _extract_next_air_date_from_details(details_payload: Any) -> date | None:
     return _parse_tmdb_date(next_episode_to_air.get("air_date"))
 
 
+async def fetch_episode_title_for_tmdb_episode(
+    *,
+    tmdb_series_id: int,
+    season: int,
+    episode: int,
+) -> str | None:
+    """Fetches a canonical episode title directly from TMDB for a specific S/E."""
+    if tmdb_series_id <= 0 or season <= 0 or episode <= 0:
+        return None
+
+    auth = _get_tmdb_auth()
+    if auth is None:
+        return None
+
+    headers, auth_params = auth
+    try:
+        async with httpx.AsyncClient(timeout=TMDB_REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                f"{TMDB_API_BASE_URL}/tv/{int(tmdb_series_id)}/season/{int(season)}/episode/{int(episode)}",
+                params=auth_params,
+                headers=headers,
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.info(
+            "[TRACKING] TV episode title lookup failed for series_id=%s S%02dE%02d: %s",
+            tmdb_series_id,
+            season,
+            episode,
+            exc,
+        )
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    raw_name = payload.get("name")
+    if not isinstance(raw_name, str):
+        return None
+    normalized = raw_name.strip()
+    return normalized or None
+
+
 async def _fetch_tv_details_payload(
     *,
     client: httpx.AsyncClient,

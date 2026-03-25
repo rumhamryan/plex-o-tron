@@ -10,6 +10,19 @@ from ...config import logger
 from .. import scraping_service
 from ..interfaces import ScraperFunction
 
+_DEFAULT_MIN_RESULT_SCORE = 6
+_DEFAULT_MIN_RESULT_SEEDERS = 20
+
+
+def _coerce_non_negative_int(value: Any, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
 
 def _create_scraper_task(
     coro: Coroutine[Any, Any, list[dict[str, Any]]],
@@ -29,6 +42,14 @@ async def orchestrate_searches(
     """
     search_config = context.bot_data.get("SEARCH_CONFIG", {})
     websites_config = search_config.get("websites", {})
+    min_result_score = _coerce_non_negative_int(
+        kwargs.get("min_score"),
+        default=_DEFAULT_MIN_RESULT_SCORE,
+    )
+    min_result_seeders = _coerce_non_negative_int(
+        kwargs.get("min_seeders"),
+        default=_DEFAULT_MIN_RESULT_SEEDERS,
+    )
 
     config_key = "movies" if media_type == "movie" else "tv"
     sites_to_scrape = websites_config.get(config_key, [])
@@ -168,7 +189,9 @@ async def orchestrate_searches(
 
         # Filter by score and viability: remove results with score < 6 or seeders < 20
         viable_results = [
-            r for r in coerced_results if r.get("score", 0) >= 6 and r.get("seeders", 0) >= 20
+            r
+            for r in coerced_results
+            if r.get("score", 0) >= min_result_score and r.get("seeders", 0) >= min_result_seeders
         ]
 
         _log_scraper_results(site_label, viable_results)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any, cast
@@ -29,8 +30,19 @@ from .manager import (
 )
 from .targets import get_tracking_adapter_for_item
 from .targets.base import TrackingSearchRequest, TrackingTargetAdapter
+from . import tv_next_episode
 
 TRACKING_SCHEDULER_INTERVAL_SECONDS = 60
+
+
+def _coerce_non_negative_int(value: Any, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
 
 
 def _collect_tracking_ids_with_pending_downloads(bot_data: dict[str, Any]) -> set[str]:
@@ -77,6 +89,39 @@ def _coerce_iso_date(raw_value: Any) -> date | None:
         return date.fromisoformat(normalized)
     except ValueError:
         return None
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+async def _resolve_tracking_tv_episode_title(
+    *,
+    item: TrackingItem,
+    search_request: TrackingSearchRequest,
+) -> str | None:
+    """Resolves the canonical episode title for tracked TV downloads."""
+    parsed_info = search_request.parsed_info if isinstance(search_request.parsed_info, dict) else {}
+    season = _coerce_positive_int(parsed_info.get("season"))
+    episode = _coerce_positive_int(parsed_info.get("episode"))
+    if season is None or episode is None:
+        return None
+
+    payload = item.get("target_payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    tmdb_series_id = _coerce_positive_int(payload_dict.get("tmdb_series_id"))
+    if tmdb_series_id is None:
+        return None
+
+    return await tv_next_episode.fetch_episode_title_for_tmdb_episode(
+        tmdb_series_id=tmdb_series_id,
+        season=season,
+        episode=episode,
+    )
 
 
 def _resolve_known_release_day(item: TrackingItem) -> date | None:
@@ -220,7 +265,27 @@ async def _queue_candidate_for_tracking_item(
     now_utc: datetime,
 ) -> None:
     item_id = str(item.get("id"))
-    source_dict = _build_source_dict(item=item, candidate=candidate, search_request=search_request)
+    effective_search_request = search_request
+    if getattr(adapter, "target_kind", "") == "tv":
+        resolved_episode_title = await _resolve_tracking_tv_episode_title(
+            item=item,
+            search_request=search_request,
+        )
+        if (
+            isinstance(resolved_episode_title, str)
+            and resolved_episode_title.strip()
+            and resolved_episode_title != search_request.pending_episode_title
+        ):
+            effective_search_request = replace(
+                search_request,
+                pending_episode_title=resolved_episode_title,
+            )
+
+    source_dict = _build_source_dict(
+        item=item,
+        candidate=candidate,
+        search_request=effective_search_request,
+    )
     if source_dict is None:
         adapter.on_queue_failure(
             application,
@@ -229,6 +294,27 @@ async def _queue_candidate_for_tracking_item(
             error_message="tracking_candidate_missing_page_url",
         )
         return
+
+    parsed_info = source_dict.get("parsed_info")
+    if isinstance(parsed_info, dict) and parsed_info.get("type") == "tv":
+        season = _coerce_positive_int(parsed_info.get("season")) or 0
+        episode = _coerce_positive_int(parsed_info.get("episode")) or 0
+        episode_title = effective_search_request.pending_episode_title
+        if isinstance(episode_title, str) and episode_title.strip():
+            parsed_info["episode_title"] = episode_title.strip()
+        else:
+            parsed_info.pop("episode_title", None)
+        logger.info(
+            "[TRACKING] Queueing tracked TV candidate for item %s: %s S%02dE%02d%s",
+            item_id or "(unknown)",
+            str(parsed_info.get("title") or "TV Show"),
+            season,
+            episode,
+            f" - {parsed_info['episode_title']}"
+            if isinstance(parsed_info.get("episode_title"), str)
+            and parsed_info.get("episode_title")
+            else "",
+        )
 
     chat_id = int(item.get("chat_id", 0) or 0)
     if chat_id <= 0:
@@ -278,7 +364,7 @@ async def _queue_candidate_for_tracking_item(
         now_utc=now_utc,
         linked_message_id=message_id if message_id > 0 else None,
         selected_candidate=candidate,
-        search_request=search_request,
+        search_request=effective_search_request,
     )
 
 
@@ -300,12 +386,39 @@ async def _attempt_release_search(
         return
 
     context = _build_search_context(application)
+    search_kwargs = dict(search_request.search_kwargs)
     results = await orchestrate_searches(
         search_request.query,
         search_request.media_type,
         context,
-        **search_request.search_kwargs,
+        **search_kwargs,
     )
+
+    # TPB API occasionally reports temporarily stale/low swarm counts for new TV
+    # episodes. If the first pass yields nothing, retry once with relaxed swarm
+    # gating so tracking can still attempt a candidate instead of idling for an hour.
+    current_status = str(item.get("status") or "")
+    if (
+        not results
+        and getattr(adapter, "target_kind", "") == "tv"
+        and current_status == "searching"
+        and _coerce_non_negative_int(search_kwargs.get("min_seeders"), default=20) > 0
+    ):
+        item_id = str(item.get("id") or "")
+        logger.info(
+            "[TRACKING] No TV candidates for item %s at min_seeders=%d; retrying with min_seeders=0.",
+            item_id or "(unknown)",
+            _coerce_non_negative_int(search_kwargs.get("min_seeders"), default=20),
+        )
+        relaxed_search_kwargs = dict(search_kwargs)
+        relaxed_search_kwargs["min_seeders"] = 0
+        results = await orchestrate_searches(
+            search_request.query,
+            search_request.media_type,
+            context,
+            **relaxed_search_kwargs,
+        )
+
     selected = adapter.select_candidate(
         results,
         search_config=application.bot_data.get("SEARCH_CONFIG", {}),

@@ -641,7 +641,9 @@ def mark_tracking_waiting_fulfillment(
     payload = _ensure_target_payload(item)
     if pending_episode is not None:
         payload["pending_episode"] = _coerce_episode_ref(pending_episode)
-    if isinstance(pending_episode_title, str):
+    if pending_episode_title is None:
+        payload["pending_episode_title"] = None
+    elif isinstance(pending_episode_title, str):
         payload["pending_episode_title"] = pending_episode_title.strip() or None
     _ensure_retry(item)["last_error"] = None
 

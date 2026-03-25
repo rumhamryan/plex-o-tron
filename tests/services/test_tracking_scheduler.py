@@ -697,3 +697,161 @@ async def test_tracking_scheduler_tv_transient_metadata_failure_without_window_r
     assert current is not None
     assert current["status"] == "awaiting_metadata"
     assert current["next_check_at_utc"] == "2026-06-01T13:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_tv_relaxes_seeders_when_initial_search_is_empty(mocker):
+    app = _build_application(mocker)
+    item_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "searching"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+    item["target_payload"]["pending_episode"] = {"season": 2, "episode": 1}
+    item["target_payload"]["pending_episode_title"] = "Episode One"
+    item["target_payload"]["pending_episode_air_date"] = "2026-06-01"
+
+    orchestrate_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(
+            side_effect=[
+                [],
+                [
+                    {
+                        "title": "Future Show S02E01 1080p WEB",
+                        "page_url": "magnet:?xt=urn:btih:tv201",
+                        "info_url": "https://example.invalid/tv201",
+                        "score": 9,
+                        "seeders": 4,
+                    }
+                ],
+            ]
+        ),
+    )
+    queue_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(True, 1)),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert orchestrate_mock.await_count == 2
+    first_call = orchestrate_mock.await_args_list[0]
+    second_call = orchestrate_mock.await_args_list[1]
+    assert "min_seeders" not in first_call.kwargs
+    assert second_call.kwargs.get("min_seeders") == 0
+    queue_mock.assert_awaited_once()
+    current = tracking_manager.get_tracking_item(app, item_id)
+    assert current is not None
+    assert current["status"] == "waiting_fulfillment"
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_tv_queue_uses_tmdb_episode_title_override(mocker):
+    app = _build_application(mocker)
+    item_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "searching"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+    item["target_payload"]["pending_episode"] = {"season": 2, "episode": 1}
+    item["target_payload"]["pending_episode_title"] = "Old Title"
+    item["target_payload"]["pending_episode_air_date"] = "2026-06-01"
+
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(
+            return_value=[
+                {
+                    "title": "Future Show S02E01 1080p WEB",
+                    "page_url": "magnet:?xt=urn:btih:tv201",
+                    "info_url": "https://example.invalid/tv201",
+                    "score": 9,
+                }
+            ]
+        ),
+    )
+    title_lookup_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.tv_next_episode.fetch_episode_title_for_tmdb_episode",
+        AsyncMock(return_value="The Northern Star"),
+    )
+    queue_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(True, 1)),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    title_lookup_mock.assert_awaited_once_with(tmdb_series_id=1234, season=2, episode=1)
+    queue_mock.assert_awaited_once()
+    source_dict = queue_mock.await_args.kwargs["source_dict"]
+    assert source_dict["parsed_info"]["episode_title"] == "The Northern Star"
+
+    current = tracking_manager.get_tracking_item(app, item_id)
+    assert current is not None
+    assert current["status"] == "waiting_fulfillment"
+    assert current["target_payload"]["pending_episode_title"] == "The Northern Star"
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_tv_queue_keeps_existing_title_when_lookup_fails(mocker):
+    app = _build_application(mocker)
+    item_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "searching"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+    item["target_payload"]["pending_episode"] = {"season": 2, "episode": 1}
+    item["target_payload"]["pending_episode_title"] = "Old Title"
+    item["target_payload"]["pending_episode_air_date"] = "2026-06-01"
+
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(
+            return_value=[
+                {
+                    "title": "Future Show S02E01 1080p WEB",
+                    "page_url": "magnet:?xt=urn:btih:tv201",
+                    "info_url": "https://example.invalid/tv201",
+                    "score": 9,
+                }
+            ]
+        ),
+    )
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.tv_next_episode.fetch_episode_title_for_tmdb_episode",
+        AsyncMock(return_value=None),
+    )
+    queue_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(True, 1)),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    queue_mock.assert_awaited_once()
+    source_dict = queue_mock.await_args.kwargs["source_dict"]
+    assert source_dict["parsed_info"]["episode_title"] == "Old Title"
+
+    current = tracking_manager.get_tracking_item(app, item_id)
+    assert current is not None
+    assert current["status"] == "waiting_fulfillment"
+    assert current["target_payload"]["pending_episode_title"] == "Old Title"

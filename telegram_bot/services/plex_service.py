@@ -164,9 +164,19 @@ def _resolve_tv_show_directory(tv_root: str, show_title: str) -> str | None:
         if normalized_entry == normalized_target:
             return candidate_path
 
-        score = _title_token_overlap_ratio(show_title, entry)
-        if normalized_target in normalized_entry or normalized_entry in normalized_target:
-            score = max(score, 0.95)
+        # Use strict overlap + sequence similarity to avoid matching broad parent titles
+        # (e.g., "Daredevil" vs "Daredevil: Born Again").
+        token_score = _title_token_strict_overlap_ratio(show_title, entry)
+        sequence_score = difflib.SequenceMatcher(
+            a=normalized_target,
+            b=normalized_entry,
+        ).ratio()
+        score = max(token_score, sequence_score)
+
+        if (
+            normalized_target in normalized_entry or normalized_entry in normalized_target
+        ) and token_score >= 0.75:
+            score = max(score, 0.9)
         if score > best_score:
             best_score = score
             best_path = candidate_path
@@ -180,6 +190,14 @@ def _title_token_overlap_ratio(left: str, right: str) -> float:
     if not left_tokens or not right_tokens:
         return 0.0
     return len(left_tokens & right_tokens) / max(min(len(left_tokens), len(right_tokens)), 1)
+
+
+def _title_token_strict_overlap_ratio(left: str, right: str) -> float:
+    left_tokens = set(_normalize_plex_title(left).split())
+    right_tokens = set(_normalize_plex_title(right).split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / max(len(left_tokens), len(right_tokens))
 
 
 def _iter_media_title_variants(item: Any) -> list[str]:
