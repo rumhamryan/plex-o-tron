@@ -186,6 +186,73 @@ async def test_tracking_startup_reconciliation_nudges_release_window_and_tv_meta
 
 
 @pytest.mark.asyncio
+async def test_tracking_startup_reconciliation_recovers_orphaned_search_states(mocker):
+    app = _build_application(mocker)
+    orphan_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        title="Orphan Show",
+        tmdb_series_id=3001,
+    )
+    orphan_item = tracking_manager.get_tracking_item(app, orphan_id)
+    assert orphan_item is not None
+    orphan_item["status"] = "waiting_fulfillment"
+    orphan_item["next_check_at_utc"] = "2026-06-08T12:00:00Z"
+    orphan_item["linked_download_message_id"] = 888
+
+    searching_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        title="Searching Show",
+        tmdb_series_id=3002,
+    )
+    searching_item = tracking_manager.get_tracking_item(app, searching_id)
+    assert searching_item is not None
+    searching_item["status"] = "searching"
+    searching_item["next_check_at_utc"] = "2026-06-08T12:00:00Z"
+
+    protected_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        title="Protected Show",
+        tmdb_series_id=3003,
+    )
+    protected_item = tracking_manager.get_tracking_item(app, protected_id)
+    assert protected_item is not None
+    protected_item["status"] = "waiting_fulfillment"
+    protected_item["next_check_at_utc"] = "2026-06-08T12:00:00Z"
+    app.bot_data["active_downloads"] = {
+        "456": {
+            "source_dict": {"tracking_item_id": protected_id},
+            "chat_id": 456,
+        }
+    }
+
+    nudged = tracking_scheduler.reconcile_tracking_items_on_startup(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 5, tzinfo=timezone.utc),
+    )
+
+    assert nudged == 2
+
+    orphan_current = tracking_manager.get_tracking_item(app, orphan_id)
+    assert orphan_current is not None
+    assert orphan_current["status"] == "searching"
+    assert orphan_current["linked_download_message_id"] is None
+    assert orphan_current["next_check_at_utc"] == "2026-06-01T12:05:00Z"
+
+    searching_current = tracking_manager.get_tracking_item(app, searching_id)
+    assert searching_current is not None
+    assert searching_current["status"] == "searching"
+    assert searching_current["next_check_at_utc"] == "2026-06-01T12:05:00Z"
+
+    protected_current = tracking_manager.get_tracking_item(app, protected_id)
+    assert protected_current is not None
+    assert protected_current["status"] == "waiting_fulfillment"
+    assert protected_current["next_check_at_utc"] == "2026-06-08T12:00:00Z"
+
+
+@pytest.mark.asyncio
 async def test_tracking_scheduler_runtime_does_not_force_catchup_for_drifted_next_check(mocker):
     app = _build_application(mocker)
     item_id = _create_movie_item(

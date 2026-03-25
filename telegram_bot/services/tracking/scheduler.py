@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import date, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from telegram.ext import Application
 
@@ -31,6 +31,38 @@ from .targets import get_tracking_adapter_for_item
 from .targets.base import TrackingSearchRequest, TrackingTargetAdapter
 
 TRACKING_SCHEDULER_INTERVAL_SECONDS = 60
+
+
+def _collect_tracking_ids_with_pending_downloads(bot_data: dict[str, Any]) -> set[str]:
+    active_downloads = bot_data.get("active_downloads")
+    download_queues = bot_data.get("download_queues")
+    pending_ids: set[str] = set()
+
+    def _capture_tracking_id(download_data: Any) -> None:
+        if not isinstance(download_data, dict):
+            return
+        source_dict = download_data.get("source_dict")
+        if not isinstance(source_dict, dict):
+            return
+        tracking_item_id = source_dict.get("tracking_item_id")
+        if not isinstance(tracking_item_id, str):
+            return
+        normalized = tracking_item_id.strip()
+        if normalized:
+            pending_ids.add(normalized)
+
+    if isinstance(active_downloads, dict):
+        for raw_download_data in active_downloads.values():
+            _capture_tracking_id(raw_download_data)
+
+    if isinstance(download_queues, dict):
+        for queued_items in download_queues.values():
+            if not isinstance(queued_items, list):
+                continue
+            for queued_download_data in queued_items:
+                _capture_tracking_id(queued_download_data)
+
+    return pending_ids
 
 
 def _coerce_iso_date(raw_value: Any) -> date | None:
@@ -104,12 +136,28 @@ def reconcile_tracking_items_on_startup(
     now = now_utc or utc_now(now_provider)
     local_timezone = get_tracking_timezone(application.bot_data)
     items = get_tracking_items(application.bot_data)
+    tracking_ids_with_pending_downloads = _collect_tracking_ids_with_pending_downloads(
+        cast(dict[str, Any], application.bot_data)
+    )
 
     nudged = 0
     for item in items.values():
+        item_id = str(item.get("id") or "").strip()
         status = str(item.get("status") or "")
         if status in TERMINAL_TRACKING_STATES:
             continue
+
+        if status in {"searching", "waiting_fulfillment"}:
+            if item_id in tracking_ids_with_pending_downloads:
+                continue
+            item["next_check_at_utc"] = isoformat_utc(now)
+            if status == "waiting_fulfillment":
+                # The queued download reference was lost across restarts; resume search immediately.
+                item["status"] = "searching"  # type: ignore[typeddict-item]
+                item["linked_download_message_id"] = None
+            nudged += 1
+            continue
+
         if status not in {"awaiting_metadata", "awaiting_window"}:
             continue
 
