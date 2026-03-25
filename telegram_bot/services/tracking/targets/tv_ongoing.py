@@ -10,6 +10,7 @@ from telegram_bot.domain.types import TrackingEpisodeRef, TrackingItem, Tracking
 from telegram_bot.services import plex_service
 from telegram_bot.services.tracking import selection, tv_next_episode
 from telegram_bot.services.tracking.manager import (
+    calculate_next_hourly_check,
     calculate_next_weekly_metadata_check,
     calculate_release_day_first_check_utc,
     get_tracking_item,
@@ -41,6 +42,20 @@ def _ensure_payload(item: TrackingItem) -> TrackingTargetPayload:
     payload: TrackingTargetPayload = {}
     item["target_payload"] = payload
     return payload
+
+
+def _coerce_iso_date(raw_value: Any) -> date | None:
+    if not isinstance(raw_value, str):
+        return None
+    normalized = raw_value.strip()
+    if not normalized:
+        return None
+    if "T" in normalized:
+        normalized = normalized.split("T", 1)[0]
+    try:
+        return date.fromisoformat(normalized)
+    except ValueError:
+        return None
 
 
 def _resolve_display_title(item: TrackingItem) -> str:
@@ -133,6 +148,7 @@ class TvOngoingTrackingAdapter:
         item["availability_source"] = None
         item["fulfillment_state"] = "fulfilled" if item.get("status") == "fulfilled" else "pending"  # type: ignore[typeddict-item]
 
+        metadata_refresh_failed = bool(resolution.get("metadata_refresh_failed"))
         next_episode = resolution.get("next_episode")
         if isinstance(next_episode, dict):
             payload["pending_episode"] = _coerce_episode_ref(next_episode)
@@ -144,10 +160,33 @@ class TvOngoingTrackingAdapter:
             payload["pending_episode_air_date"] = (
                 air_date.isoformat() if isinstance(air_date, date) else None
             )
-        else:
+        elif not metadata_refresh_failed:
             payload["pending_episode"] = None
             payload["pending_episode_title"] = None
             payload["pending_episode_air_date"] = None
+
+        if metadata_refresh_failed:
+            # Preserve any known pending episode window and retry quickly after transient TMDB errors.
+            pending_air_date = _coerce_iso_date(payload.get("pending_episode_air_date"))
+            if isinstance(pending_air_date, date):
+                first_check = calculate_release_day_first_check_utc(
+                    pending_air_date,
+                    local_timezone=get_tracking_timezone(application.bot_data),
+                    now_utc=now_utc,
+                )
+                if first_check <= now_utc:
+                    item["status"] = "searching"  # type: ignore[typeddict-item]
+                    item["next_check_at_utc"] = isoformat_utc(now_utc)
+                else:
+                    item["status"] = "awaiting_window"  # type: ignore[typeddict-item]
+                    item["next_check_at_utc"] = isoformat_utc(first_check)
+            else:
+                item["status"] = "awaiting_metadata"  # type: ignore[typeddict-item]
+                item["next_check_at_utc"] = isoformat_utc(calculate_next_hourly_check(now_utc))
+
+            item["last_checked_at_utc"] = isoformat_utc(now_utc)
+            persist_tracking_state_from_bot_data(application)
+            return get_tracking_item(application, item_id)
 
         state = str(resolution.get("state") or "awaiting_metadata")
         if state == "search_now":

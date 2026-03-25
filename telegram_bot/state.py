@@ -119,7 +119,10 @@ async def post_init(application: Application) -> None:
         download_task_wrapper,
     )  # Avoid circular import
     from .services.tracking.manager import load_tracking_state_into_bot_data
-    from .services.tracking.scheduler import start_tracking_scheduler
+    from .services.tracking.scheduler import (
+        reconcile_tracking_items_on_startup,
+        start_tracking_scheduler,
+    )
 
     logger.info("--- Loading persisted state and resuming downloads ---")
     # --- Fix: Use the imported constant directly ---
@@ -143,6 +146,7 @@ async def post_init(application: Application) -> None:
     logger.info("--- Resume process finished ---")
 
     load_tracking_state_into_bot_data(application)
+    reconcile_tracking_items_on_startup(application)
     start_tracking_scheduler(application)
 
     await _render_home_menu_on_startup(application)

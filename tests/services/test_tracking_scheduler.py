@@ -122,6 +122,96 @@ async def test_tracking_scheduler_movie_release_day_time_gate_matrix(mocker):
 
 
 @pytest.mark.asyncio
+async def test_tracking_startup_reconciliation_nudges_release_window_and_tv_metadata_items(mocker):
+    app = _build_application(mocker)
+    movie_release_id = _create_movie_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        availability_date=date(2026, 6, 1),
+    )
+    movie_release = tracking_manager.get_tracking_item(app, movie_release_id)
+    assert movie_release is not None
+    movie_release["status"] = "awaiting_window"
+    movie_release["next_check_at_utc"] = "2026-06-08T12:00:00Z"
+
+    movie_unknown_id = _create_movie_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        availability_date=None,
+        title="Unknown Release",
+    )
+
+    tv_window_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        title="Window Show",
+        tmdb_series_id=9876,
+    )
+    tv_window = tracking_manager.get_tracking_item(app, tv_window_id)
+    assert tv_window is not None
+    tv_window["status"] = "awaiting_window"
+    tv_window["next_check_at_utc"] = "2026-06-08T12:00:00Z"
+    tv_window["target_payload"]["pending_episode_air_date"] = "2026-06-01"
+
+    tv_metadata_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        title="Metadata Show",
+        tmdb_series_id=5555,
+    )
+    tv_metadata = tracking_manager.get_tracking_item(app, tv_metadata_id)
+    assert tv_metadata is not None
+    tv_metadata["status"] = "awaiting_metadata"
+    tv_metadata["next_check_at_utc"] = "2026-06-08T12:00:00Z"
+    tv_metadata["target_payload"]["pending_episode_air_date"] = None
+
+    nudged = tracking_scheduler.reconcile_tracking_items_on_startup(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 5, tzinfo=timezone.utc),
+    )
+
+    assert nudged == 3
+    assert tracking_manager.get_tracking_item(app, movie_release_id)["next_check_at_utc"] == (
+        "2026-06-01T12:05:00Z"
+    )
+    assert tracking_manager.get_tracking_item(app, tv_window_id)["next_check_at_utc"] == (
+        "2026-06-01T12:05:00Z"
+    )
+    assert tracking_manager.get_tracking_item(app, tv_metadata_id)["next_check_at_utc"] == (
+        "2026-06-01T12:05:00Z"
+    )
+    assert tracking_manager.get_tracking_item(app, movie_unknown_id)["next_check_at_utc"] == (
+        "2026-06-08T09:00:00Z"
+    )
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_runtime_does_not_force_catchup_for_drifted_next_check(mocker):
+    app = _build_application(mocker)
+    item_id = _create_movie_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        availability_date=date(2026, 6, 1),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "awaiting_window"
+    item["next_check_at_utc"] = "2026-06-08T12:00:00Z"
+
+    orchestrate_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(return_value=[]),
+    )
+    processed = await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert processed == 0
+    orchestrate_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_tracking_scheduler_movie_metadata_unknown_remains_weekly(mocker):
     app = _build_application(mocker)
     item_id = _create_movie_item(
@@ -428,3 +518,115 @@ async def test_tracking_scheduler_tv_fulfillment_advances_cursor_and_returns_to_
     assert current["status"] == "awaiting_metadata"
     assert current["target_payload"]["episode_cursor"] == {"season": 1, "episode": 4}
     assert current["target_payload"]["pending_episode"] is None
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_tv_transient_metadata_failure_preserves_window_and_searches(
+    mocker,
+):
+    app = _build_application(mocker)
+    item_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 11, 0, tzinfo=timezone.utc),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "awaiting_window"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+    item["target_payload"]["pending_episode"] = {"season": 1, "episode": 5}
+    item["target_payload"]["pending_episode_title"] = "Episode Five"
+    item["target_payload"]["pending_episode_air_date"] = "2026-06-01"
+
+    resolve_mock = mocker.patch(
+        "telegram_bot.services.tracking.targets.tv_ongoing.tv_next_episode.resolve_next_ongoing_episode",
+        AsyncMock(
+            return_value={
+                "canonical_title": "Future Show",
+                "tmdb_series_id": 1234,
+                "state": "awaiting_metadata",
+                "next_episode": None,
+                "next_air_date": None,
+                "metadata_refresh_failed": True,
+            }
+        ),
+    )
+    orchestrate_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(
+            return_value=[
+                {
+                    "title": "Future Show S01E05 1080p WEB",
+                    "page_url": "magnet:?xt=urn:btih:tv105",
+                    "info_url": "https://example.invalid/tv105",
+                    "score": 200,
+                }
+            ]
+        ),
+    )
+    queue_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(True, 1)),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    resolve_mock.assert_awaited_once()
+    orchestrate_mock.assert_awaited_once()
+    queue_mock.assert_awaited_once()
+    current = tracking_manager.get_tracking_item(app, item_id)
+    assert current is not None
+    assert current["status"] == "waiting_fulfillment"
+    assert current["target_payload"]["pending_episode"] == {"season": 1, "episode": 5}
+    assert current["target_payload"]["pending_episode_title"] == "Episode Five"
+    assert current["target_payload"]["pending_episode_air_date"] == "2026-06-01"
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_tv_transient_metadata_failure_without_window_retries_hourly(
+    mocker,
+):
+    app = _build_application(mocker)
+    item_id = _create_tv_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "awaiting_metadata"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+    item["target_payload"]["pending_episode"] = None
+    item["target_payload"]["pending_episode_title"] = None
+    item["target_payload"]["pending_episode_air_date"] = None
+
+    resolve_mock = mocker.patch(
+        "telegram_bot.services.tracking.targets.tv_ongoing.tv_next_episode.resolve_next_ongoing_episode",
+        AsyncMock(
+            return_value={
+                "canonical_title": "Future Show",
+                "tmdb_series_id": 1234,
+                "state": "awaiting_metadata",
+                "next_episode": None,
+                "next_air_date": None,
+                "metadata_refresh_failed": True,
+            }
+        ),
+    )
+    orchestrate_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(return_value=[]),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    resolve_mock.assert_awaited_once()
+    orchestrate_mock.assert_not_awaited()
+    current = tracking_manager.get_tracking_item(app, item_id)
+    assert current is not None
+    assert current["status"] == "awaiting_metadata"
+    assert current["next_check_at_utc"] == "2026-06-01T13:00:00Z"

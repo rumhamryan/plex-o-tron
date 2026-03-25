@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,10 +16,13 @@ from .manager import (
     TERMINAL_TRACKING_STATES,
     TRACKING_LOOP_TASK_KEY,
     TRACKING_NOW_PROVIDER_KEY,
+    calculate_release_day_first_check_utc,
     get_tracking_in_progress_ids,
     get_tracking_item,
     get_tracking_items,
     get_tracking_target_kind,
+    get_tracking_timezone,
+    isoformat_utc,
     parse_utc_iso,
     persist_tracking_state_from_bot_data,
     utc_now,
@@ -30,7 +33,52 @@ from .targets.base import TrackingSearchRequest, TrackingTargetAdapter
 TRACKING_SCHEDULER_INTERVAL_SECONDS = 60
 
 
-def _is_due(item: TrackingItem, now_utc: datetime) -> bool:
+def _coerce_iso_date(raw_value: Any) -> date | None:
+    if not isinstance(raw_value, str):
+        return None
+    normalized = raw_value.strip()
+    if not normalized:
+        return None
+    if "T" in normalized:
+        normalized = normalized.split("T", 1)[0]
+    try:
+        return date.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _resolve_known_release_day(item: TrackingItem) -> date | None:
+    payload = item.get("target_payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    if get_tracking_target_kind(item) == "tv":
+        return _coerce_iso_date(payload_dict.get("pending_episode_air_date"))
+    return _coerce_iso_date(payload_dict.get("availability_date", item.get("availability_date")))
+
+
+def _release_window_is_open(
+    item: TrackingItem,
+    *,
+    now_utc: datetime,
+    local_timezone: Any,
+) -> bool:
+    status = str(item.get("status") or "")
+    if status not in {"awaiting_metadata", "awaiting_window"}:
+        return False
+    release_day = _resolve_known_release_day(item)
+    if release_day is None:
+        return False
+    first_check = calculate_release_day_first_check_utc(
+        release_day,
+        local_timezone=local_timezone,
+        now_utc=now_utc,
+    )
+    return first_check <= now_utc
+
+
+def _is_due(
+    item: TrackingItem,
+    now_utc: datetime,
+) -> bool:
     status = str(item.get("status") or "")
     if status in TERMINAL_TRACKING_STATES:
         return False
@@ -39,6 +87,51 @@ def _is_due(item: TrackingItem, now_utc: datetime) -> bool:
     if next_check is None:
         return status in {"awaiting_metadata", "awaiting_window", "searching"}
     return next_check <= now_utc
+
+
+def reconcile_tracking_items_on_startup(
+    application: Application,
+    *,
+    now_utc: datetime | None = None,
+) -> int:
+    """
+    Startup-only reconciliation that nudges overdue release windows to run immediately.
+
+    This does not alter normal runtime cadence; it only performs a one-time recovery
+    when the process boots or restarts.
+    """
+    now_provider = application.bot_data.get(TRACKING_NOW_PROVIDER_KEY)
+    now = now_utc or utc_now(now_provider)
+    local_timezone = get_tracking_timezone(application.bot_data)
+    items = get_tracking_items(application.bot_data)
+
+    nudged = 0
+    for item in items.values():
+        status = str(item.get("status") or "")
+        if status in TERMINAL_TRACKING_STATES:
+            continue
+        if status not in {"awaiting_metadata", "awaiting_window"}:
+            continue
+
+        target_kind = get_tracking_target_kind(item)
+        release_window_open = _release_window_is_open(
+            item,
+            now_utc=now,
+            local_timezone=local_timezone,
+        )
+        # For TV metadata-only schedules, run one immediate boot-time refresh to recover
+        # from any stale weekly deferment caused before the latest transient-failure fix.
+        tv_metadata_boot_recheck = target_kind == "tv" and status == "awaiting_metadata"
+        if not (release_window_open or tv_metadata_boot_recheck):
+            continue
+
+        item["next_check_at_utc"] = isoformat_utc(now)
+        nudged += 1
+
+    if nudged > 0:
+        persist_tracking_state_from_bot_data(application)
+    logger.info("[TRACKING] Startup reconciliation nudged %d item(s).", nudged)
+    return nudged
 
 
 def _build_search_context(application: Application) -> Any:
@@ -278,7 +371,11 @@ async def run_tracking_scheduler_tick(
 
         in_progress.add(item_id)
         try:
-            await _process_due_item(application, item, now_utc=now)
+            await _process_due_item(
+                application,
+                item,
+                now_utc=now,
+            )
             persist_tracking_state_from_bot_data(application)
             processed += 1
         except Exception:  # noqa: BLE001

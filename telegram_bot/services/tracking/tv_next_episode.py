@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import date, datetime
-from typing import Any, Awaitable, Callable, Literal, TypedDict
+from typing import Any, Awaitable, Callable, Literal, NotRequired, TypedDict
 
 import httpx
 
@@ -36,6 +36,7 @@ class TvNextEpisodeResolution(TypedDict):
     state: Literal["search_now", "await_window", "awaiting_metadata"]
     next_episode: TvEpisodeRecord | None
     next_air_date: date | None
+    metadata_refresh_failed: NotRequired[bool]
 
 
 def _parse_tmdb_date(value: Any) -> date | None:
@@ -336,6 +337,7 @@ async def resolve_next_ongoing_episode(
         "state": "awaiting_metadata",
         "next_episode": None,
         "next_air_date": None,
+        "metadata_refresh_failed": False,
     }
     if auth is None:
         logger.info(
@@ -430,6 +432,7 @@ async def resolve_next_ongoing_episode(
                     "state": "search_now",
                     "next_episode": released_episode,
                     "next_air_date": released_episode["air_date"],
+                    "metadata_refresh_failed": False,
                 }
 
             future_episode = next(
@@ -447,6 +450,7 @@ async def resolve_next_ongoing_episode(
                     "state": "await_window",
                     "next_episode": future_episode,
                     "next_air_date": future_episode["air_date"],
+                    "metadata_refresh_failed": False,
                 }
 
             return {
@@ -455,6 +459,7 @@ async def resolve_next_ongoing_episode(
                 "state": "awaiting_metadata" if unknown_date_exists else "awaiting_metadata",
                 "next_episode": None,
                 "next_air_date": None,
+                "metadata_refresh_failed": False,
             }
     except Exception as exc:  # noqa: BLE001
         logger.info(
@@ -464,4 +469,5 @@ async def resolve_next_ongoing_episode(
             exc,
         )
         fallback["canonical_title"] = canonical_title
+        fallback["metadata_refresh_failed"] = True
         return fallback
