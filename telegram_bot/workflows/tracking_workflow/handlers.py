@@ -117,7 +117,7 @@ def _collection_confirm_prompt_text(
         lines.append(f"*Skipped \\(already streaming released\\):* {skipped_released_streaming}")
     if skipped_past_year_unknown_streaming:
         lines.append(
-            "*Skipped \\(past-year with unknown streaming date\\):* "
+            "*Skipped \\(past\\-year with unknown streaming date\\):* "
             f"{skipped_past_year_unknown_streaming}"
         )
 
@@ -813,7 +813,7 @@ async def _handle_collection_name_resolution(
         ]
         if skipped_past_year_unknown:
             summary_lines.append(
-                "Past-year with unknown streaming date: " f"*{skipped_past_year_unknown}*"
+                "Past\\-year with unknown streaming date: " f"*{skipped_past_year_unknown}*"
             )
         summary_lines.append("")
         summary_lines.append("Send another collection name, or tap Cancel\\.")

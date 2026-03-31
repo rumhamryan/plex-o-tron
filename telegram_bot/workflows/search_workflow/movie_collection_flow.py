@@ -2,12 +2,9 @@
 
 import asyncio
 import os
-import re
 from datetime import date
 from typing import Any
 
-import wikipedia
-from bs4 import BeautifulSoup, Tag
 from telegram import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -21,8 +18,7 @@ from telegram.helpers import escape_markdown
 from ...config import LOG_SCRAPER_STATS, MAX_TORRENT_SIZE_GIB, logger
 from ...services import scraping_service, search_logic
 from ...services.media_manager import _get_path_size_bytes
-from ...services.scrapers.wikipedia.dates import _extract_release_date_iso
-from ...services.scrapers.wikipedia.fetch import _fetch_html_from_page
+from ...services.tracking import tmdb_release_service
 from ...ui.keyboards import cancel_only_keyboard, confirm_cancel_keyboard
 from ...ui.messages import format_media_summary
 from ...utils import (
@@ -175,80 +171,34 @@ def _classify_collection_release(
     return "released", parsed_year, None
 
 
-def _extract_release_date_from_movie_html(html: str) -> date | None:
-    soup = BeautifulSoup(html, "html.parser")
-    infobox = soup.find("table", class_=re.compile(r"\binfobox\b"))
-    if not isinstance(infobox, Tag):
-        return None
-
-    for row in infobox.find_all("tr"):
-        if not isinstance(row, Tag):
-            continue
-        header = row.find("th")
-        if not isinstance(header, Tag):
-            continue
-        if "release" not in header.get_text(" ", strip=True).casefold():
-            continue
-        value = row.find("td")
-        if not isinstance(value, Tag):
-            continue
-        release_iso = _extract_release_date_iso(value.get_text(" ", strip=True))
-        if release_iso:
-            return _parse_release_iso(release_iso)
-    return None
-
-
 async def _resolve_current_year_release_date(title: str, year: int) -> date | None:
-    """Best-effort lookup for ambiguous current-year entries."""
+    """Resolves current-year digital/streaming availability from TMDB."""
     lookup_title = _normalize_collection_movie_title(title, year)
-    corrected_title: str | None = None
     try:
-        _, corrected_title = await scraping_service.fetch_movie_years_from_wikipedia(lookup_title)
+        return await tmdb_release_service.resolve_tmdb_streaming_release_date(
+            lookup_title,
+            year=year,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.debug(
-            "[COLLECTION] Could not refine current-year movie title '%s' (%s): %s",
+            "[COLLECTION] TMDB current-year streaming lookup failed for '%s' (%s): %s",
             title,
             year,
             exc,
         )
-
-    candidate_queries: list[str] = []
-    for base_title in (corrected_title, lookup_title, title):
-        if not base_title:
-            continue
-        normalized_title = _normalize_collection_movie_title(base_title, year)
-        if not normalized_title:
-            continue
-        candidate_queries.append(normalized_title)
-        candidate_queries.append(f"{normalized_title} (film)")
-        candidate_queries.append(f"{normalized_title} ({year} film)")
-
-    seen_queries: set[str] = set()
-    for query in candidate_queries:
-        cleaned_query = query.strip()
-        if not cleaned_query or cleaned_query in seen_queries:
-            continue
-        seen_queries.add(cleaned_query)
-        try:
-            page = await asyncio.to_thread(
-                wikipedia.page, cleaned_query, auto_suggest=False, redirect=True
-            )
-        except Exception:  # noqa: BLE001
-            continue
-        html = await _fetch_html_from_page(page)
-        if not html:
-            continue
-        if release_date := _extract_release_date_from_movie_html(html):
-            return release_date
-
-    return None
+        return None
 
 
 async def _resolve_collection_release(
     raw_movie: dict[str, Any], today: date
 ) -> tuple[str, int | None, date | None]:
     release_state, parsed_year, release_date = _classify_collection_release(raw_movie, today)
-    if release_date is not None or parsed_year != today.year:
+    effective_year = (
+        parsed_year if isinstance(parsed_year, int) else release_date.year if release_date else None
+    )
+    if effective_year != today.year:
+        return release_state, parsed_year, release_date
+    if not isinstance(effective_year, int):
         return release_state, parsed_year, release_date
 
     raw_title = raw_movie.get("title") or raw_movie.get("name")
@@ -257,7 +207,7 @@ async def _resolve_collection_release(
         return release_state, parsed_year, release_date
 
     try:
-        resolved_release_date = await _resolve_current_year_release_date(title, parsed_year)
+        resolved_release_date = await _resolve_current_year_release_date(title, effective_year)
     except Exception as exc:  # noqa: BLE001
         logger.debug(
             "[COLLECTION] Current-year release lookup failed for '%s' (%s): %s",
@@ -268,17 +218,22 @@ async def _resolve_collection_release(
         return release_state, parsed_year, release_date
 
     if resolved_release_date is None:
-        return release_state, parsed_year, release_date
+        logger.info(
+            "[COLLECTION] Current-year streaming release unresolved for '%s' (%s) -> unreleased",
+            title,
+            parsed_year,
+        )
+        return "unreleased", parsed_year, None
     if resolved_release_date > today:
         logger.info(
-            "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> unreleased",
+            "[COLLECTION] Current-year streaming release resolved for '%s' (%s): %s -> unreleased",
             title,
             parsed_year,
             resolved_release_date.isoformat(),
         )
         return "unreleased", parsed_year, resolved_release_date
     logger.info(
-        "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> released",
+        "[COLLECTION] Current-year streaming release resolved for '%s' (%s): %s -> released",
         title,
         parsed_year,
         resolved_release_date.isoformat(),

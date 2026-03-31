@@ -774,7 +774,7 @@ async def test_resolve_collection_release_accepts_current_year_movie_with_resolv
     assert release_date == date(2026, 1, 15)
     resolve_mock.assert_awaited_once_with("Now Playing", 2026)
     logger_mock.info.assert_called_once_with(
-        "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> released",
+        "[COLLECTION] Current-year streaming release resolved for '%s' (%s): %s -> released",
         "Now Playing",
         2026,
         "2026-01-15",
@@ -782,37 +782,10 @@ async def test_resolve_collection_release_accepts_current_year_movie_with_resolv
 
 
 @pytest.mark.asyncio
-async def test_resolve_current_year_release_date_uses_plain_page_title_when_available(mocker):
-    fetch_years_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.movie_collection_flow.scraping_service.fetch_movie_years_from_wikipedia",
-        new=AsyncMock(return_value=([2026], None)),
-    )
-    page_mock = mocker.Mock()
-    page_mock.title = "The Mandalorian and Grogu"
-    wikipedia_page_mock = mocker.patch(
-        "telegram_bot.workflows.search_workflow.movie_collection_flow.wikipedia.page",
-        return_value=page_mock,
-    )
-    mocker.patch(
-        "telegram_bot.workflows.search_workflow.movie_collection_flow._fetch_html_from_page",
-        new=AsyncMock(
-            return_value="""
-            <table class="infobox vevent">
-                <tr>
-                    <th scope="row" class="infobox-label">
-                        <div>Release date</div>
-                    </th>
-                    <td class="infobox-data">
-                        <div class="plainlist film-date">
-                            <ul>
-                                <li>May 22, 2026<span style="display: none;"> (<span class="bday dtstart published updated itvstart">2026-05-22</span>)</span></li>
-                            </ul>
-                        </div>
-                    </td>
-                </tr>
-            </table>
-            """
-        ),
+async def test_resolve_current_year_release_date_uses_tmdb_streaming_lookup(mocker):
+    tmdb_streaming_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow.tmdb_release_service.resolve_tmdb_streaming_release_date",
+        new=AsyncMock(return_value=date(2026, 5, 22)),
     )
 
     release_date = await _resolve_current_year_release_date(
@@ -821,11 +794,9 @@ async def test_resolve_current_year_release_date_uses_plain_page_title_when_avai
     )
 
     assert release_date == date(2026, 5, 22)
-    fetch_years_mock.assert_awaited_once_with("The Mandalorian and Grogu")
-    wikipedia_page_mock.assert_called_once_with(
+    tmdb_streaming_mock.assert_awaited_once_with(
         "The Mandalorian and Grogu",
-        auto_suggest=False,
-        redirect=True,
+        year=2026,
     )
 
 
@@ -851,11 +822,29 @@ async def test_resolve_collection_release_rejects_current_year_movie_with_resolv
     assert release_date == date(2026, 12, 25)
     resolve_mock.assert_awaited_once_with("Coming Later", 2026)
     logger_mock.info.assert_called_once_with(
-        "[COLLECTION] Current-year release resolved for '%s' (%s): %s -> unreleased",
+        "[COLLECTION] Current-year streaming release resolved for '%s' (%s): %s -> unreleased",
         "Coming Later",
         2026,
         "2026-12-25",
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_collection_release_current_year_ignores_theatrical_release_date(mocker):
+    resolve_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
+        new=AsyncMock(return_value=None),
+    )
+
+    state, parsed_year, release_date = await _resolve_collection_release(
+        {"title": "Scream 7", "year": 2026, "release_date": "2026-02-25"},
+        date(2026, 3, 12),
+    )
+
+    assert state == "unreleased"
+    assert parsed_year == 2026
+    assert release_date is None
+    resolve_mock.assert_awaited_once_with("Scream 7", 2026)
 
 
 @pytest.mark.asyncio
@@ -870,7 +859,7 @@ async def test_resolve_collection_release_falls_back_when_current_year_date_not_
         date(2026, 3, 12),
     )
 
-    assert state == "released"
+    assert state == "unreleased"
     assert parsed_year == 2026
     assert release_date is None
     resolve_mock.assert_awaited_once_with("TBD", 2026)
@@ -959,12 +948,10 @@ async def test_collection_lookup_handles_mixed_current_year_release_resolution(
     session = SearchSession.from_user_data(context.user_data)
     assert [movie["title"] for movie in session.collection_movies] == [
         "Earlier This Year",
-        "Still TBD",
         "Already Released",
     ]
     assert [movie["release_date"] for movie in session.collection_movies] == [
         "2026-01-20",
-        None,
         None,
     ]
     assert resolve_mock.await_count == 3

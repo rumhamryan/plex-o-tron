@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import date, datetime
 from typing import Any, Literal, TypedDict
 
@@ -8,11 +7,7 @@ from telegram_bot.config import logger
 from telegram_bot.services import scraping_service
 from telegram_bot.services.tracking import tmdb_release_service
 from telegram_bot.utils import sanitize_collection_name
-
-_TRAILING_COLLECTION_YEAR_PATTERN = re.compile(
-    r"\s*\((?P<year>(?:18|19|20|21)\d{2})(?:\s+film)?\)\s*$",
-    re.IGNORECASE,
-)
+from telegram_bot.workflows.search_workflow.helpers import _normalize_collection_movie_title
 
 
 class CollectionTrackingCandidate(TypedDict):
@@ -47,28 +42,6 @@ def _parse_release_iso(value: Any) -> date | None:
         return datetime.fromisoformat(value).date()
     except ValueError:
         return None
-
-
-def _normalize_collection_movie_title(
-    title: Any,
-    year: int | None = None,
-    release_date: Any = None,
-) -> str:
-    normalized_title = str(title or "Untitled").strip() or "Untitled"
-    effective_year = year
-    if effective_year is None:
-        parsed_release_date = _parse_release_iso(release_date)
-        if parsed_release_date is not None:
-            effective_year = parsed_release_date.year
-
-    match = _TRAILING_COLLECTION_YEAR_PATTERN.search(normalized_title)
-    if match is None or effective_year is None:
-        return normalized_title
-    if int(match.group("year")) != effective_year:
-        return normalized_title
-
-    stripped_title = normalized_title[: match.start()].rstrip()
-    return stripped_title or normalized_title
 
 
 def _resolve_candidate_year(raw_movie: dict[str, Any]) -> int | None:
