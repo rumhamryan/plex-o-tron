@@ -6,12 +6,14 @@ from datetime import date, datetime
 from typing import Any, Literal
 
 import httpx
+from bs4 import BeautifulSoup, Tag
 
 from telegram_bot.config import logger
 
 TMDB_DIGITAL_RELEASE_TYPE = 4
 TMDB_PHYSICAL_RELEASE_TYPE = 5
 TMDB_API_BASE_URL = "https://api.themoviedb.org/3"
+TMDB_WEB_BASE_URL = "https://www.themoviedb.org"
 
 
 def _normalize_text_for_match(value: str) -> str:
@@ -192,6 +194,87 @@ def _extract_tmdb_earliest_streaming_date(payload: Any, *, region: str) -> date 
     return min(candidates)
 
 
+def _parse_tmdb_web_release_date(value: str) -> date | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _extract_tmdb_web_earliest_streaming_date(html: str, *, region: str) -> date | None:
+    if not html:
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.select("table.card.releases")
+    if not tables:
+        return None
+
+    def collect_dates(target_region: str | None) -> list[date]:
+        dates: list[date] = []
+        for table in tables:
+            header = table.find("h2", class_=re.compile(r"\brelease\b"))
+            if not isinstance(header, Tag):
+                continue
+            table_region = str(header.get("id") or "").strip().upper()
+            if target_region is not None and table_region != target_region:
+                continue
+
+            tbody = table.find("tbody")
+            if not isinstance(tbody, Tag):
+                continue
+            for row in tbody.find_all("tr"):
+                if not isinstance(row, Tag):
+                    continue
+                cells = row.find_all("td")
+                if len(cells) < 3:
+                    continue
+                release_type = cells[2].get_text(" ", strip=True).casefold()
+                if "digital" not in release_type and "stream" not in release_type:
+                    continue
+                parsed = _parse_tmdb_web_release_date(cells[0].get_text(" ", strip=True))
+                if parsed is not None:
+                    dates.append(parsed)
+        return dates
+
+    normalized_region = (region or "").strip().upper()
+    regional_dates = collect_dates(normalized_region) if normalized_region else []
+    if regional_dates:
+        return min(regional_dates)
+
+    all_dates = collect_dates(None)
+    if not all_dates:
+        return None
+    return min(all_dates)
+
+
+async def _resolve_tmdb_streaming_date_from_release_page(
+    movie_id: int, *, region: str
+) -> date | None:
+    url = f"{TMDB_WEB_BASE_URL}/movie/{movie_id}/releases"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            response = await client.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; plex-o-tron/1.0)"},
+            )
+            response.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        logger.info(
+            "[TRACKING] TMDB streaming webpage fallback failed for movie_id=%s: %s",
+            movie_id,
+            exc,
+        )
+        return None
+
+    return _extract_tmdb_web_earliest_streaming_date(response.text, region=region)
+
+
 async def resolve_tmdb_availability(
     title: str,
     *,
@@ -316,6 +399,7 @@ async def resolve_tmdb_streaming_release_date(title: str, *, year: int | None) -
         params["year"] = str(year)
         params["primary_release_year"] = str(year)
 
+    selected_movie_id: int | None = None
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             search_response = await client.get(
@@ -339,9 +423,9 @@ async def resolve_tmdb_streaming_release_date(title: str, *, year: int | None) -
 
             raw_movie_id = selected.get("id")
             if isinstance(raw_movie_id, int):
-                movie_id = raw_movie_id
+                selected_movie_id = raw_movie_id
             elif isinstance(raw_movie_id, str) and raw_movie_id.strip().isdigit():
-                movie_id = int(raw_movie_id.strip())
+                selected_movie_id = int(raw_movie_id.strip())
             else:
                 logger.info(
                     "[TRACKING] TMDB streaming lookup returned invalid movie id for '%s' (year=%s).",
@@ -351,7 +435,7 @@ async def resolve_tmdb_streaming_release_date(title: str, *, year: int | None) -
                 return None
 
             release_response = await client.get(
-                f"{TMDB_API_BASE_URL}/movie/{movie_id}/release_dates",
+                f"{TMDB_API_BASE_URL}/movie/{selected_movie_id}/release_dates",
                 params=auth_params,
                 headers=headers,
             )
@@ -363,6 +447,20 @@ async def resolve_tmdb_streaming_release_date(title: str, *, year: int | None) -
 
     streaming_date = _extract_tmdb_earliest_streaming_date(release_payload, region=region)
     if streaming_date is None:
+        fallback_streaming_date: date | None = None
+        if isinstance(selected_movie_id, int):
+            fallback_streaming_date = await _resolve_tmdb_streaming_date_from_release_page(
+                selected_movie_id,
+                region=region,
+            )
+        if fallback_streaming_date is not None:
+            logger.info(
+                "[TRACKING] TMDB streaming lookup resolved via webpage fallback for '%s' (year=%s): %s.",
+                title,
+                year,
+                fallback_streaming_date,
+            )
+            return fallback_streaming_date
         logger.info(
             "[TRACKING] TMDB streaming lookup found no streaming date for '%s' (year=%s).",
             title,
