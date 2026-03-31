@@ -9,9 +9,11 @@ from typing import Any, cast
 from telegram.ext import Application
 
 from telegram_bot.config import logger
-from telegram_bot.domain.types import SourceDict, TrackingItem
+from telegram_bot.domain.types import BatchCollectionMeta, BatchMeta, SourceDict, TrackingItem
+from telegram_bot.services.download_manager.bot_data_access import get_or_create_download_batches
 from telegram_bot.services.download_manager.queue import queue_download_source
 from telegram_bot.services.search_logic import orchestrate_searches
+from telegram_bot.utils import sanitize_collection_name
 
 from .manager import (
     TERMINAL_TRACKING_STATES,
@@ -97,6 +99,81 @@ def _coerce_positive_int(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
+
+
+def _resolve_tracking_collection_meta(item: TrackingItem) -> BatchCollectionMeta | None:
+    payload = item.get("target_payload")
+    payload_dict = payload if isinstance(payload, dict) else {}
+    raw_collection_name = payload_dict.get("collection_name")
+    if not isinstance(raw_collection_name, str) or not raw_collection_name.strip():
+        return None
+
+    collection_name = sanitize_collection_name(raw_collection_name)
+    raw_collection_fs_name = payload_dict.get("collection_fs_name")
+    if isinstance(raw_collection_fs_name, str) and raw_collection_fs_name.strip():
+        collection_fs_name = sanitize_collection_name(raw_collection_fs_name)
+    else:
+        collection_fs_name = collection_name
+
+    canonical_title = str(
+        payload_dict.get("canonical_title")
+        or item.get("canonical_title")
+        or item.get("display_title")
+        or item.get("title")
+        or "Unknown"
+    ).strip()
+    year = _coerce_positive_int(payload_dict.get("year", item.get("year")))
+    movie_meta: dict[str, Any] = {"title": canonical_title or "Unknown"}
+    if isinstance(year, int):
+        movie_meta["year"] = year
+
+    return {
+        "name": collection_name,
+        "fs_name": collection_fs_name,
+        "movies": [movie_meta],
+    }
+
+
+def _attach_tracking_collection_batch(
+    application: Application,
+    *,
+    item: TrackingItem,
+    source_dict: SourceDict,
+) -> None:
+    collection_meta = _resolve_tracking_collection_meta(item)
+    if collection_meta is None:
+        return
+
+    item_id = str(item.get("id") or "").strip()
+    if not item_id:
+        return
+    batch_id = f"tracking-collection-{item_id}"
+    source_dict["batch_id"] = batch_id
+    parsed_info = source_dict.get("parsed_info")
+    if isinstance(parsed_info, dict):
+        parsed_info["collection_name"] = collection_meta["name"]
+
+    batches: dict[str, BatchMeta] = get_or_create_download_batches(application.bot_data)
+    batch = batches.get(batch_id)
+    if not isinstance(batch, dict):
+        batches[batch_id] = {
+            "total": 1,
+            "done": 0,
+            "media_type": "movie",
+            "scanned": False,
+            "summaries": [],
+            "collection": collection_meta,
+        }
+        return
+
+    batch.setdefault("total", 1)
+    batch.setdefault("done", 0)
+    batch.setdefault("media_type", "movie")
+    batch.setdefault("scanned", False)
+    if not isinstance(batch.get("summaries"), list):
+        batch["summaries"] = []
+    if not isinstance(batch.get("collection"), dict):
+        batch["collection"] = collection_meta
 
 
 async def _resolve_tracking_tv_episode_title(
@@ -294,6 +371,8 @@ async def _queue_candidate_for_tracking_item(
             error_message="tracking_candidate_missing_page_url",
         )
         return
+
+    _attach_tracking_collection_batch(application, item=item, source_dict=source_dict)
 
     parsed_info = source_dict.get("parsed_info")
     if isinstance(parsed_info, dict) and parsed_info.get("type") == "tv":

@@ -5,6 +5,7 @@ import pytest
 from telegram import CallbackQuery, Update
 
 from telegram_bot.workflows.tracking_workflow.handlers import (
+    TRACKING_AWAIT_COLLECTION_NAME,
     TRACKING_AWAIT_MOVIE_TITLE,
     TRACKING_AWAIT_TV_TITLE,
     _candidate_summary_line,
@@ -14,6 +15,8 @@ from telegram_bot.workflows.tracking_workflow.handlers import (
     handle_tracking_workflow_message,
 )
 from telegram_bot.workflows.tracking_workflow.state import (
+    TRACKING_COLLECTION_CANDIDATES_KEY,
+    TRACKING_COLLECTION_NAME_KEY,
     TRACKING_NEXT_ACTION_KEY,
     TRACKING_TARGET_KIND_KEY,
 )
@@ -63,6 +66,30 @@ def test_candidate_summary_line_tv_includes_next_air_only():
 
 
 @pytest.mark.asyncio
+async def test_tracking_schedule_movie_shows_scope_prompt(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.safe_edit_message",
+        AsyncMock(),
+    )
+
+    start_message = make_message(message_id=9)
+    start_query = make_callback_query("track_schedule_movie", start_message)
+    start_update = Update(update_id=1, callback_query=start_query)
+    await handle_tracking_buttons(start_update, context)
+
+    assert context.user_data.get(TRACKING_TARGET_KIND_KEY) == "movie"
+    assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) is None
+    keyboard = edit_mock.await_args.kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].callback_data == "track_schedule_movie_single"
+    assert keyboard.inline_keyboard[1][0].callback_data == "track_schedule_movie_collection"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "cancel_operation"
+
+
+@pytest.mark.asyncio
 async def test_tracking_workflow_schedules_valid_future_movie(
     mocker, make_message, make_callback_query, context
 ):
@@ -85,6 +112,9 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     start_query = make_callback_query("track_schedule_movie", start_message)
     start_update = Update(update_id=1, callback_query=start_query)
     await handle_tracking_buttons(start_update, context)
+    single_query = make_callback_query("track_schedule_movie_single", start_message)
+    single_update = Update(update_id=2, callback_query=single_query)
+    await handle_tracking_buttons(single_update, context)
     assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) == TRACKING_AWAIT_MOVIE_TITLE
     assert context.user_data.get(TRACKING_TARGET_KIND_KEY) == "movie"
 
@@ -106,7 +136,7 @@ async def test_tracking_workflow_schedules_valid_future_movie(
 
     context.bot.send_message = AsyncMock()
     user_message = make_message("Future Movie", message_id=11)
-    text_update = Update(update_id=2, message=user_message)
+    text_update = Update(update_id=3, message=user_message)
     await handle_tracking_workflow_message(text_update, context)
 
     context.bot.send_message.assert_not_called()
@@ -119,7 +149,7 @@ async def test_tracking_workflow_schedules_valid_future_movie(
     assert context.user_data.get("tracking_selected_candidate_index") == 0
 
     confirm_query = make_callback_query("track_confirm", start_message)
-    confirm_update = Update(update_id=3, callback_query=confirm_query)
+    confirm_update = Update(update_id=4, callback_query=confirm_query)
     await handle_tracking_buttons(confirm_update, context)
 
     tracking_items = context.bot_data.get("tracking_items", {})
@@ -161,6 +191,9 @@ async def test_tracking_workflow_rejects_already_released_movie(
     start_query = make_callback_query("track_schedule_movie", start_message)
     start_update = Update(update_id=1, callback_query=start_query)
     await handle_tracking_buttons(start_update, context)
+    single_query = make_callback_query("track_schedule_movie_single", start_message)
+    single_update = Update(update_id=2, callback_query=single_query)
+    await handle_tracking_buttons(single_update, context)
     assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) == TRACKING_AWAIT_MOVIE_TITLE
 
     released_candidate = {
@@ -180,7 +213,7 @@ async def test_tracking_workflow_rejects_already_released_movie(
     context.bot.send_message = AsyncMock()
 
     user_message = make_message("Old Movie", message_id=32)
-    text_update = Update(update_id=2, message=user_message)
+    text_update = Update(update_id=3, message=user_message)
     await handle_tracking_workflow_message(text_update, context)
 
     context.bot.send_message.assert_not_called()
@@ -213,6 +246,9 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
     start_query = make_callback_query("track_schedule_movie", start_message)
     start_update = Update(update_id=1, callback_query=start_query)
     await handle_tracking_buttons(start_update, context)
+    single_query = make_callback_query("track_schedule_movie_single", start_message)
+    single_update = Update(update_id=2, callback_query=single_query)
+    await handle_tracking_buttons(single_update, context)
 
     candidates = [
         {
@@ -243,7 +279,7 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
 
     context.bot.send_message = AsyncMock()
     user_message = make_message("Future Movie", message_id=51)
-    text_update = Update(update_id=2, message=user_message)
+    text_update = Update(update_id=3, message=user_message)
     await handle_tracking_workflow_message(text_update, context)
 
     assert context.user_data.get("tracking_selected_candidate_index") is None
@@ -251,6 +287,92 @@ async def test_tracking_workflow_keeps_selection_step_for_multiple_candidates(
     assert "Select A Movie To Schedule" in latest_text
     keyboard = edit_mock.await_args_list[-1].kwargs["reply_markup"]
     assert keyboard.inline_keyboard[-1][0].callback_data == "cancel_operation"
+
+
+@pytest.mark.asyncio
+async def test_tracking_workflow_collection_flow_schedules_collection_candidates(
+    mocker, make_message, make_callback_query, context
+):
+    context.application.bot_data = context.bot_data
+    mocker.patch.object(CallbackQuery, "answer", AsyncMock())
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.safe_edit_message",
+        AsyncMock(),
+    )
+    return_home_mock = mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.return_to_home",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.tracking.manager.persist_tracking_state_from_bot_data",
+        return_value=None,
+    )
+    mocker.patch(
+        "telegram_bot.workflows.tracking_workflow.handlers.resolve_collection_tracking_candidates",
+        AsyncMock(
+            return_value={
+                "collection_name": "Avatar",
+                "total_titles": 3,
+                "skipped_released_streaming": 1,
+                "skipped_past_year_unknown_streaming": 0,
+                "candidates": [
+                    {
+                        "title": "Avatar 3",
+                        "canonical_title": "Avatar 3",
+                        "year": 2027,
+                        "availability_date": date(2027, 12, 18),
+                        "availability_source": "streaming",
+                    },
+                    {
+                        "title": "Avatar 4",
+                        "canonical_title": "Avatar 4",
+                        "year": 2029,
+                        "availability_date": None,
+                        "availability_source": None,
+                    },
+                ],
+            }
+        ),
+    )
+
+    start_message = make_message(message_id=60)
+    scope_query = make_callback_query("track_schedule_movie", start_message)
+    scope_update = Update(update_id=1, callback_query=scope_query)
+    await handle_tracking_buttons(scope_update, context)
+
+    collection_query = make_callback_query("track_schedule_movie_collection", start_message)
+    collection_update = Update(update_id=2, callback_query=collection_query)
+    await handle_tracking_buttons(collection_update, context)
+
+    assert context.user_data.get(TRACKING_NEXT_ACTION_KEY) == TRACKING_AWAIT_COLLECTION_NAME
+
+    user_message = make_message("Avatar", message_id=61)
+    text_update = Update(update_id=3, message=user_message)
+    await handle_tracking_workflow_message(text_update, context)
+
+    assert context.user_data.get(TRACKING_COLLECTION_NAME_KEY) == "Avatar"
+    assert len(context.user_data.get(TRACKING_COLLECTION_CANDIDATES_KEY, [])) == 2
+    assert TRACKING_NEXT_ACTION_KEY not in context.user_data
+    confirm_keyboard = edit_mock.await_args_list[-1].kwargs["reply_markup"]
+    assert confirm_keyboard.inline_keyboard[0][0].callback_data == "track_collection_confirm"
+
+    confirm_query = make_callback_query("track_collection_confirm", start_message)
+    confirm_update = Update(update_id=4, callback_query=confirm_query)
+    await handle_tracking_buttons(confirm_update, context)
+
+    tracking_items = context.bot_data.get("tracking_items", {})
+    assert len(tracking_items) == 2
+    payloads = [item["target_payload"] for item in tracking_items.values()]
+    assert any(payload.get("canonical_title") == "Avatar 3" for payload in payloads)
+    assert any(payload.get("canonical_title") == "Avatar 4" for payload in payloads)
+    assert all(payload.get("collection_name") == "Avatar" for payload in payloads)
+    assert all(payload.get("collection_fs_name") == "Avatar" for payload in payloads)
+
+    return_home_mock.assert_awaited_once()
+    success_message = return_home_mock.await_args.kwargs["message_text"]
+    assert "Collection schedule created" in success_message
+    assert "Collection: *Avatar*" in success_message
+    assert "Titles selected: *2*" in success_message
 
 
 @pytest.mark.asyncio

@@ -56,6 +56,7 @@ def _create_movie_item(
     availability_date: date | None,
     title: str = "Future Release",
     year: int | None = 2026,
+    collection_name: str | None = None,
 ) -> str:
     created = tracking_manager.create_movie_tracking_item(
         app,
@@ -64,6 +65,8 @@ def _create_movie_item(
         year=year,
         availability_date=availability_date,
         availability_source="streaming" if availability_date else None,
+        collection_name=collection_name,
+        collection_fs_name=collection_name,
         now_utc=now_utc,
     )
     return created["id"]
@@ -412,6 +415,65 @@ async def test_tracking_scheduler_movie_selects_best_top_tier_candidate(mocker):
     assert current["status"] == "waiting_fulfillment"
     assert current["next_check_at_utc"] == "2026-06-01T18:00:00Z"
     assert current["linked_download_message_id"] == 91
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_movie_collection_queue_sets_batch_metadata(mocker):
+    app = _build_application(mocker)
+    item_id = _create_movie_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        availability_date=date(2026, 6, 1),
+        collection_name="Avatar",
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "searching"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(
+            return_value=[
+                {
+                    "title": "Avatar 2160p WEB",
+                    "page_url": "magnet:?xt=urn:btih:avatar2160",
+                    "info_url": "https://example.invalid/avatar2160",
+                    "score": 99,
+                }
+            ]
+        ),
+    )
+    queue_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(True, 1)),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    queue_mock.assert_awaited_once()
+    source_dict = queue_mock.await_args.kwargs["source_dict"]
+    batch_id = source_dict.get("batch_id")
+    assert isinstance(batch_id, str)
+    assert batch_id == f"tracking-collection-{item_id}"
+    assert source_dict["parsed_info"]["collection_name"] == "Avatar"
+
+    batches = app.bot_data.get("DOWNLOAD_BATCHES", {})
+    assert isinstance(batches, dict)
+    batch = batches.get(batch_id)
+    assert isinstance(batch, dict)
+    assert batch.get("total") == 1
+    assert batch.get("done") == 0
+    assert batch.get("media_type") == "movie"
+    collection = batch.get("collection")
+    assert isinstance(collection, dict)
+    assert collection.get("name") == "Avatar"
+    movies = collection.get("movies")
+    assert isinstance(movies, list) and len(movies) == 1
+    assert movies[0].get("title") == "Future Release"
 
 
 @pytest.mark.asyncio

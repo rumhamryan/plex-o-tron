@@ -106,6 +106,8 @@ def test_save_and_load_tracking_state_v2_roundtrip(tmp_path):
                 "release_date_status": "confirmed",
                 "availability_date": "2030-01-02",
                 "availability_source": "streaming",
+                "collection_name": "Avatar",
+                "collection_fs_name": "Avatar",
             },
             "retry": {"consecutive_failures": 1, "last_error": "network"},
         },
@@ -142,6 +144,8 @@ def test_save_and_load_tracking_state_v2_roundtrip(tmp_path):
     loaded = load_tracking_state(str(state_file))
     assert set(loaded) == {"trk_movie", "trk_tv"}
     assert loaded["trk_movie"]["target_payload"]["year"] == 2030
+    assert loaded["trk_movie"]["target_payload"]["collection_name"] == "Avatar"
+    assert loaded["trk_movie"]["target_payload"]["collection_fs_name"] == "Avatar"
     assert loaded["trk_tv"]["target_payload"]["tmdb_series_id"] == 1234
     assert loaded["trk_tv"]["target_payload"]["pending_episode"] == {"season": 1, "episode": 4}
 

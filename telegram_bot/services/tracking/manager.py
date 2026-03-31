@@ -488,6 +488,8 @@ def create_movie_tracking_item(
     year: int | None,
     availability_date: date | None,
     availability_source: str | None,
+    collection_name: str | None = None,
+    collection_fs_name: str | None = None,
     title: str | None = None,
     now_utc: datetime | None = None,
 ) -> TrackingItem:
@@ -525,6 +527,10 @@ def create_movie_tracking_item(
         "availability_date": availability_iso,
         "availability_source": source,
     }
+    if isinstance(collection_name, str) and collection_name.strip():
+        payload["collection_name"] = collection_name.strip()
+    if isinstance(collection_fs_name, str) and collection_fs_name.strip():
+        payload["collection_fs_name"] = collection_fs_name.strip()
     return create_tracking_item(
         application,
         chat_id=chat_id,

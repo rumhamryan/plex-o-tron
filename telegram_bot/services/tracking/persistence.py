@@ -175,6 +175,18 @@ def _coerce_movie_payload(raw_payload: Any, raw_item: dict[str, Any]) -> Trackin
 
     raw_source = raw_payload_dict.get("availability_source", raw_item.get("availability_source"))
     payload["availability_source"] = _coerce_availability_source(raw_source)
+
+    raw_collection_name = raw_payload_dict.get("collection_name")
+    if isinstance(raw_collection_name, str) and raw_collection_name.strip():
+        payload["collection_name"] = raw_collection_name.strip()
+    else:
+        payload["collection_name"] = None
+
+    raw_collection_fs_name = raw_payload_dict.get("collection_fs_name")
+    if isinstance(raw_collection_fs_name, str) and raw_collection_fs_name.strip():
+        payload["collection_fs_name"] = raw_collection_fs_name.strip()
+    else:
+        payload["collection_fs_name"] = None
     return payload
 
 

@@ -99,6 +99,8 @@ class TrackingTargetPayload(TypedDict, total=False):
     release_date_status: NotRequired[TrackingReleaseDateStatus]
     availability_date: NotRequired[str | None]
     availability_source: NotRequired[TrackingAvailabilitySource | None]
+    collection_name: NotRequired[str | None]
+    collection_fs_name: NotRequired[str | None]
 
     # TV
     tmdb_series_id: NotRequired[int]

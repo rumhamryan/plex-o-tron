@@ -138,6 +138,30 @@ def test_create_tv_tracking_item_reuses_existing_active_identity(mocker):
     assert persist_mock.call_count == 1
 
 
+def test_create_movie_tracking_item_stores_collection_metadata(mocker):
+    application = _build_application()
+    mocker.patch(
+        "telegram_bot.services.tracking.manager.persist_tracking_state_from_bot_data",
+        return_value=None,
+    )
+
+    created = tracking_manager.create_movie_tracking_item(
+        application,
+        chat_id=456,
+        canonical_title="Avatar 3",
+        year=2027,
+        availability_date=date(2027, 12, 18),
+        availability_source="streaming",
+        collection_name="Avatar",
+        collection_fs_name="Avatar",
+        now_utc=datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc),
+    )
+
+    payload = created["target_payload"]
+    assert payload.get("collection_name") == "Avatar"
+    assert payload.get("collection_fs_name") == "Avatar"
+
+
 def test_load_tracking_state_prunes_unauthorized_and_duplicate_items(tmp_path):
     state_file = tmp_path / "tracking_state.json"
     payload = {

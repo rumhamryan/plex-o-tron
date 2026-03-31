@@ -137,7 +137,12 @@ class MovieTrackingAdapter:
         if not canonical_title:
             return None
 
+        payload = item.get("target_payload")
+        payload_dict = payload if isinstance(payload, dict) else {}
         parsed_info: dict[str, Any] = {"type": "movie", "title": canonical_title}
+        collection_name = payload_dict.get("collection_name")
+        if isinstance(collection_name, str) and collection_name.strip():
+            parsed_info["collection_name"] = collection_name.strip()
         clean_name = canonical_title
         search_kwargs: dict[str, Any] = {}
         if isinstance(year, int):

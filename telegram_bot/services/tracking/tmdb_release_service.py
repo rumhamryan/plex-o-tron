@@ -154,6 +154,44 @@ def _extract_tmdb_earliest_availability(
     return candidates[0]
 
 
+def _extract_tmdb_earliest_streaming_date(payload: Any, *, region: str) -> date | None:
+    if not isinstance(payload, dict):
+        return None
+    raw_regions = payload.get("results")
+    if not isinstance(raw_regions, list):
+        return None
+
+    def collect_dates(blocks: list[dict[str, Any]]) -> list[date]:
+        dates: list[date] = []
+        for block in blocks:
+            release_dates = block.get("release_dates")
+            if not isinstance(release_dates, list):
+                continue
+            for entry in release_dates:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("type") != TMDB_DIGITAL_RELEASE_TYPE:
+                    continue
+                parsed = _parse_tmdb_date(entry.get("release_date"))
+                if parsed is not None:
+                    dates.append(parsed)
+        return dates
+
+    region_upper = region.upper()
+    preferred_blocks = [
+        block
+        for block in raw_regions
+        if isinstance(block, dict) and str(block.get("iso_3166_1") or "").upper() == region_upper
+    ]
+    candidates = collect_dates(preferred_blocks)
+    if not candidates:
+        all_blocks = [block for block in raw_regions if isinstance(block, dict)]
+        candidates = collect_dates(all_blocks)
+    if not candidates:
+        return None
+    return min(candidates)
+
+
 async def resolve_tmdb_availability(
     title: str,
     *,
@@ -249,6 +287,96 @@ async def resolve_tmdb_availability(
         availability_source,
     )
     return availability_date, availability_source
+
+
+async def resolve_tmdb_streaming_release_date(title: str, *, year: int | None) -> date | None:
+    """Resolves the earliest TMDB digital/streaming release date for a movie."""
+    auth = _get_tmdb_auth()
+    if auth is None:
+        logger.info(
+            "[TRACKING] TMDB streaming lookup skipped for '%s' (year=%s): missing credentials.",
+            title,
+            year,
+        )
+        return None
+
+    headers, auth_params, region = auth
+    logger.info(
+        "[TRACKING] TMDB streaming lookup started for '%s' (year=%s, region=%s).",
+        title,
+        year,
+        region,
+    )
+    params: dict[str, str] = {
+        **auth_params,
+        "query": title,
+        "include_adult": "false",
+    }
+    if isinstance(year, int):
+        params["year"] = str(year)
+        params["primary_release_year"] = str(year)
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            search_response = await client.get(
+                f"{TMDB_API_BASE_URL}/search/movie",
+                params=params,
+                headers=headers,
+            )
+            search_response.raise_for_status()
+            search_payload = search_response.json()
+            search_results = (
+                search_payload.get("results") if isinstance(search_payload, dict) else []
+            )
+            selected = _choose_tmdb_search_result(title, year=year, raw_results=search_results)
+            if not isinstance(selected, dict):
+                logger.info(
+                    "[TRACKING] TMDB streaming lookup returned no movie match for '%s' (year=%s).",
+                    title,
+                    year,
+                )
+                return None
+
+            raw_movie_id = selected.get("id")
+            if isinstance(raw_movie_id, int):
+                movie_id = raw_movie_id
+            elif isinstance(raw_movie_id, str) and raw_movie_id.strip().isdigit():
+                movie_id = int(raw_movie_id.strip())
+            else:
+                logger.info(
+                    "[TRACKING] TMDB streaming lookup returned invalid movie id for '%s' (year=%s).",
+                    title,
+                    year,
+                )
+                return None
+
+            release_response = await client.get(
+                f"{TMDB_API_BASE_URL}/movie/{movie_id}/release_dates",
+                params=auth_params,
+                headers=headers,
+            )
+            release_response.raise_for_status()
+            release_payload = release_response.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("[TRACKING] TMDB streaming lookup failed for '%s': %s", title, exc)
+        return None
+
+    streaming_date = _extract_tmdb_earliest_streaming_date(release_payload, region=region)
+    if streaming_date is None:
+        logger.info(
+            "[TRACKING] TMDB streaming lookup found no streaming date for '%s' (year=%s).",
+            title,
+            year,
+        )
+        return None
+
+    logger.info(
+        "[TRACKING] TMDB streaming lookup resolved for '%s' (year=%s): %s.",
+        title,
+        year,
+        streaming_date,
+    )
+    return streaming_date
 
 
 async def resolve_tmdb_inferred_year(title: str, *, year: int | None) -> int | None:

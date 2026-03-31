@@ -12,6 +12,10 @@ from telegram.helpers import escape_markdown
 from telegram_bot.config import logger
 from telegram_bot.domain.types import TrackingItem
 from telegram_bot.services.tracking import manager as tracking_manager
+from telegram_bot.services.tracking.collection_resolution import (
+    CollectionTrackingCandidate,
+    resolve_collection_tracking_candidates,
+)
 from telegram_bot.services.tracking.targets import (
     MOVIE_TRACKING_ADAPTER,
     TV_ONGOING_TRACKING_ADAPTER,
@@ -30,6 +34,10 @@ from telegram_bot.workflows.navigation import (
 )
 
 from .state import (
+    TRACKING_COLLECTION_CANDIDATES_KEY,
+    TRACKING_COLLECTION_NAME_KEY,
+    TRACKING_COLLECTION_SKIPPED_PAST_YEAR_KEY,
+    TRACKING_COLLECTION_SKIPPED_STREAMING_KEY,
     TRACKING_CANDIDATES_KEY,
     TRACKING_NEXT_ACTION_KEY,
     TRACKING_SELECTED_INDEX_KEY,
@@ -39,6 +47,7 @@ from .state import (
 
 TRACKING_AWAIT_MOVIE_TITLE = "await_movie_title"
 TRACKING_AWAIT_TV_TITLE = "await_tv_title"
+TRACKING_AWAIT_COLLECTION_NAME = "await_collection_name"
 TRACKING_CALLBACK_PREFIX = "track_"
 
 
@@ -64,6 +73,62 @@ def _tracking_menu_text() -> str:
         "Schedule future movie releases or ongoing TV next\\-episode tracking\\.\n"
         "You can also review and cancel active schedules\\."
     )
+
+
+def _tracking_movie_scope_keyboard() -> InlineKeyboardMarkup:
+    return single_column_keyboard(
+        [
+            ("🎬 Single Movie", "track_schedule_movie_single"),
+            ("🎞️ Collection", "track_schedule_movie_collection"),
+        ]
+    )
+
+
+def _collection_candidate_line(candidate: Mapping[str, Any]) -> str:
+    title = str(candidate.get("canonical_title") or candidate.get("title") or "Movie")
+    escaped_title = escape_markdown(title, version=2)
+    year = candidate.get("year")
+    suffix = f" \\({int(year)}\\)" if isinstance(year, int) else ""
+
+    availability_date = candidate.get("availability_date")
+    if isinstance(availability_date, date):
+        availability_text = availability_date.isoformat()
+    else:
+        availability_text = "TBD"
+    escaped_availability = escape_markdown(availability_text, version=2)
+    return f"\\- {escaped_title}{suffix}\n  Streaming: {escaped_availability}"
+
+
+def _collection_confirm_prompt_text(
+    collection_name: str,
+    candidates: list[CollectionTrackingCandidate],
+    *,
+    total_titles: int,
+    skipped_released_streaming: int,
+    skipped_past_year_unknown_streaming: int,
+) -> str:
+    escaped_collection = escape_markdown(collection_name, version=2)
+    lines: list[str] = [
+        f"*Confirm Collection Schedule*\n\n*Collection:* {escaped_collection}",
+        f"*Total titles resolved:* {total_titles}",
+        f"*To schedule:* {len(candidates)}",
+    ]
+    if skipped_released_streaming:
+        lines.append(f"*Skipped \\(already streaming released\\):* {skipped_released_streaming}")
+    if skipped_past_year_unknown_streaming:
+        lines.append(
+            "*Skipped \\(past-year with unknown streaming date\\):* "
+            f"{skipped_past_year_unknown_streaming}"
+        )
+
+    lines.append("")
+    preview_limit = 10
+    for candidate in candidates[:preview_limit]:
+        lines.append(_collection_candidate_line(candidate))
+    if len(candidates) > preview_limit:
+        lines.append(f"\\- \\+{len(candidates) - preview_limit} more")
+    lines.append("\nStart tracking these collection titles?")
+    return "\n".join(lines)
 
 
 def _candidate_summary_line(candidate: Mapping[str, Any]) -> str:
@@ -198,6 +263,53 @@ async def render_tracking_menu(
         parse_mode=ParseMode.MARKDOWN_V2,
     )
     set_active_prompt_message_id(context, chat_id, sent.message_id)
+
+
+async def _handle_movie_schedule_scope_prompt(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+    user_data = _get_user_data_store(context)
+    mark_chat_workflow_active(context, query.message.chat_id, "track")
+    clear_tracking_workflow_state(user_data)
+    user_data[TRACKING_TARGET_KIND_KEY] = "movie"
+    await safe_edit_message(
+        query.message,
+        text=(
+            "🎬 Choose the movie scheduling mode\\.\n\n"
+            "Single Movie: track one movie title\\.\n"
+            "Collection: resolve a franchise and track titles without streaming release\\."
+        ),
+        reply_markup=_tracking_movie_scope_keyboard(),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    set_active_prompt_message_id(context, query.message.chat_id, query.message.message_id)
+
+
+async def _handle_collection_name_prompt(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+    user_data = _get_user_data_store(context)
+    mark_chat_workflow_active(context, query.message.chat_id, "track")
+    clear_tracking_workflow_state(user_data)
+    user_data[TRACKING_TARGET_KIND_KEY] = "movie"
+    user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_COLLECTION_NAME
+    await safe_edit_message(
+        query.message,
+        text=(
+            "🎞️ Send the movie collection or franchise name to schedule\\.\n\n"
+            "I will resolve collection titles, then keep only titles that do not yet have a "
+            "streaming release date\\."
+        ),
+        reply_markup=cancel_only_keyboard(),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    set_active_prompt_message_id(context, query.message.chat_id, query.message.message_id)
 
 
 async def _handle_schedule_prompt(
@@ -405,6 +517,101 @@ async def _handle_confirm_candidate(
     )
 
 
+async def _handle_confirm_collection(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    if not isinstance(query.message, Message):
+        return
+    user_data = _get_user_data_store(context)
+    raw_collection_name = user_data.get(TRACKING_COLLECTION_NAME_KEY)
+    raw_candidates = user_data.get(TRACKING_COLLECTION_CANDIDATES_KEY)
+    if not isinstance(raw_collection_name, str) or not isinstance(raw_candidates, list):
+        await safe_edit_message(
+            query.message,
+            text="This collection selection has expired\\. Please start again\\.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")]]
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    tracked_items = tracking_manager.get_tracking_items(context.application.bot_data)
+    known_item_ids = set(tracked_items.keys())
+
+    scheduled_titles: list[str] = []
+    new_count = 0
+    reused_count = 0
+    for raw_candidate in raw_candidates:
+        if not isinstance(raw_candidate, dict):
+            continue
+        canonical_title = str(
+            raw_candidate.get("canonical_title") or raw_candidate.get("title") or ""
+        ).strip()
+        if not canonical_title:
+            continue
+        raw_availability_date = raw_candidate.get("availability_date")
+        availability_date = (
+            raw_availability_date if isinstance(raw_availability_date, date) else None
+        )
+        created = tracking_manager.create_movie_tracking_item(
+            context.application,
+            chat_id=query.message.chat_id,
+            canonical_title=canonical_title,
+            year=raw_candidate.get("year"),
+            availability_date=availability_date,
+            availability_source=raw_candidate.get("availability_source"),
+            collection_name=raw_collection_name,
+            collection_fs_name=raw_collection_name,
+            title=canonical_title,
+        )
+        created_id = str(created.get("id") or "")
+        if created_id and created_id in known_item_ids:
+            reused_count += 1
+        else:
+            new_count += 1
+            if created_id:
+                known_item_ids.add(created_id)
+        scheduled_titles.append(tracking_manager.get_tracking_display_title(created))
+
+    if not scheduled_titles:
+        clear_tracking_workflow_state(user_data)
+        await return_to_home(
+            context,
+            query.message.chat_id,
+            source_message=query.message,
+            message_text=(
+                "❌ No schedulable titles remained for this collection\\.\n\n"
+                "Try another collection name, or schedule a single movie instead\\."
+            ),
+            message_parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    escaped_collection_name = escape_markdown(raw_collection_name, version=2)
+    preview_limit = 8
+    preview_lines = [
+        f"\\- {escape_markdown(title, version=2)}" for title in scheduled_titles[:preview_limit]
+    ]
+    if len(scheduled_titles) > preview_limit:
+        preview_lines.append(f"\\- \\+{len(scheduled_titles) - preview_limit} more")
+    clear_tracking_workflow_state(user_data)
+    await return_to_home(
+        context,
+        query.message.chat_id,
+        source_message=query.message,
+        message_text=(
+            "✅ Collection schedule created\\.\n\n"
+            f"Collection: *{escaped_collection_name}*\n"
+            f"Titles selected: *{len(scheduled_titles)}*\n"
+            f"New schedules: *{new_count}*\n"
+            f"Already scheduled: *{reused_count}*\n\n" + "\n".join(preview_lines)
+        ),
+        message_parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
 async def _handle_cancel_item(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not isinstance(query.message, Message):
         return
@@ -489,7 +696,13 @@ async def handle_tracking_buttons(update: Update, context: ContextTypes.DEFAULT_
         await render_tracking_menu(context, query.message.chat_id, target_message=query.message)
         return
     if action == "track_schedule_movie":
+        await _handle_movie_schedule_scope_prompt(query, context)
+        return
+    if action == "track_schedule_movie_single":
         await _handle_schedule_prompt(query, context, target_kind="movie")
+        return
+    if action == "track_schedule_movie_collection":
+        await _handle_collection_name_prompt(query, context)
         return
     if action == "track_schedule_tv":
         await _handle_schedule_prompt(query, context, target_kind="tv")
@@ -503,6 +716,9 @@ async def handle_tracking_buttons(update: Update, context: ContextTypes.DEFAULT_
         return
     if action == "track_confirm":
         await _handle_confirm_candidate(query, context)
+        return
+    if action == "track_collection_confirm":
+        await _handle_confirm_collection(query, context)
         return
     if action.startswith("track_cancel_confirm_"):
         await _handle_cancel_item_confirm(query, context)
@@ -541,6 +757,93 @@ async def _resolve_tracking_candidates(
     )
 
 
+async def _handle_collection_name_resolution(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_data: MutableMapping[str, Any],
+    chat_id: int,
+    prompt_message_id: int,
+    collection_query: str,
+) -> None:
+    now_utc = tracking_manager.utc_now(
+        context.application.bot_data.get(tracking_manager.TRACKING_NOW_PROVIDER_KEY)
+    )
+    today = now_utc.astimezone(
+        tracking_manager.get_tracking_timezone(context.application.bot_data)
+    ).date()
+    resolution = await resolve_collection_tracking_candidates(collection_query, today=today)
+    if resolution is None:
+        user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_COLLECTION_NAME
+        user_data.pop(TRACKING_COLLECTION_NAME_KEY, None)
+        user_data.pop(TRACKING_COLLECTION_CANDIDATES_KEY, None)
+        user_data.pop(TRACKING_COLLECTION_SKIPPED_STREAMING_KEY, None)
+        user_data.pop(TRACKING_COLLECTION_SKIPPED_PAST_YEAR_KEY, None)
+        await safe_edit_message(
+            context.bot,
+            text=(
+                "❌ No matching collection could be resolved\\.\n\n"
+                "Send another collection or franchise name, or tap Cancel to exit\\."
+            ),
+            chat_id=chat_id,
+            message_id=prompt_message_id,
+            reply_markup=cancel_only_keyboard(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    collection_name = str(resolution.get("collection_name") or "Collection")
+    candidates = cast(list[CollectionTrackingCandidate], resolution.get("candidates") or [])
+    total_titles = int(resolution.get("total_titles") or 0)
+    skipped_released_streaming = int(resolution.get("skipped_released_streaming") or 0)
+    skipped_past_year_unknown = int(resolution.get("skipped_past_year_unknown_streaming") or 0)
+
+    user_data[TRACKING_COLLECTION_NAME_KEY] = collection_name
+    user_data[TRACKING_COLLECTION_CANDIDATES_KEY] = candidates
+    user_data[TRACKING_COLLECTION_SKIPPED_STREAMING_KEY] = skipped_released_streaming
+    user_data[TRACKING_COLLECTION_SKIPPED_PAST_YEAR_KEY] = skipped_past_year_unknown
+
+    if not candidates:
+        user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_COLLECTION_NAME
+        summary_lines = [
+            "❌ No titles in this collection are schedulable right now\\.",
+            "",
+            f"Collection: *{escape_markdown(collection_name, version=2)}*",
+            f"Titles resolved: *{total_titles}*",
+            f"Already streaming released: *{skipped_released_streaming}*",
+        ]
+        if skipped_past_year_unknown:
+            summary_lines.append(
+                "Past-year with unknown streaming date: " f"*{skipped_past_year_unknown}*"
+            )
+        summary_lines.append("")
+        summary_lines.append("Send another collection name, or tap Cancel\\.")
+        await safe_edit_message(
+            context.bot,
+            text="\n".join(summary_lines),
+            chat_id=chat_id,
+            message_id=prompt_message_id,
+            reply_markup=cancel_only_keyboard(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    user_data.pop(TRACKING_NEXT_ACTION_KEY, None)
+    await safe_edit_message(
+        context.bot,
+        text=_collection_confirm_prompt_text(
+            collection_name,
+            candidates,
+            total_titles=total_titles,
+            skipped_released_streaming=skipped_released_streaming,
+            skipped_past_year_unknown_streaming=skipped_past_year_unknown,
+        ),
+        chat_id=chat_id,
+        message_id=prompt_message_id,
+        reply_markup=confirm_cancel_keyboard("✅ Confirm Collection", "track_collection_confirm"),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
 async def handle_tracking_workflow_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -552,7 +855,11 @@ async def handle_tracking_workflow_message(
 
     user_data = _get_user_data_store(context)
     next_action = user_data.get(TRACKING_NEXT_ACTION_KEY)
-    if next_action not in {TRACKING_AWAIT_MOVIE_TITLE, TRACKING_AWAIT_TV_TITLE}:
+    if next_action not in {
+        TRACKING_AWAIT_MOVIE_TITLE,
+        TRACKING_AWAIT_TV_TITLE,
+        TRACKING_AWAIT_COLLECTION_NAME,
+    }:
         return
 
     title_query = message.text.strip()
@@ -564,11 +871,14 @@ async def handle_tracking_workflow_message(
     chat_id = message.chat_id
     prompt_message_id = get_active_prompt_message_id(context, chat_id)
     target_kind = _active_target_kind(user_data)
-    loading_text = (
-        "🔎 Looking up release metadata..."
-        if target_kind == "movie"
-        else "🔎 Looking up TMDB show metadata..."
-    )
+    if next_action == TRACKING_AWAIT_COLLECTION_NAME:
+        loading_text = "🔎 Resolving collection titles and streaming release metadata\\..."
+    else:
+        loading_text = (
+            "🔎 Looking up release metadata..."
+            if target_kind == "movie"
+            else "🔎 Looking up TMDB show metadata..."
+        )
     if isinstance(prompt_message_id, int):
         await safe_edit_message(
             context.bot,
@@ -583,6 +893,17 @@ async def handle_tracking_workflow_message(
         )
         prompt_message_id = status_message.message_id
         set_active_prompt_message_id(context, chat_id, prompt_message_id)
+
+    if next_action == TRACKING_AWAIT_COLLECTION_NAME:
+        await _handle_collection_name_resolution(
+            context=context,
+            user_data=user_data,
+            chat_id=chat_id,
+            prompt_message_id=prompt_message_id,
+            collection_query=title_query,
+        )
+        set_active_prompt_message_id(context, chat_id, prompt_message_id)
+        return
 
     candidates = await _resolve_tracking_candidates(
         title_query=title_query,
