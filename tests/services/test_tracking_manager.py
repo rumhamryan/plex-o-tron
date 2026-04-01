@@ -154,12 +154,20 @@ def test_create_movie_tracking_item_stores_collection_metadata(mocker):
         availability_source="streaming",
         collection_name="Avatar",
         collection_fs_name="Avatar",
+        collection_movies=[
+            {"title": "Avatar", "year": 2009},
+            {"title": "Avatar: The Way of Water", "year": 2022},
+        ],
         now_utc=datetime(2026, 3, 23, 0, 0, tzinfo=timezone.utc),
     )
 
     payload = created["target_payload"]
     assert payload.get("collection_name") == "Avatar"
     assert payload.get("collection_fs_name") == "Avatar"
+    assert payload.get("collection_movies") == [
+        {"title": "Avatar", "year": 2009},
+        {"title": "Avatar: The Way of Water", "year": 2022},
+    ]
 
 
 def test_load_tracking_state_prunes_unauthorized_and_duplicate_items(tmp_path):

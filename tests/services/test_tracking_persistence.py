@@ -108,6 +108,10 @@ def test_save_and_load_tracking_state_v2_roundtrip(tmp_path):
                 "availability_source": "streaming",
                 "collection_name": "Avatar",
                 "collection_fs_name": "Avatar",
+                "collection_movies": [
+                    {"title": "Avatar", "year": 2009},
+                    {"title": "Avatar: The Way of Water", "year": 2022},
+                ],
             },
             "retry": {"consecutive_failures": 1, "last_error": "network"},
         },
@@ -146,6 +150,10 @@ def test_save_and_load_tracking_state_v2_roundtrip(tmp_path):
     assert loaded["trk_movie"]["target_payload"]["year"] == 2030
     assert loaded["trk_movie"]["target_payload"]["collection_name"] == "Avatar"
     assert loaded["trk_movie"]["target_payload"]["collection_fs_name"] == "Avatar"
+    assert loaded["trk_movie"]["target_payload"]["collection_movies"] == [
+        {"title": "Avatar", "year": 2009},
+        {"title": "Avatar: The Way of Water", "year": 2022},
+    ]
     assert loaded["trk_tv"]["target_payload"]["tmdb_series_id"] == 1234
     assert loaded["trk_tv"]["target_payload"]["pending_episode"] == {"season": 1, "episode": 4}
 

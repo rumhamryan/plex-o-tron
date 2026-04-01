@@ -101,6 +101,7 @@ class TrackingTargetPayload(TypedDict, total=False):
     availability_source: NotRequired[TrackingAvailabilitySource | None]
     collection_name: NotRequired[str | None]
     collection_fs_name: NotRequired[str | None]
+    collection_movies: NotRequired[list[dict[str, Any]]]
 
     # TV
     tmdb_series_id: NotRequired[int]

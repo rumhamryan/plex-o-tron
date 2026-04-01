@@ -16,6 +16,7 @@ from telegram_bot.workflows.tracking_workflow.handlers import (
 )
 from telegram_bot.workflows.tracking_workflow.state import (
     TRACKING_COLLECTION_CANDIDATES_KEY,
+    TRACKING_COLLECTION_LIBRARY_MOVIES_KEY,
     TRACKING_COLLECTION_NAME_KEY,
     TRACKING_NEXT_ACTION_KEY,
     TRACKING_TARGET_KIND_KEY,
@@ -315,6 +316,10 @@ async def test_tracking_workflow_collection_flow_schedules_collection_candidates
                 "total_titles": 3,
                 "skipped_released_streaming": 1,
                 "skipped_past_year_unknown_streaming": 0,
+                "library_movies": [
+                    {"title": "Avatar", "year": 2009},
+                    {"title": "Avatar: The Way of Water", "year": 2022},
+                ],
                 "candidates": [
                     {
                         "title": "Avatar 3",
@@ -352,6 +357,7 @@ async def test_tracking_workflow_collection_flow_schedules_collection_candidates
 
     assert context.user_data.get(TRACKING_COLLECTION_NAME_KEY) == "Avatar"
     assert len(context.user_data.get(TRACKING_COLLECTION_CANDIDATES_KEY, [])) == 2
+    assert len(context.user_data.get(TRACKING_COLLECTION_LIBRARY_MOVIES_KEY, [])) == 2
     assert TRACKING_NEXT_ACTION_KEY not in context.user_data
     confirm_keyboard = edit_mock.await_args_list[-1].kwargs["reply_markup"]
     assert confirm_keyboard.inline_keyboard[0][0].callback_data == "track_collection_confirm"
@@ -367,6 +373,14 @@ async def test_tracking_workflow_collection_flow_schedules_collection_candidates
     assert any(payload.get("canonical_title") == "Avatar 4" for payload in payloads)
     assert all(payload.get("collection_name") == "Avatar" for payload in payloads)
     assert all(payload.get("collection_fs_name") == "Avatar" for payload in payloads)
+    assert all(
+        payload.get("collection_movies")
+        == [
+            {"title": "Avatar", "year": 2009},
+            {"title": "Avatar: The Way of Water", "year": 2022},
+        ]
+        for payload in payloads
+    )
 
     return_home_mock.assert_awaited_once()
     success_message = return_home_mock.await_args.kwargs["message_text"]

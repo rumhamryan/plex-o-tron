@@ -57,6 +57,7 @@ def _create_movie_item(
     title: str = "Future Release",
     year: int | None = 2026,
     collection_name: str | None = None,
+    collection_movies: list[dict[str, object]] | None = None,
 ) -> str:
     created = tracking_manager.create_movie_tracking_item(
         app,
@@ -67,6 +68,7 @@ def _create_movie_item(
         availability_source="streaming" if availability_date else None,
         collection_name=collection_name,
         collection_fs_name=collection_name,
+        collection_movies=collection_movies,
         now_utc=now_utc,
     )
     return created["id"]
@@ -425,6 +427,10 @@ async def test_tracking_scheduler_movie_collection_queue_sets_batch_metadata(moc
         now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
         availability_date=date(2026, 6, 1),
         collection_name="Avatar",
+        collection_movies=[
+            {"title": "Avatar", "year": 2009},
+            {"title": "Avatar: The Way of Water", "year": 2022},
+        ],
     )
     item = tracking_manager.get_tracking_item(app, item_id)
     assert item is not None
@@ -472,8 +478,10 @@ async def test_tracking_scheduler_movie_collection_queue_sets_batch_metadata(moc
     assert isinstance(collection, dict)
     assert collection.get("name") == "Avatar"
     movies = collection.get("movies")
-    assert isinstance(movies, list) and len(movies) == 1
-    assert movies[0].get("title") == "Future Release"
+    assert isinstance(movies, list) and len(movies) == 3
+    assert movies[0] == {"title": "Avatar", "year": 2009}
+    assert movies[1] == {"title": "Avatar: The Way of Water", "year": 2022}
+    assert movies[2] == {"title": "Future Release", "year": 2026}
 
 
 @pytest.mark.asyncio

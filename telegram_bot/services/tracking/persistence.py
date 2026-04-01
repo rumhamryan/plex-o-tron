@@ -132,6 +132,33 @@ def _normalize_episode_ref(raw_ref: Any) -> TrackingEpisodeRef | None:
     return {"season": season, "episode": episode}
 
 
+def _normalize_collection_movies(raw_movies: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_movies, list):
+        return []
+
+    normalized_movies: list[dict[str, Any]] = []
+    seen: set[tuple[str, int | None]] = set()
+    for raw_movie in raw_movies:
+        if not isinstance(raw_movie, dict):
+            continue
+        raw_title = raw_movie.get("title")
+        if not isinstance(raw_title, str):
+            continue
+        title = raw_title.strip()
+        if not title:
+            continue
+        year = _coerce_int(raw_movie.get("year"), minimum=1)
+        dedupe_key = (title.casefold(), year)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        entry: dict[str, Any] = {"title": title}
+        if isinstance(year, int):
+            entry["year"] = year
+        normalized_movies.append(entry)
+    return normalized_movies
+
+
 def _build_movie_identity(canonical_title: str, year: int | None) -> str:
     normalized = canonical_title.strip().casefold() or "unknown"
     if isinstance(year, int):
@@ -187,6 +214,12 @@ def _coerce_movie_payload(raw_payload: Any, raw_item: dict[str, Any]) -> Trackin
         payload["collection_fs_name"] = raw_collection_fs_name.strip()
     else:
         payload["collection_fs_name"] = None
+
+    normalized_collection_movies = _normalize_collection_movies(
+        raw_payload_dict.get("collection_movies")
+    )
+    if normalized_collection_movies:
+        payload["collection_movies"] = normalized_collection_movies
     return payload
 
 

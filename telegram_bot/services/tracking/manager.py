@@ -258,6 +258,36 @@ def _coerce_episode_ref(value: Any) -> TrackingEpisodeRef | None:
     return None
 
 
+def _normalize_collection_movies(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    normalized_movies: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, int | None]] = set()
+    for raw_movie in value:
+        if not isinstance(raw_movie, dict):
+            continue
+        raw_title = raw_movie.get("title")
+        if not isinstance(raw_title, str):
+            continue
+        title = raw_title.strip()
+        if not title:
+            continue
+
+        raw_year = raw_movie.get("year")
+        year = raw_year if isinstance(raw_year, int) and raw_year > 0 else None
+        dedupe_key = (title.casefold(), year)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
+        entry: dict[str, Any] = {"title": title}
+        if isinstance(year, int):
+            entry["year"] = year
+        normalized_movies.append(entry)
+    return normalized_movies
+
+
 def _coerce_release_date_status(value: Any) -> TrackingReleaseDateStatus:
     return "confirmed" if value == "confirmed" else "unknown"
 
@@ -490,6 +520,7 @@ def create_movie_tracking_item(
     availability_source: str | None,
     collection_name: str | None = None,
     collection_fs_name: str | None = None,
+    collection_movies: list[dict[str, Any]] | None = None,
     title: str | None = None,
     now_utc: datetime | None = None,
 ) -> TrackingItem:
@@ -531,6 +562,9 @@ def create_movie_tracking_item(
         payload["collection_name"] = collection_name.strip()
     if isinstance(collection_fs_name, str) and collection_fs_name.strip():
         payload["collection_fs_name"] = collection_fs_name.strip()
+    normalized_collection_movies = _normalize_collection_movies(collection_movies)
+    if normalized_collection_movies:
+        payload["collection_movies"] = normalized_collection_movies
     return create_tracking_item(
         application,
         chat_id=chat_id,

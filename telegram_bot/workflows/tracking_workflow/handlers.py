@@ -35,6 +35,7 @@ from telegram_bot.workflows.navigation import (
 
 from .state import (
     TRACKING_COLLECTION_CANDIDATES_KEY,
+    TRACKING_COLLECTION_LIBRARY_MOVIES_KEY,
     TRACKING_COLLECTION_NAME_KEY,
     TRACKING_COLLECTION_SKIPPED_PAST_YEAR_KEY,
     TRACKING_COLLECTION_SKIPPED_STREAMING_KEY,
@@ -526,6 +527,7 @@ async def _handle_confirm_collection(
     user_data = _get_user_data_store(context)
     raw_collection_name = user_data.get(TRACKING_COLLECTION_NAME_KEY)
     raw_candidates = user_data.get(TRACKING_COLLECTION_CANDIDATES_KEY)
+    raw_library_movies = user_data.get(TRACKING_COLLECTION_LIBRARY_MOVIES_KEY)
     if not isinstance(raw_collection_name, str) or not isinstance(raw_candidates, list):
         await safe_edit_message(
             query.message,
@@ -539,6 +541,11 @@ async def _handle_confirm_collection(
 
     tracked_items = tracking_manager.get_tracking_items(context.application.bot_data)
     known_item_ids = set(tracked_items.keys())
+    collection_movies = (
+        cast(list[dict[str, Any]], raw_library_movies)
+        if isinstance(raw_library_movies, list)
+        else []
+    )
 
     scheduled_titles: list[str] = []
     new_count = 0
@@ -564,6 +571,7 @@ async def _handle_confirm_collection(
             availability_source=raw_candidate.get("availability_source"),
             collection_name=raw_collection_name,
             collection_fs_name=raw_collection_name,
+            collection_movies=collection_movies,
             title=canonical_title,
         )
         created_id = str(created.get("id") or "")
@@ -776,6 +784,7 @@ async def _handle_collection_name_resolution(
         user_data[TRACKING_NEXT_ACTION_KEY] = TRACKING_AWAIT_COLLECTION_NAME
         user_data.pop(TRACKING_COLLECTION_NAME_KEY, None)
         user_data.pop(TRACKING_COLLECTION_CANDIDATES_KEY, None)
+        user_data.pop(TRACKING_COLLECTION_LIBRARY_MOVIES_KEY, None)
         user_data.pop(TRACKING_COLLECTION_SKIPPED_STREAMING_KEY, None)
         user_data.pop(TRACKING_COLLECTION_SKIPPED_PAST_YEAR_KEY, None)
         await safe_edit_message(
@@ -793,12 +802,14 @@ async def _handle_collection_name_resolution(
 
     collection_name = str(resolution.get("collection_name") or "Collection")
     candidates = cast(list[CollectionTrackingCandidate], resolution.get("candidates") or [])
+    library_movies = cast(list[dict[str, Any]], resolution.get("library_movies") or [])
     total_titles = int(resolution.get("total_titles") or 0)
     skipped_released_streaming = int(resolution.get("skipped_released_streaming") or 0)
     skipped_past_year_unknown = int(resolution.get("skipped_past_year_unknown_streaming") or 0)
 
     user_data[TRACKING_COLLECTION_NAME_KEY] = collection_name
     user_data[TRACKING_COLLECTION_CANDIDATES_KEY] = candidates
+    user_data[TRACKING_COLLECTION_LIBRARY_MOVIES_KEY] = library_movies
     user_data[TRACKING_COLLECTION_SKIPPED_STREAMING_KEY] = skipped_released_streaming
     user_data[TRACKING_COLLECTION_SKIPPED_PAST_YEAR_KEY] = skipped_past_year_unknown
 

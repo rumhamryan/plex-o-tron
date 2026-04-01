@@ -18,9 +18,15 @@ class CollectionTrackingCandidate(TypedDict):
     availability_source: Literal["streaming"] | None
 
 
+class CollectionTrackingMovie(TypedDict):
+    title: str
+    year: int | None
+
+
 class CollectionTrackingResolution(TypedDict):
     collection_name: str
     candidates: list[CollectionTrackingCandidate]
+    library_movies: list[CollectionTrackingMovie]
     total_titles: int
     skipped_released_streaming: int
     skipped_past_year_unknown_streaming: int
@@ -52,6 +58,16 @@ def _resolve_candidate_year(raw_movie: dict[str, Any]) -> int | None:
     if parsed_release is not None:
         return parsed_release.year
     return None
+
+
+def _build_collection_movie_entry(
+    normalized_title: str,
+    year: int | None,
+) -> CollectionTrackingMovie:
+    entry: CollectionTrackingMovie = {"title": normalized_title, "year": None}
+    if isinstance(year, int):
+        entry["year"] = year
+    return entry
 
 
 async def resolve_collection_tracking_candidates(
@@ -102,6 +118,7 @@ async def resolve_collection_tracking_candidates(
 
     reference_day = today or date.today()
     candidates: list[CollectionTrackingCandidate] = []
+    library_movies: list[CollectionTrackingMovie] = []
     skipped_released_streaming = 0
     skipped_past_year_unknown_streaming = 0
     for normalized_title, year in normalized_movies:
@@ -111,9 +128,11 @@ async def resolve_collection_tracking_candidates(
         )
         if streaming_date is not None and streaming_date <= reference_day:
             skipped_released_streaming += 1
+            library_movies.append(_build_collection_movie_entry(normalized_title, year))
             continue
         if streaming_date is None and isinstance(year, int) and year < reference_day.year:
             skipped_past_year_unknown_streaming += 1
+            library_movies.append(_build_collection_movie_entry(normalized_title, year))
             continue
 
         candidates.append(
@@ -133,6 +152,13 @@ async def resolve_collection_tracking_candidates(
             str(entry.get("canonical_title") or "").casefold(),
         )
     )
+    library_movies.sort(
+        key=lambda entry: (
+            entry.get("year") is None,
+            int(entry.get("year") or 0),
+            str(entry.get("title") or "").casefold(),
+        )
+    )
 
     logger.info(
         "[TRACKING] Collection '%s' resolved from '%s': total=%d, schedulable=%d, "
@@ -147,6 +173,7 @@ async def resolve_collection_tracking_candidates(
     return {
         "collection_name": collection_name,
         "candidates": candidates,
+        "library_movies": library_movies,
         "total_titles": len(normalized_movies),
         "skipped_released_streaming": skipped_released_streaming,
         "skipped_past_year_unknown_streaming": skipped_past_year_unknown_streaming,

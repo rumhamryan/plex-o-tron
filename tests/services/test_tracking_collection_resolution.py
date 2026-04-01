@@ -64,6 +64,10 @@ async def test_resolve_collection_tracking_candidates_filters_streaming_released
     assert resolved["skipped_released_streaming"] == 1
     assert resolved["skipped_past_year_unknown_streaming"] == 1
     assert len(resolved["candidates"]) == 2
+    assert resolved["library_movies"] == [
+        {"title": "Avatar", "year": 2009},
+        {"title": "Avatar Legacy", "year": 2015},
+    ]
     assert streaming_mock.await_count == 4
 
     first, second = resolved["candidates"]

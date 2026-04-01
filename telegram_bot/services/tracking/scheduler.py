@@ -101,6 +101,33 @@ def _coerce_positive_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def _normalize_tracking_collection_movies(raw_movies: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_movies, list):
+        return []
+
+    normalized_movies: list[dict[str, Any]] = []
+    seen: set[tuple[str, int | None]] = set()
+    for raw_movie in raw_movies:
+        if not isinstance(raw_movie, dict):
+            continue
+        raw_title = raw_movie.get("title")
+        if not isinstance(raw_title, str):
+            continue
+        title = raw_title.strip()
+        if not title:
+            continue
+        year = _coerce_positive_int(raw_movie.get("year"))
+        dedupe_key = (title.casefold(), year)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        entry: dict[str, Any] = {"title": title}
+        if isinstance(year, int):
+            entry["year"] = year
+        normalized_movies.append(entry)
+    return normalized_movies
+
+
 def _resolve_tracking_collection_meta(item: TrackingItem) -> BatchCollectionMeta | None:
     payload = item.get("target_payload")
     payload_dict = payload if isinstance(payload, dict) else {}
@@ -126,11 +153,25 @@ def _resolve_tracking_collection_meta(item: TrackingItem) -> BatchCollectionMeta
     movie_meta: dict[str, Any] = {"title": canonical_title or "Unknown"}
     if isinstance(year, int):
         movie_meta["year"] = year
+    collection_movies = _normalize_tracking_collection_movies(payload_dict.get("collection_movies"))
+    if not collection_movies:
+        collection_movies = [movie_meta]
+    else:
+        current_movie_key = (
+            str(movie_meta.get("title") or "").casefold(),
+            _coerce_positive_int(movie_meta.get("year")),
+        )
+        existing_keys = {
+            (str(movie.get("title") or "").casefold(), _coerce_positive_int(movie.get("year")))
+            for movie in collection_movies
+        }
+        if current_movie_key not in existing_keys:
+            collection_movies.append(movie_meta)
 
     return {
         "name": collection_name,
         "fs_name": collection_fs_name,
-        "movies": [movie_meta],
+        "movies": collection_movies,
     }
 
 
