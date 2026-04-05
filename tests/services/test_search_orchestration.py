@@ -279,3 +279,42 @@ async def test_orchestrate_searches_respects_min_seeders_override(mocker):
     relaxed_results = await orchestrate_searches("Movie", "movie", ctx, min_seeders=0)
     assert len(relaxed_results) == 1
     assert relaxed_results[0]["source"] == "tpb"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_filters_screener_movie_results(mocker):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "TPB",
+                "enabled": True,
+                "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0",
+            }
+        ]
+    )
+
+    mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_tpb",
+        new=AsyncMock(
+            return_value=[
+                {
+                    "title": "Avatar Fire and Ash 2025 2160p WEBSCREENER x265",
+                    "score": 80,
+                    "source": "tpb",
+                    "seeders": 200,
+                },
+                {
+                    "title": "Avatar Fire and Ash 2025 2160p WEB-DL x265",
+                    "score": 70,
+                    "source": "tpb",
+                    "seeders": 180,
+                },
+            ]
+        ),
+    )
+
+    results = await orchestrate_searches("Avatar Fire and Ash", "movie", ctx, year="2025")
+
+    assert len(results) == 1
+    assert "webscreener" not in results[0]["title"].lower()
+    assert "web-dl" in results[0]["title"].lower()

@@ -8,7 +8,7 @@ import sys
 from typing import Any
 
 # --- Constants ---
-MAX_TORRENT_SIZE_GIB = 21
+MAX_TORRENT_SIZE_GIB = 22
 MAX_TORRENT_SIZE_BYTES = MAX_TORRENT_SIZE_GIB * (1024**3)
 # Backward-compatible alias for legacy imports. Internally we use GiB nomenclature.
 MAX_TORRENT_SIZE_GB = MAX_TORRENT_SIZE_GIB

@@ -1,6 +1,7 @@
 # telegram_bot/services/search_logic/orchestrator.py
 
 import asyncio
+import re
 from collections.abc import Coroutine
 from typing import Any
 
@@ -12,6 +13,16 @@ from ..interfaces import ScraperFunction
 
 _DEFAULT_MIN_RESULT_SCORE = 6
 _DEFAULT_MIN_RESULT_SEEDERS = 20
+_MOVIE_SCREENER_PATTERN = re.compile(
+    r"(?ix)\b("
+    r"web[-_.\s]*screener|"
+    r"(?:dvd|bd)[-_.\s]*screener|"
+    r"dvd[-_.\s]*scr|"
+    r"dvdscr|"
+    r"bdscr|"
+    r"screener"
+    r")\b"
+)
 
 
 def _coerce_non_negative_int(value: Any, *, default: int) -> int:
@@ -28,6 +39,14 @@ def _create_scraper_task(
     coro: Coroutine[Any, Any, list[dict[str, Any]]],
 ) -> asyncio.Task[list[dict[str, Any]]]:
     return asyncio.create_task(coro)
+
+
+def _is_screener_movie_release(result: dict[str, Any]) -> bool:
+    """Returns True when a movie title contains known screener release tags."""
+    raw_title = result.get("title")
+    if not isinstance(raw_title, str) or not raw_title.strip():
+        return False
+    return bool(_MOVIE_SCREENER_PATTERN.search(raw_title))
 
 
 async def orchestrate_searches(
@@ -187,10 +206,26 @@ async def orchestrate_searches(
         # Enforce schema constraints (e.g. valid integers for swarm counts)
         coerced_results = [scraping_service._coerce_swarm_counts(r) for r in site_results]
 
+        filtered_site_results = coerced_results
+        if media_type == "movie":
+            blocked_count = 0
+            filtered_site_results = []
+            for result in coerced_results:
+                if _is_screener_movie_release(result):
+                    blocked_count += 1
+                    continue
+                filtered_site_results.append(result)
+            if blocked_count:
+                logger.info(
+                    "[SEARCH] %s: Dropped %d screener-tagged movie result(s).",
+                    site_label,
+                    blocked_count,
+                )
+
         # Filter by score and viability: remove results with score < 6 or seeders < 20
         viable_results = [
             r
-            for r in coerced_results
+            for r in filtered_site_results
             if r.get("score", 0) >= min_result_score and r.get("seeders", 0) >= min_result_seeders
         ]
 
