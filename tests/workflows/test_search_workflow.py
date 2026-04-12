@@ -30,6 +30,7 @@ from telegram_bot.workflows.search_workflow.results import (
 from telegram_bot.workflows.search_workflow.state import _clear_search_context
 from telegram_bot.workflows.search_workflow.tv_flow import (
     EpisodeCandidate,
+    _perform_tv_all_seasons_search,
     _present_season_download_confirmation,
     _prompt_tv_season_preferences,
     _select_consistent_episode_set,
@@ -1717,6 +1718,149 @@ async def test_tv_season_reply_offers_scope_buttons(mocker, context, make_messag
     keyboard = kwargs["reply_markup"].inline_keyboard
     assert keyboard[0][0].callback_data == "search_tv_scope_single"
     assert keyboard[1][0].callback_data == "search_tv_scope_season"
+
+
+@pytest.mark.asyncio
+async def test_tv_title_prompt_includes_all_seasons_button(mocker, context, make_message):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.scraping_service.fetch_total_seasons_from_wikipedia",
+        new=AsyncMock(return_value=3),
+    )
+    status_message = make_message(message_id=101)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.safe_send_message",
+        new=AsyncMock(return_value=status_message),
+    )
+    edit_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+
+    session = SearchSession(media_type="tv", step=SearchStep.TITLE)
+    session.save(context.user_data)
+
+    await handle_search_workflow(Update(update_id=1, message=make_message("My Show")), context)
+
+    keyboard = edit_mock.await_args.kwargs["reply_markup"].inline_keyboard
+    callbacks = [btn.callback_data for row in keyboard for btn in row]
+    assert "search_select_season_all_3" in callbacks
+
+
+@pytest.mark.asyncio
+async def test_handle_all_seasons_button_prepares_resolution_step(
+    mocker, context, make_callback_query, make_message
+):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    prompt_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow._prompt_tv_season_preferences",
+        new=AsyncMock(),
+    )
+
+    session = SearchSession(media_type="tv", step=SearchStep.TV_SEASON)
+    session.set_title("Show")
+    session.save(context.user_data)
+    update = Update(
+        update_id=1,
+        callback_query=make_callback_query("search_select_season_all_3", make_message()),
+    )
+
+    await handle_search_buttons(update, context)
+
+    prompt_mock.assert_awaited_once()
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.step == SearchStep.RESOLUTION
+    assert session.tv_all_seasons is True
+    assert session.tv_total_seasons == 3
+    assert session.season is None
+
+
+@pytest.mark.asyncio
+async def test_all_seasons_preferences_continue_routes_to_all_seasons_search(
+    mocker, context, make_callback_query, make_message
+):
+    perform_all_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow._perform_tv_all_seasons_search",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="tv", step=SearchStep.RESOLUTION)
+    session.set_title("Show")
+    session.tv_all_seasons = True
+    session.tv_total_seasons = 3
+    session.resolution = "1080p"
+    session.tv_codec = "x265"
+    session.save(context.user_data)
+
+    update = Update(
+        update_id=1,
+        callback_query=make_callback_query("search_tv_season_preferences_continue", make_message()),
+    )
+
+    await handle_search_buttons(update, context)
+
+    perform_all_mock.assert_awaited_once()
+    assert perform_all_mock.await_args.args[2] == "Show"
+    assert perform_all_mock.await_args.args[3] == 3
+
+
+@pytest.mark.asyncio
+async def test_perform_tv_all_seasons_search_aggregates_torrents(mocker, context, make_message):
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.scraping_service.fetch_season_episode_count_from_wikipedia",
+        new=AsyncMock(side_effect=[2, 2, None]),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow.plex_service.get_existing_episodes_for_season",
+        new=AsyncMock(side_effect=[set(), {1}]),
+    )
+    perform_season_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow._perform_tv_season_search",
+        new=AsyncMock(
+            side_effect=[
+                [
+                    {"link": "s1e1", "parsed_info": {"season": 1, "episode": 1}},
+                    {"link": "s1e2", "parsed_info": {"season": 1, "episode": 2}},
+                ],
+                [
+                    {"link": "s2e2", "parsed_info": {"season": 2, "episode": 2}},
+                ],
+            ]
+        ),
+    )
+    present_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.tv_flow._present_all_seasons_download_confirmation",
+        new=AsyncMock(),
+    )
+
+    session = SearchSession(media_type="tv", step=SearchStep.RESOLUTION)
+    session.set_title("Show")
+    session.tv_all_seasons = True
+    session.tv_total_seasons = 3
+    session.resolution = "1080p"
+    session.tv_codec = "x265"
+    session.save(context.user_data)
+
+    await _perform_tv_all_seasons_search(make_message(), context, "Show", 3, session=session)
+
+    assert perform_season_mock.await_count == 2
+    for call in perform_season_mock.await_args_list:
+        assert call.kwargs["force_individual_episodes"] is True
+        assert call.kwargs["defer_confirmation"] is True
+    present_mock.assert_awaited_once()
+    kwargs = present_mock.await_args.kwargs
+    assert len(kwargs["found_torrents"]) == 3
+    assert kwargs["seasons_with_results"] == [1, 2]
+    assert kwargs["skipped_unverified_seasons"] == [3]
+
+    session = SearchSession.from_user_data(context.user_data)
+    assert session.tv_all_seasons is False
+    assert session.tv_total_seasons is None
 
 
 @pytest.mark.asyncio

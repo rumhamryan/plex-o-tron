@@ -115,6 +115,36 @@ class SeasonConsistencySummary:
         return f"{uploader} via {source}"
 
 
+def _build_tv_season_selection_keyboard(
+    *,
+    seasons_count: int,
+    columns: int = 4,
+) -> InlineKeyboardMarkup:
+    rows = number_grid_keyboard(
+        list(range(1, seasons_count + 1)),
+        "search_select_season_",
+        columns=columns,
+        include_cancel=False,
+    ).inline_keyboard
+    keyboard_rows = [list(row) for row in rows]
+    if seasons_count > 1:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    "All Seasons", callback_data=f"search_select_season_all_{seasons_count}"
+                )
+            ]
+        )
+    keyboard_rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_operation")])
+    return InlineKeyboardMarkup(keyboard_rows)
+
+
+def _format_season_tokens(season_numbers: list[int]) -> str:
+    if not season_numbers:
+        return "none"
+    return ", ".join(f"S{season:02d}" for season in sorted(set(season_numbers)))
+
+
 async def _handle_tv_title_reply(
     chat_id: int, query: str, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ):
@@ -139,6 +169,8 @@ async def _handle_tv_title_reply(
     session.set_title(sanitized_title)
     session.resolution = None
     session.tv_codec = None
+    session.tv_all_seasons = False
+    session.tv_total_seasons = None
 
     if (
         parsed_query.has_media_preferences
@@ -211,6 +243,8 @@ async def _prompt_for_tv_season_selection(
     MAX_SEASON_BUTTONS = 40
 
     if isinstance(seasons_count, int) and seasons_count > 0 and seasons_count <= MAX_SEASON_BUTTONS:
+        session.tv_all_seasons = False
+        session.tv_total_seasons = int(seasons_count)
         session.prompt_message_id = status_message.message_id
         _save_session(context, session)
         await safe_edit_message(
@@ -219,9 +253,8 @@ async def _prompt_for_tv_season_selection(
                 f"Found *{escape_markdown(str(seasons_count), version=2)}* season\\(s\\) for "
                 f"*{escape_markdown(title, version=2)}*\\. Please select a season:"
             ),
-            reply_markup=number_grid_keyboard(
-                list(range(1, seasons_count + 1)),
-                "search_select_season_",
+            reply_markup=_build_tv_season_selection_keyboard(
+                seasons_count=seasons_count,
                 columns=SEASON_COLUMNS,
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -239,6 +272,8 @@ async def _prompt_for_tv_season_selection(
             "Please send the season number\\."
         )
 
+    session.tv_all_seasons = False
+    session.tv_total_seasons = int(seasons_count) if isinstance(seasons_count, int) else None
     session.prompt_message_id = status_message.message_id
     _save_session(context, session)
     await safe_edit_message(
@@ -274,6 +309,7 @@ async def _fast_track_tv_scope_selection(
     """Skips the season prompt and jumps straight to TV scope selection."""
     session.season = int(season)
     session.tv_scope = None
+    session.tv_all_seasons = False
     session.advance(SearchStep.TV_SCOPE)
     _save_session(context, session)
 
@@ -348,6 +384,7 @@ async def _fast_track_tv_episode_resolution(
     final_title = f"{title} S{int(season):02d}E{int(episode):02d}"
     session.media_type = "tv"
     session.tv_scope = "single"
+    session.tv_all_seasons = False
     session.season = int(season)
     session.episode = int(episode)
     session.set_final_title(final_title)
@@ -410,6 +447,7 @@ async def _handle_tv_season_reply(
         return
 
     session.season = int(query)
+    session.tv_all_seasons = False
     session.advance(SearchStep.TV_SCOPE)
     _save_session(context, session)
 
@@ -451,6 +489,7 @@ async def _handle_tv_episode_reply(
 
     session.media_type = "tv"
     session.tv_scope = "single"
+    session.tv_all_seasons = False
     session.episode = episode
     session.set_final_title(full_search_term)
     session.advance(SearchStep.RESOLUTION)
@@ -485,6 +524,8 @@ async def _handle_tv_change_details(
     session.tv_scope = None
     session.resolution = None
     session.tv_codec = None
+    session.tv_all_seasons = False
+    session.tv_total_seasons = None
     session.prompt_message_id = None
     session.allow_detail_change = False
     session.advance(SearchStep.TV_SEASON)
@@ -523,6 +564,7 @@ async def _handle_tv_scope_selection(
 
     if action == "search_tv_scope_single":
         session.tv_scope = "single"
+        session.tv_all_seasons = False
         session.advance(SearchStep.TV_EPISODE)
         _save_session(context, session)
         EPISODE_COLUMNS = 4
@@ -568,6 +610,7 @@ async def _handle_tv_scope_selection(
         return
 
     if action == "search_tv_scope_season":
+        session.tv_all_seasons = False
         logger.info(
             f"[WIKI] Verifying season details on Wikipedia for '{title}' S{int(season):02d}."
         )
@@ -645,13 +688,67 @@ async def _handle_tv_scope_selection(
         await _prompt_tv_season_preferences(query.message, context, session)
 
 
+async def _handle_tv_all_seasons_selection(
+    query: CallbackQuery,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: SearchSession,
+    *,
+    total_seasons: int,
+) -> None:
+    """Prepares a single "all seasons" season-pack workflow using shared preferences."""
+    if not isinstance(query.message, Message):
+        return
+
+    title = session.effective_title or session.title
+    if not title or total_seasons < 2:
+        await _end_search_workflow(
+            context,
+            query.message.chat_id,
+            CONTEXT_LOST_MESSAGE,
+            source_message=query.message,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    session.media_type = "tv"
+    session.tv_scope = "season"
+    session.season = None
+    session.season_episode_count = None
+    session.existing_episodes = []
+    session.missing_episode_numbers = None
+    session.tv_all_seasons = True
+    session.tv_total_seasons = int(total_seasons)
+    session.resolution = None
+    session.tv_codec = None
+    session.allow_detail_change = False
+    session.advance(SearchStep.RESOLUTION)
+    _save_session(context, session)
+
+    await safe_edit_message(
+        query.message,
+        text=(
+            f"Selected *all {escape_markdown(str(total_seasons), version=2)}* seasons for "
+            f"*{escape_markdown(str(title), version=2)}*\\.\n"
+            "Choose the resolution and codec to queue all missing episodes\\."
+        ),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    await _prompt_tv_season_preferences(query.message, context, session)
+
+
 async def _prompt_tv_season_preferences(
     message: Message, context: ContextTypes.DEFAULT_TYPE, session: SearchSession
 ) -> None:
-    text = (
-        "Choose the resolution and codec for this season search\\.\n"
-        "These preferences guide selection toward consistent releases\\."
-    )
+    if session.tv_all_seasons:
+        text = (
+            "Choose the resolution and codec for the all\\-seasons search\\.\n"
+            "These preferences apply to every season and prioritize consistent releases\\."
+        )
+    else:
+        text = (
+            "Choose the resolution and codec for this season search\\.\n"
+            "These preferences guide selection toward consistent releases\\."
+        )
     await _render_search_preferences_prompt(
         message,
         text=text,
@@ -725,6 +822,26 @@ async def _handle_tv_season_preferences_continue(
         return
 
     title = session.require_title()
+    if session.tv_all_seasons:
+        total_seasons = int(session.tv_total_seasons or 0)
+        if total_seasons < 2:
+            await _end_search_workflow(
+                context,
+                query.message.chat_id,
+                CONTEXT_LOST_MESSAGE,
+                source_message=query.message,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+        await _perform_tv_all_seasons_search(
+            query.message,
+            context,
+            str(title),
+            total_seasons,
+            session=session,
+        )
+        return
+
     season = session.require_season()
 
     await _perform_tv_season_search(
@@ -814,6 +931,153 @@ async def _present_season_download_confirmation(
     )
     store = _get_user_data_store(context)
     store["pending_season_download"] = found_torrents
+
+
+async def _present_all_seasons_download_confirmation(
+    message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    found_torrents: list[dict[str, Any]],
+    total_seasons: int,
+    seasons_with_results: list[int],
+    skipped_owned_seasons: list[int],
+    skipped_unverified_seasons: list[int],
+) -> None:
+    """Summarizes all-seasons search results and asks for a single queue confirmation."""
+    if not found_torrents:
+        await _end_search_workflow(
+            context,
+            message.chat_id,
+            "❌ No queueable episodes were found across all seasons\\.",
+            source_message=message,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    summary_lines = [
+        (
+            f"Found torrents for *{escape_markdown(str(len(found_torrents)), version=2)}* "
+            f"episode\\(s\\) across *{escape_markdown(str(len(set(seasons_with_results))), version=2)}* "
+            f"of *{escape_markdown(str(total_seasons), version=2)}* season\\(s\\)\\."
+        )
+    ]
+    if seasons_with_results:
+        summary_lines.append(
+            "Queued seasons: "
+            + escape_markdown(_format_season_tokens(seasons_with_results), version=2)
+        )
+    if skipped_owned_seasons:
+        summary_lines.append(
+            "Already owned: "
+            + escape_markdown(_format_season_tokens(skipped_owned_seasons), version=2)
+        )
+    if skipped_unverified_seasons:
+        summary_lines.append(
+            "Unverified metadata: "
+            + escape_markdown(_format_season_tokens(skipped_unverified_seasons), version=2)
+        )
+    summary_lines.append("")
+    summary_lines.append("Queue all found episodes now?")
+
+    await safe_edit_message(
+        message,
+        text="\n".join(summary_lines),
+        reply_markup=confirm_cancel_keyboard("✅ Confirm", "confirm_season_download"),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    store = _get_user_data_store(context)
+    store["pending_season_download"] = found_torrents
+
+
+async def _perform_tv_all_seasons_search(
+    message: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    title: str,
+    total_seasons: int,
+    *,
+    session: SearchSession,
+) -> None:
+    """Runs per-season searches and aggregates one queue payload across all seasons."""
+    if total_seasons < 2:
+        await _end_search_workflow(
+            context,
+            message.chat_id,
+            CONTEXT_LOST_MESSAGE,
+            source_message=message,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    all_torrents: list[dict[str, Any]] = []
+    seasons_with_results: list[int] = []
+    skipped_owned_seasons: list[int] = []
+    skipped_unverified_seasons: list[int] = []
+
+    for season in range(1, total_seasons + 1):
+        logger.info("[SEARCH] All-seasons mode evaluating %s S%02d.", title, season)
+        await safe_edit_message(
+            message,
+            text=(
+                f"🔎 Preparing all\\-seasons queue for *{escape_markdown(title, version=2)}*\\. "
+                f"Now checking Season *{escape_markdown(str(season), version=2)}* "
+                f"\\({escape_markdown(str(season), version=2)}/{escape_markdown(str(total_seasons), version=2)}\\)\\."
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+        try:
+            episode_count = await scraping_service.fetch_season_episode_count_from_wikipedia(
+                title, season
+            )
+        except Exception:
+            episode_count = None
+
+        if not isinstance(episode_count, int) or episode_count <= 0:
+            skipped_unverified_seasons.append(season)
+            continue
+
+        existing_eps = await plex_service.get_existing_episodes_for_season(
+            context, str(title), int(season)
+        )
+        missing_list = [i for i in range(1, int(episode_count) + 1) if i not in existing_eps]
+        if not missing_list:
+            skipped_owned_seasons.append(season)
+            continue
+
+        session.season = int(season)
+        session.season_episode_count = int(episode_count)
+        session.existing_episodes = sorted(existing_eps)
+        session.missing_episode_numbers = missing_list
+        session.tv_scope = "season"
+        session.media_type = "tv"
+        _save_session(context, session)
+
+        season_torrents = await _perform_tv_season_search(
+            message,
+            context,
+            title,
+            season,
+            force_individual_episodes=True,
+            defer_confirmation=True,
+            session=session,
+        )
+        if season_torrents:
+            seasons_with_results.append(season)
+            all_torrents.extend(season_torrents)
+
+    session.tv_all_seasons = False
+    session.tv_total_seasons = None
+    _save_session(context, session)
+
+    await _present_all_seasons_download_confirmation(
+        message,
+        context,
+        found_torrents=all_torrents,
+        total_seasons=total_seasons,
+        seasons_with_results=seasons_with_results,
+        skipped_owned_seasons=skipped_owned_seasons,
+        skipped_unverified_seasons=skipped_unverified_seasons,
+    )
 
 
 def _target_size_for_resolution(resolution: str | None) -> float:
@@ -1093,8 +1357,9 @@ async def _perform_tv_season_search(
     season: int,
     *,
     force_individual_episodes: bool = False,
+    defer_confirmation: bool = False,
     session: SearchSession | None = None,
-) -> None:
+) -> list[dict[str, Any]]:
     """
     Searches for a TV season pack or individual episodes, respecting session resolution/codec.
     On success, presents a confirmation summary to queue the season download.
@@ -1163,6 +1428,26 @@ async def _perform_tv_season_search(
         )
 
     if season_pack_torrent and not must_individual:
+        if defer_confirmation:
+            parsed_pack = parse_torrent_name(str(season_pack_torrent.get("title") or ""))
+            parsed_pack["title"] = str(title)
+            parsed_pack["season"] = int(season)
+            parsed_pack["type"] = "tv"
+            parsed_pack["is_season_pack"] = True
+            return [
+                {
+                    "link": str(season_pack_torrent.get("page_url") or ""),
+                    "parsed_info": parsed_pack,
+                    "info_url": season_pack_torrent.get("info_url"),
+                    "source": season_pack_torrent.get("source"),
+                    "uploader": season_pack_torrent.get("uploader"),
+                    "size_gib": season_pack_torrent.get(
+                        "size_gib", season_pack_torrent.get("size_gb")
+                    ),
+                    "resolution": _infer_resolution_from_title(season_pack_torrent.get("title")),
+                }
+            ]
+
         await _present_search_results(
             message,
             context,
@@ -1171,13 +1456,15 @@ async def _perform_tv_season_search(
             session=session,
             initial_resolution=target_res,
         )
-        return
+        return []
 
     episode_count = int(session.season_episode_count or 0)
     raw_targets = session.missing_episode_numbers
     if isinstance(raw_targets, list) and raw_targets:
         targets = list(raw_targets)
     elif isinstance(raw_targets, list):
+        if defer_confirmation:
+            return []
         await _end_search_workflow(
             context,
             message.chat_id,
@@ -1188,7 +1475,7 @@ async def _perform_tv_season_search(
             source_message=message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return []
     else:
         targets = list(range(1, episode_count + 1))
 
@@ -1225,6 +1512,8 @@ async def _perform_tv_season_search(
             title,
             season,
         )
+        if defer_confirmation:
+            return []
         await _end_search_workflow(
             context,
             message.chat_id,
@@ -1232,7 +1521,7 @@ async def _perform_tv_season_search(
             source_message=message,
             parse_mode=ParseMode.MARKDOWN_V2,
         )
-        return
+        return []
 
     targets = filtered_targets
 
@@ -1375,6 +1664,9 @@ async def _perform_tv_season_search(
             consistency_summary.release_label(),
         )
 
+    if defer_confirmation:
+        return torrents_to_queue
+
     await _present_season_download_confirmation(
         message,
         context,
@@ -1382,6 +1674,7 @@ async def _perform_tv_season_search(
         session=session,
         consistency_summary=consistency_summary,
     )
+    return torrents_to_queue
 
 
 async def handle_reject_season_pack(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

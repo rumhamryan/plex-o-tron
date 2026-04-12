@@ -52,6 +52,7 @@ from .state import (
 )
 from .tv_flow import (
     _build_tv_scope_keyboard,
+    _handle_tv_all_seasons_selection,
     _handle_tv_change_details,
     _handle_tv_episode_reply,
     _handle_tv_season_preferences_continue,
@@ -217,7 +218,35 @@ async def _handle_season_selection_button(
 
     try:
         data = _get_callback_data(query)
-        season_str = data.split("_")[3]
+        parts = data.split("_")
+        season_str = parts[3]
+    except Exception:
+        await safe_edit_message(
+            query.message,
+            text="❌ An error occurred with your selection\\. Please try again\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    if season_str == "all":
+        try:
+            total_seasons = int(parts[4])
+        except Exception:
+            await safe_edit_message(
+                query.message,
+                text="❌ An error occurred with your selection\\. Please try again\\.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+        await _handle_tv_all_seasons_selection(
+            query,
+            context,
+            session,
+            total_seasons=total_seasons,
+        )
+        return
+
+    try:
         season_num = int(season_str)
     except Exception:
         await safe_edit_message(
@@ -228,6 +257,7 @@ async def _handle_season_selection_button(
         return
 
     session.season = season_num
+    session.tv_all_seasons = False
     session.advance(SearchStep.TV_SCOPE)
     _save_session(context, session)
 

@@ -56,6 +56,8 @@ class SearchSession:
     resolution: str | None = None
     tv_codec: str | None = None
     tv_scope: Literal["single", "season"] | None = None
+    tv_all_seasons: bool = False
+    tv_total_seasons: int | None = None
     prompt_message_id: int | None = None
     season_episode_count: int | None = None
     existing_episodes: list[int] = field(default_factory=list)
@@ -88,6 +90,7 @@ class SearchSession:
 
         raw_missing = payload.get("missing_episode_numbers")
         missing_episode_numbers = list(raw_missing) if isinstance(raw_missing, list) else None
+        raw_tv_total_seasons = payload.get("tv_total_seasons")
 
         session = cls(
             step=step,
@@ -114,6 +117,10 @@ class SearchSession:
             resolution=payload.get("resolution"),
             tv_codec=payload.get("tv_codec"),
             tv_scope=payload.get("tv_scope"),
+            tv_all_seasons=bool(payload.get("tv_all_seasons", False)),
+            tv_total_seasons=(
+                int(raw_tv_total_seasons) if isinstance(raw_tv_total_seasons, int) else None
+            ),
             prompt_message_id=payload.get("prompt_message_id"),
             season_episode_count=payload.get("season_episode_count"),
             existing_episodes=list(payload.get("existing_episodes") or []),
@@ -229,6 +236,8 @@ class SearchSession:
             "resolution": self.resolution,
             "tv_codec": self.tv_codec,
             "tv_scope": self.tv_scope,
+            "tv_all_seasons": self.tv_all_seasons,
+            "tv_total_seasons": self.tv_total_seasons,
             "prompt_message_id": self.prompt_message_id,
             "season_episode_count": self.season_episode_count,
             "existing_episodes": list(self.existing_episodes),
