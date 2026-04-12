@@ -20,10 +20,50 @@ from ..workflows.navigation import (
     return_to_home,
     set_active_prompt_message_id,
 )
-from ..workflows.search_session import SearchSession
+from ..workflows.search_session import SearchSession, SearchStep
 from ..workflows.search_workflow import handle_search_workflow
-from ..workflows.tracking_workflow.handlers import handle_tracking_workflow_message
+from ..workflows.tracking_workflow.handlers import (
+    TRACKING_AWAIT_COLLECTION_NAME,
+    TRACKING_AWAIT_MOVIE_TITLE,
+    TRACKING_AWAIT_TV_TITLE,
+    handle_tracking_workflow_message,
+)
 from ..workflows.tracking_workflow.state import TRACKING_NEXT_ACTION_KEY
+
+_MENU_RECOVERY_TOKENS = {
+    "menu",
+    "/menu",
+    "home",
+    "/home",
+    "start",
+    "/start",
+    "cancel",
+    "/cancel",
+    "exit",
+    "/exit",
+}
+
+_TEXT_DRIVEN_SEARCH_STEPS = {
+    SearchStep.TITLE,
+    SearchStep.YEAR,
+    SearchStep.TV_SEASON,
+    SearchStep.TV_EPISODE,
+}
+
+_TEXT_DRIVEN_DELETE_ACTIONS = {
+    "delete_movie_collection_search",
+    "delete_movie_single_search",
+    "delete_tv_show_search",
+    "delete_tv_season_search",
+    "delete_tv_episode_season_prompt",
+    "delete_tv_episode_episode_prompt",
+}
+
+_TEXT_DRIVEN_TRACK_ACTIONS = {
+    TRACKING_AWAIT_MOVIE_TITLE,
+    TRACKING_AWAIT_TV_TITLE,
+    TRACKING_AWAIT_COLLECTION_NAME,
+}
 
 
 def _is_private_chat(update: Update) -> bool:
@@ -148,12 +188,17 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     user_data = get_user_data_store(context)
+    normalized_text = message.text.strip().casefold()
+    if normalized_text in _MENU_RECOVERY_TOKENS:
+        await return_to_home(context, chat.id, source_message=message, replace_home_menu=True)
+        return
+
     navigation_state = get_chat_navigation_state(context, chat.id)
     active_state = navigation_state.get("state")
 
     if active_state == "search":
         session = SearchSession.from_user_data(user_data)
-        if session.is_active:
+        if session.is_active and session.step in _TEXT_DRIVEN_SEARCH_STEPS:
             await handle_search_workflow(update, context)
             return
         logger.info("Clearing stale search workflow state for user %s.", user.id)
@@ -161,7 +206,11 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if active_state == "delete":
-        if user_data.get("next_action"):
+        delete_next_action = user_data.get("next_action")
+        if (
+            isinstance(delete_next_action, str)
+            and delete_next_action in _TEXT_DRIVEN_DELETE_ACTIONS
+        ):
             await handle_delete_workflow(update, context)
             return
         logger.info("Clearing stale delete workflow state for user %s.", user.id)
@@ -177,7 +226,11 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if active_state == "track":
-        if isinstance(user_data.get(TRACKING_NEXT_ACTION_KEY), str):
+        tracking_next_action = user_data.get(TRACKING_NEXT_ACTION_KEY)
+        if (
+            isinstance(tracking_next_action, str)
+            and tracking_next_action in _TEXT_DRIVEN_TRACK_ACTIONS
+        ):
             await handle_tracking_workflow_message(update, context)
             return
         logger.info("Clearing stale tracking workflow state for user %s.", user.id)

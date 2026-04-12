@@ -462,12 +462,14 @@ async def _queue_candidate_for_tracking_item(
         )
 
     try:
-        await queue_download_source(
+        started_download, _ = await queue_download_source(
             application,
             chat_id=chat_id,
             source_dict=source_dict,
             message_id=message_id,
         )
+        if started_download:
+            await _refresh_home_menu_after_tracking_queue_start(application, chat_id=chat_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[TRACKING] Failed to queue item %s: %s", item_id, exc)
         adapter.on_queue_failure(
@@ -486,6 +488,37 @@ async def _queue_candidate_for_tracking_item(
         selected_candidate=candidate,
         search_request=effective_search_request,
     )
+
+
+async def _refresh_home_menu_after_tracking_queue_start(
+    application: Application,
+    *,
+    chat_id: int,
+) -> None:
+    """
+    Best-effort home-menu refresh after a scheduler-driven download starts.
+
+    This mirrors the manual "confirm download" UX by ensuring an up-to-date
+    launcher message remains available even when downloads start in background
+    scheduler ticks.
+    """
+    from telegram_bot.ui.home_menu import delete_home_menu_message, show_home_menu
+
+    menu_context = SimpleNamespace(
+        application=application,
+        bot=application.bot,
+        bot_data=application.bot_data,
+        user_data={},
+    )
+    try:
+        await delete_home_menu_message(menu_context, chat_id)
+        await show_home_menu(menu_context, chat_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[TRACKING] Failed to refresh home menu after queue start for chat %s: %s",
+            chat_id,
+            exc,
+        )
 
 
 async def _attempt_release_search(

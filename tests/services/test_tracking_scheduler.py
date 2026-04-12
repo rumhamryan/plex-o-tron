@@ -420,6 +420,92 @@ async def test_tracking_scheduler_movie_selects_best_top_tier_candidate(mocker):
 
 
 @pytest.mark.asyncio
+async def test_tracking_scheduler_refreshes_home_menu_when_download_starts_immediately(mocker):
+    app = _build_application(mocker)
+    item_id = _create_movie_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        availability_date=date(2026, 6, 1),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "searching"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(
+            return_value=[
+                {
+                    "title": "Future Release 2026 2160p WEB",
+                    "page_url": "magnet:?xt=urn:btih:2160",
+                    "info_url": "https://example.invalid/2160",
+                    "score": 99,
+                }
+            ]
+        ),
+    )
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(True, 1)),
+    )
+    refresh_home_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler._refresh_home_menu_after_tracking_queue_start",
+        AsyncMock(),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    refresh_home_mock.assert_awaited_once_with(app, chat_id=456)
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_does_not_refresh_home_menu_when_item_is_only_queued(mocker):
+    app = _build_application(mocker)
+    item_id = _create_movie_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        availability_date=date(2026, 6, 1),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "searching"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.orchestrate_searches",
+        AsyncMock(
+            return_value=[
+                {
+                    "title": "Future Release 2026 2160p WEB",
+                    "page_url": "magnet:?xt=urn:btih:2160",
+                    "info_url": "https://example.invalid/2160",
+                    "score": 99,
+                }
+            ]
+        ),
+    )
+    mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(False, 2)),
+    )
+    refresh_home_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler._refresh_home_menu_after_tracking_queue_start",
+        AsyncMock(),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    refresh_home_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_tracking_scheduler_movie_collection_queue_sets_batch_metadata(mocker):
     app = _build_application(mocker)
     item_id = _create_movie_item(
