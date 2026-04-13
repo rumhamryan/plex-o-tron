@@ -1,5 +1,6 @@
 # telegram_bot/workflows/search_workflow/results.py
 
+import math
 import re
 import time
 from typing import Any
@@ -75,6 +76,13 @@ def _log_aggregated_results(query_str: str, results: list[dict[str, Any]]) -> No
         "seeders",
         "leechers",
         "year",
+        "matched_video_formats",
+        "matched_audio_formats",
+        "matched_audio_channels",
+        "has_video_match",
+        "has_audio_match",
+        "is_gold_av",
+        "is_silver_av",
     ]
 
     for idx, result in enumerate(results, start=1):
@@ -188,6 +196,25 @@ def _result_size_gib(result: dict[str, Any]) -> float | None:
     return _safe_float(result.get("size_gib", result.get("size_gb")))
 
 
+def _select_result_icon(result: dict[str, Any]) -> str:
+    if bool(result.get("is_gold_av")):
+        return "🥇"
+    if bool(result.get("is_silver_av")):
+        return "🥈"
+    if bool(result.get("has_video_match")):
+        return "🎥"
+    if bool(result.get("has_audio_match")):
+        return "🔊"
+    return ""
+
+
+def _format_size_for_button(size_gib: float | None) -> str:
+    if size_gib is None:
+        return "? GiB"
+    rounded = int(math.floor(size_gib + 0.5))
+    return f"{rounded} GiB"
+
+
 def _determine_size_cap(
     session: SearchSession, resolution_filter: str | None = None
 ) -> float | None:
@@ -231,13 +258,17 @@ def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
 
 
 def _format_result_button_label(result: dict[str, Any]) -> str:
+    icon = _select_result_icon(result)
     codec = result.get("codec") or "N/A"
     seeders = _safe_int(result.get("seeders"))
     size_value = _result_size_gib(result)
-    size_text = f"{size_value:.2f} GiB" if size_value is not None else "? GiB"
+    size_text = _format_size_for_button(size_value)
     source_site = result.get("source") or "source"
     source_name = source_site.split(".")[0]
-    return f"{codec} | S:{seeders} | {size_text} | [{source_name}]"
+    label = f"{codec} | S:{seeders} | {size_text} | [{source_name}]"
+    if icon:
+        return f"{icon} {label}"
+    return label
 
 
 def _build_results_keyboard(
@@ -366,6 +397,16 @@ async def _render_results_view(
             f"{filters_text}\n"
             "Choose a torrent to continue:"
         )
+
+    if total_filtered > 0:
+        start = session.results_page * RESULTS_PAGE_SIZE
+        end = min(start + RESULTS_PAGE_SIZE, total_filtered)
+        visible_results = filtered_results[start:end]
+        if any(_select_result_icon(result) for result in visible_results):
+            results_text += (
+                "\n\nLegend: 🥇 Dolby Vision \\+ Atmos \\| "
+                "🥈 other audio\\+video match \\| 🎥 video match \\| 🔊 audio match"
+            )
 
     keyboard = _build_results_keyboard(session, filtered_results, total_pages)
     await safe_edit_message(

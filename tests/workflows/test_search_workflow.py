@@ -25,7 +25,9 @@ from telegram_bot.workflows.search_workflow.results import (
     RESULTS_SESSION_TTL_SECONDS,
     _build_results_keyboard,
     _compute_filtered_results,
+    _format_result_button_label,
     _present_search_results,
+    _render_results_view,
 )
 from telegram_bot.workflows.search_workflow.state import _clear_search_context
 from telegram_bot.workflows.search_workflow.tv_flow import (
@@ -1647,6 +1649,140 @@ def test_compute_filtered_results_filters_by_codec():
 
     filtered = _compute_filtered_results(session)
     assert [r["title"] for r in filtered] == ["Option B"]
+
+
+@pytest.mark.parametrize(
+    "result, expected_prefix",
+    [
+        (
+            {
+                "codec": "x265",
+                "seeders": 100,
+                "size_gib": 4.6,
+                "source": "tpb",
+                "is_gold_av": True,
+                "is_silver_av": False,
+                "has_video_match": True,
+                "has_audio_match": True,
+            },
+            "🥇 ",
+        ),
+        (
+            {
+                "codec": "x265",
+                "seeders": 90,
+                "size_gib": 4.6,
+                "source": "tpb",
+                "is_gold_av": False,
+                "is_silver_av": True,
+                "has_video_match": True,
+                "has_audio_match": True,
+            },
+            "🥈 ",
+        ),
+        (
+            {
+                "codec": "x265",
+                "seeders": 80,
+                "size_gib": 4.6,
+                "source": "tpb",
+                "is_gold_av": False,
+                "is_silver_av": False,
+                "has_video_match": True,
+                "has_audio_match": False,
+            },
+            "🎥 ",
+        ),
+        (
+            {
+                "codec": "x265",
+                "seeders": 70,
+                "size_gib": 4.6,
+                "source": "tpb",
+                "is_gold_av": False,
+                "is_silver_av": False,
+                "has_video_match": False,
+                "has_audio_match": True,
+            },
+            "🔊 ",
+        ),
+        (
+            {
+                "codec": "x265",
+                "seeders": 60,
+                "size_gib": 4.6,
+                "source": "tpb",
+            },
+            "",
+        ),
+    ],
+)
+def test_format_result_button_label_uses_icon_priority(result, expected_prefix):
+    label = _format_result_button_label(result)
+    assert label.startswith(expected_prefix)
+    assert " | S:" in label
+    assert "5 GiB" in label
+
+
+@pytest.mark.asyncio
+async def test_render_results_view_adds_legend_when_visible_page_has_icons(
+    mocker, context, make_message
+):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.results.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="movie")
+    session.results = [
+        {
+            "title": "Icon result",
+            "page_url": "a",
+            "codec": "x265",
+            "seeders": 20,
+            "size_gib": 4.2,
+            "source": "tpb",
+            "has_video_match": True,
+            "has_audio_match": False,
+            "is_gold_av": False,
+            "is_silver_av": False,
+        }
+    ]
+    session.results_query = "Icon result"
+    session.results_generated_at = time.time()
+
+    await _render_results_view(make_message(), context, session)
+
+    text = safe_mock.await_args.kwargs["text"]
+    assert "Legend: 🥇 Dolby Vision \\+ Atmos" in text
+    assert "🎥 video match" in text
+
+
+@pytest.mark.asyncio
+async def test_render_results_view_omits_legend_without_visible_icons(
+    mocker, context, make_message
+):
+    safe_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.results.safe_edit_message",
+        new=AsyncMock(),
+    )
+    session = SearchSession(media_type="movie")
+    session.results = [
+        {
+            "title": "Plain result",
+            "page_url": "a",
+            "codec": "x264",
+            "seeders": 12,
+            "size_gib": 2.4,
+            "source": "tpb",
+        }
+    ]
+    session.results_query = "Plain result"
+    session.results_generated_at = time.time()
+
+    await _render_results_view(make_message(), context, session)
+
+    text = safe_mock.await_args.kwargs["text"]
+    assert "Legend:" not in text
 
 
 @pytest.mark.asyncio

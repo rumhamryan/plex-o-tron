@@ -8,7 +8,12 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz
 
 from ....config import MAX_TORRENT_SIZE_GIB, logger
-from ....utils import parse_codec, parse_torrent_name, score_torrent_result
+from ....utils import (
+    compute_av_match_metadata,
+    parse_codec,
+    parse_torrent_name,
+    score_torrent_result,
+)
 from ..adapters import fetch_page
 
 _API_URL = "https://apibay.org/q.php"
@@ -219,6 +224,7 @@ def _transform_results(
         )
         if score < 6:
             continue
+        av_metadata = compute_av_match_metadata(raw_title, preferences)
 
         magnet = _build_magnet(info_hash, raw_title)
         entry_id = entry.get("id")
@@ -237,6 +243,13 @@ def _transform_results(
                 "seeders": seeders,
                 "leechers": leechers,
                 "year": candidate_year or None,
+                "matched_video_formats": av_metadata["matched_video_formats"],
+                "matched_audio_formats": av_metadata["matched_audio_formats"],
+                "matched_audio_channels": av_metadata["matched_audio_channels"],
+                "is_gold_av": av_metadata["is_gold_av"],
+                "is_silver_av": av_metadata["is_silver_av"],
+                "has_video_match": av_metadata["has_video_match"],
+                "has_audio_match": av_metadata["has_audio_match"],
             }
         )
         seen_hashes.add(info_hash)

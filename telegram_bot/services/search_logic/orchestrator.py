@@ -263,6 +263,13 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
         "seeders",
         "leechers",
         "year",
+        "matched_video_formats",
+        "matched_audio_formats",
+        "matched_audio_channels",
+        "has_video_match",
+        "has_audio_match",
+        "is_gold_av",
+        "is_silver_av",
     ]
 
     for idx, result in enumerate(results, start=1):
@@ -281,4 +288,4 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
                     val = 0
             lines.append(f"  {field}: {val}")
         lines.append("--------------------")
-    # logger.info("\n".join(lines))
+    logger.info("\n".join(lines))

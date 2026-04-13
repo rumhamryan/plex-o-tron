@@ -5,7 +5,12 @@ from typing import Any
 from telegram.ext import ContextTypes
 
 from ....config import MAX_TORRENT_SIZE_GIB, logger
-from ....utils import parse_codec, parse_torrent_name, score_torrent_result
+from ....utils import (
+    compute_av_match_metadata,
+    parse_codec,
+    parse_torrent_name,
+    score_torrent_result,
+)
 from ...generic_torrent_scraper import GenericTorrentScraper, load_site_config
 
 
@@ -62,6 +67,7 @@ async def scrape_1337x(
         )
         if score < 6:
             continue
+        av_metadata = compute_av_match_metadata(item.name, preferences)
 
         size_gib = item.size_bytes / (1024**3)
         if size_gib > max_size_gib:
@@ -86,6 +92,13 @@ async def scrape_1337x(
                 "seeders": item.seeders,
                 "leechers": item.leechers,
                 "year": parsed_name.get("year"),
+                "matched_video_formats": av_metadata["matched_video_formats"],
+                "matched_audio_formats": av_metadata["matched_audio_formats"],
+                "matched_audio_channels": av_metadata["matched_audio_channels"],
+                "is_gold_av": av_metadata["is_gold_av"],
+                "is_silver_av": av_metadata["is_silver_av"],
+                "has_video_match": av_metadata["has_video_match"],
+                "has_audio_match": av_metadata["has_audio_match"],
             }
         )
 

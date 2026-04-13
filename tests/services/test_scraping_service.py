@@ -1199,6 +1199,13 @@ async def test_scrape_eztv_parses_results(mocker):
     assert entry["source"] == "eztv"
     assert entry["seeders"] == 150
     assert entry["page_url"].startswith("magnet:?xt=urn:btih:EZTVHASH")
+    assert entry["matched_video_formats"] == []
+    assert entry["matched_audio_formats"] == []
+    assert entry["matched_audio_channels"] == []
+    assert entry["is_gold_av"] is False
+    assert entry["is_silver_av"] is False
+    assert entry["has_video_match"] is False
+    assert entry["has_audio_match"] is False
 
 
 @pytest.mark.asyncio
@@ -1262,6 +1269,13 @@ async def test_scrape_yts_parses_results(mocker):
     assert len(results) == 1
     assert results[0]["source"] == "yts.lt"
     assert results[0]["seeders"] == 25
+    assert results[0]["matched_video_formats"] == []
+    assert results[0]["matched_audio_formats"] == []
+    assert results[0]["matched_audio_channels"] == []
+    assert results[0]["is_gold_av"] is False
+    assert results[0]["is_silver_av"] is False
+    assert results[0]["has_video_match"] is False
+    assert results[0]["has_audio_match"] is False
 
 
 @pytest.mark.asyncio

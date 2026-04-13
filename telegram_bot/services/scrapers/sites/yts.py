@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
 from ....config import MAX_TORRENT_SIZE_GIB, logger
-from ....utils import parse_codec, score_torrent_result
+from ....utils import compute_av_match_metadata, parse_codec, score_torrent_result
 from .. import adapters
 
 
@@ -204,6 +204,7 @@ async def scrape_yts(
                                     seeders=seeders_count,
                                     leechers=leechers_count,
                                 )
+                                av_metadata = compute_av_match_metadata(title_full, preferences)
                                 out.append(
                                     {
                                         "title": title_full,
@@ -217,6 +218,19 @@ async def scrape_yts(
                                         "seeders": seeders_count,
                                         "leechers": leechers_count,
                                         "year": mv_year,
+                                        "matched_video_formats": av_metadata[
+                                            "matched_video_formats"
+                                        ],
+                                        "matched_audio_formats": av_metadata[
+                                            "matched_audio_formats"
+                                        ],
+                                        "matched_audio_channels": av_metadata[
+                                            "matched_audio_channels"
+                                        ],
+                                        "is_gold_av": av_metadata["is_gold_av"],
+                                        "is_silver_av": av_metadata["is_silver_av"],
+                                        "has_video_match": av_metadata["has_video_match"],
+                                        "has_audio_match": av_metadata["has_audio_match"],
                                     }
                                 )
                         except Exception:
@@ -470,6 +484,7 @@ async def scrape_yts(
                             seeders=seeders_count,
                             leechers=leechers_count,
                         )
+                        av_metadata = compute_av_match_metadata(full_title, preferences)
 
                         results.append(
                             {
@@ -486,6 +501,13 @@ async def scrape_yts(
                                 "year": (
                                     movie_data.get("year") if isinstance(movie_data, dict) else None
                                 ),
+                                "matched_video_formats": av_metadata["matched_video_formats"],
+                                "matched_audio_formats": av_metadata["matched_audio_formats"],
+                                "matched_audio_channels": av_metadata["matched_audio_channels"],
+                                "is_gold_av": av_metadata["is_gold_av"],
+                                "is_silver_av": av_metadata["is_silver_av"],
+                                "has_video_match": av_metadata["has_video_match"],
+                                "has_audio_match": av_metadata["has_audio_match"],
                             }
                         )
 

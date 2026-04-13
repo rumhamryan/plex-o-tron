@@ -400,6 +400,290 @@ def parse_codec(title: str) -> str | None:
     return None
 
 
+_VIDEO_FORMAT_ORDER: tuple[str, ...] = (
+    "dolby_vision",
+    "hdr10_plus",
+    "hdr10",
+    "hdr",
+    "hlg",
+    "sdr",
+)
+_AUDIO_FORMAT_ORDER: tuple[str, ...] = (
+    "atmos",
+    "truehd",
+    "ddp",
+    "dd",
+    "dts_hd_ma",
+    "dts_hd",
+    "dts",
+    "aac",
+    "flac",
+    "opus",
+)
+_AUDIO_CHANNEL_ORDER: tuple[str, ...] = ("7.1", "5.1", "2.0", "1.0")
+
+_VIDEO_DOLBY_VISION_PATTERN = re.compile(r"(?i)\b(?:dolby[\s._-]*vision|dovi)\b")
+_VIDEO_DV_TOKEN_PATTERN = re.compile(r"(?i)\bdv\b")
+_VIDEO_DV_GUARD_PATTERN = re.compile(
+    r"(?i)\b(?:hdr|hdr10\+?|hevc|x265|h[\s._-]*265|2160p|uhd|remux|bluray)\b"
+)
+_VIDEO_HDR10_PLUS_PATTERN = re.compile(
+    r"(?i)\bhdr[\s._-]*10\s*(?:\+|plus)(?=\b|[^a-z0-9]|$)|\bhdr10plus\b"
+)
+_VIDEO_HDR10_PATTERN = re.compile(r"(?i)\bhdr[\s._-]*10\b")
+_VIDEO_HDR_PATTERN = re.compile(r"(?i)\bhdr\b")
+_VIDEO_HDRIP_PATTERN = re.compile(r"(?i)\bhd[\s._-]*rip\b")
+_VIDEO_HLG_PATTERN = re.compile(r"(?i)\bhlg\b")
+_VIDEO_SDR_PATTERN = re.compile(r"(?i)\bsdr\b")
+
+_AUDIO_ATMOS_PATTERN = re.compile(r"(?i)\b(?:dolby[\s._-]*)?atmos\b")
+_AUDIO_TRUEHD_PATTERN = re.compile(r"(?i)\btrue[\s._-]*hd\b")
+_AUDIO_DDP_PATTERN = re.compile(
+    r"(?i)\b(?:ddp(?:[\s._-]*\d[\s._-]*\d)?|dd\+|e[\s._-]*ac[\s._-]*3|eac3|dolby[\s._-]*digital[\s._-]*plus)\b"
+)
+_AUDIO_DD_PATTERN = re.compile(
+    r"(?i)\b(?:dd|ac[\s._-]*3)\b|\bdolby[\s._-]*digital(?![\s._-]*plus)\b"
+)
+_AUDIO_DTS_HD_MA_PATTERN = re.compile(r"(?i)\b(?:dts[\s._-]*hd[\s._-]*ma|dtshdma)\b")
+_AUDIO_DTS_HD_PATTERN = re.compile(r"(?i)\b(?:dts[\s._-]*hd|dtshd)\b")
+_AUDIO_DTS_PATTERN = re.compile(r"(?i)\bdts\b")
+_AUDIO_AAC_PATTERN = re.compile(r"(?i)\baac\b")
+_AUDIO_FLAC_PATTERN = re.compile(r"(?i)\bflac\b")
+_AUDIO_OPUS_PATTERN = re.compile(r"(?i)\bopus\b")
+
+_CHANNEL_7_1_PATTERN = re.compile(r"(?i)(?<!\d)(?:7[\s._-]*1|7ch|8ch)\b")
+_CHANNEL_5_1_PATTERN = re.compile(r"(?i)(?<!\d)(?:5[\s._-]*1|6ch)\b")
+_CHANNEL_2_0_PATTERN = re.compile(r"(?i)(?<!\d)(?:2[\s._-]*0|2ch|stereo)\b")
+_CHANNEL_1_0_PATTERN = re.compile(r"(?i)(?<!\d)(?:1[\s._-]*0|mono)\b")
+
+_VIDEO_KEY_SYNONYMS: dict[str, str] = {
+    "dolbyvision": "dolby_vision",
+    "dovi": "dolby_vision",
+    "dv": "dolby_vision",
+    "hdr10plus": "hdr10_plus",
+    "hdr10+": "hdr10_plus",
+    "hdr10p": "hdr10_plus",
+    "hdr10": "hdr10",
+    "hdr": "hdr",
+    "hlg": "hlg",
+    "sdr": "sdr",
+}
+_AUDIO_KEY_SYNONYMS: dict[str, str] = {
+    "atmos": "atmos",
+    "dolbyatmos": "atmos",
+    "truehd": "truehd",
+    "ddp": "ddp",
+    "dd+": "ddp",
+    "ddplus": "ddp",
+    "eac3": "ddp",
+    "dolbydigitalplus": "ddp",
+    "dd": "dd",
+    "ac3": "dd",
+    "dolbydigital": "dd",
+    "dtshdma": "dts_hd_ma",
+    "dtshdmasteraudio": "dts_hd_ma",
+    "dtshd": "dts_hd",
+    "dts": "dts",
+    "aac": "aac",
+    "flac": "flac",
+    "opus": "opus",
+}
+
+
+def parse_video_formats(title: str) -> set[str]:
+    """Parses a title for known video format tags using specificity precedence."""
+    if not isinstance(title, str) or not title:
+        return set()
+
+    matches: set[str] = set()
+    if _VIDEO_DOLBY_VISION_PATTERN.search(title) or (
+        _VIDEO_DV_TOKEN_PATTERN.search(title) and _VIDEO_DV_GUARD_PATTERN.search(title)
+    ):
+        matches.add("dolby_vision")
+    elif _VIDEO_HDR10_PLUS_PATTERN.search(title):
+        matches.add("hdr10_plus")
+    elif _VIDEO_HDR10_PATTERN.search(title):
+        matches.add("hdr10")
+    elif _VIDEO_HDR_PATTERN.search(title) and not _VIDEO_HDRIP_PATTERN.search(title):
+        matches.add("hdr")
+
+    if _VIDEO_HLG_PATTERN.search(title):
+        matches.add("hlg")
+    if _VIDEO_SDR_PATTERN.search(title):
+        matches.add("sdr")
+    return matches
+
+
+def parse_audio_formats(title: str) -> set[str]:
+    """Parses a title for known audio format tags and avoids family double-counting."""
+    if not isinstance(title, str) or not title:
+        return set()
+
+    matches: set[str] = set()
+    if _AUDIO_ATMOS_PATTERN.search(title):
+        matches.add("atmos")
+    if _AUDIO_TRUEHD_PATTERN.search(title):
+        matches.add("truehd")
+
+    if _AUDIO_DDP_PATTERN.search(title):
+        matches.add("ddp")
+    elif _AUDIO_DD_PATTERN.search(title):
+        matches.add("dd")
+
+    if _AUDIO_DTS_HD_MA_PATTERN.search(title):
+        matches.add("dts_hd_ma")
+    elif _AUDIO_DTS_HD_PATTERN.search(title):
+        matches.add("dts_hd")
+    elif _AUDIO_DTS_PATTERN.search(title):
+        matches.add("dts")
+
+    if _AUDIO_AAC_PATTERN.search(title):
+        matches.add("aac")
+    if _AUDIO_FLAC_PATTERN.search(title):
+        matches.add("flac")
+    if _AUDIO_OPUS_PATTERN.search(title):
+        matches.add("opus")
+    return matches
+
+
+def parse_audio_channels(title: str) -> set[str]:
+    """Parses a title for common channel-count tags."""
+    if not isinstance(title, str) or not title:
+        return set()
+
+    matches: set[str] = set()
+    if _CHANNEL_7_1_PATTERN.search(title):
+        matches.add("7.1")
+    if _CHANNEL_5_1_PATTERN.search(title):
+        matches.add("5.1")
+    if _CHANNEL_2_0_PATTERN.search(title):
+        matches.add("2.0")
+    if _CHANNEL_1_0_PATTERN.search(title):
+        matches.add("1.0")
+    return matches
+
+
+def _canonicalize_key(raw_key: Any, synonym_map: dict[str, str]) -> str | None:
+    if not isinstance(raw_key, str):
+        return None
+    lowered = raw_key.strip().lower()
+    compact = re.sub(r"[\s._-]+", "", lowered)
+    return synonym_map.get(lowered) or synonym_map.get(compact)
+
+
+def _canonicalize_audio_channel_key(raw_key: Any) -> str | None:
+    if not isinstance(raw_key, str):
+        return None
+    compact = re.sub(r"[^0-9]", "", raw_key.strip())
+    if compact == "71":
+        return "7.1"
+    if compact == "51":
+        return "5.1"
+    if compact == "20":
+        return "2.0"
+    if compact == "10":
+        return "1.0"
+    return None
+
+
+def _coerce_preference_weight(value: Any) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return 0
+
+
+def _canonical_preference_weights(
+    raw_preferences: Any,
+    *,
+    key_normalizer,
+    order: tuple[str, ...],
+) -> dict[str, int]:
+    if not isinstance(raw_preferences, dict):
+        return {}
+    out: dict[str, int] = {}
+    allowed = set(order)
+    for raw_key, raw_value in raw_preferences.items():
+        canonical = key_normalizer(raw_key)
+        if not canonical or canonical not in allowed:
+            continue
+        score = _coerce_preference_weight(raw_value)
+        if canonical not in out or score > out[canonical]:
+            out[canonical] = score
+    return out
+
+
+def _ordered_matches(
+    parsed_tags: set[str],
+    canonical_weights: dict[str, int],
+    *,
+    order: tuple[str, ...],
+) -> list[str]:
+    return [key for key in order if key in parsed_tags and key in canonical_weights]
+
+
+def _max_weight_for_matches(matches: list[str], weights: dict[str, int]) -> int:
+    if not matches:
+        return 0
+    return max(weights.get(key, 0) for key in matches)
+
+
+def compute_av_match_metadata(title: str, preferences: dict[str, Any]) -> dict[str, Any]:
+    """Builds AV match metadata for UI and scoring consumers."""
+    parsed_video_formats = parse_video_formats(title)
+    parsed_audio_formats = parse_audio_formats(title)
+    parsed_audio_channels = parse_audio_channels(title)
+
+    video_weights = _canonical_preference_weights(
+        preferences.get("video_formats", {}),
+        key_normalizer=lambda key: _canonicalize_key(key, _VIDEO_KEY_SYNONYMS),
+        order=_VIDEO_FORMAT_ORDER,
+    )
+    audio_weights = _canonical_preference_weights(
+        preferences.get("audio_formats", {}),
+        key_normalizer=lambda key: _canonicalize_key(key, _AUDIO_KEY_SYNONYMS),
+        order=_AUDIO_FORMAT_ORDER,
+    )
+    channel_weights = _canonical_preference_weights(
+        preferences.get("audio_channels", {}),
+        key_normalizer=_canonicalize_audio_channel_key,
+        order=_AUDIO_CHANNEL_ORDER,
+    )
+
+    matched_video_formats = _ordered_matches(
+        parsed_video_formats, video_weights, order=_VIDEO_FORMAT_ORDER
+    )
+    matched_audio_formats = _ordered_matches(
+        parsed_audio_formats, audio_weights, order=_AUDIO_FORMAT_ORDER
+    )
+    matched_audio_channels = _ordered_matches(
+        parsed_audio_channels, channel_weights, order=_AUDIO_CHANNEL_ORDER
+    )
+
+    has_video_match = bool(matched_video_formats)
+    has_audio_match = bool(matched_audio_formats)
+    is_gold_av = "dolby_vision" in matched_video_formats and "atmos" in matched_audio_formats
+    is_silver_av = has_video_match and has_audio_match and not is_gold_av
+
+    return {
+        "matched_video_formats": matched_video_formats,
+        "matched_audio_formats": matched_audio_formats,
+        "matched_audio_channels": matched_audio_channels,
+        "has_video_match": has_video_match,
+        "has_audio_match": has_audio_match,
+        "is_gold_av": is_gold_av,
+        "is_silver_av": is_silver_av,
+        # Format categories use top-match scoring to avoid double counting.
+        "video_format_score": _max_weight_for_matches(matched_video_formats, video_weights),
+        "audio_format_score": _max_weight_for_matches(matched_audio_formats, audio_weights),
+        "audio_channel_score": sum(channel_weights[key] for key in matched_audio_channels),
+    }
+
+
 def calculate_torrent_health(seeders: int, leechers: int) -> float:
     """
     Calculates a health score (0-10) based on availability and contention.
@@ -453,6 +737,11 @@ def score_torrent_result(
     for trusted_uploader, value in preferences.get("uploaders", {}).items():
         if trusted_uploader.lower() == uploader.lower():
             score += value
+
+    av_metadata = compute_av_match_metadata(title, preferences)
+    score += av_metadata["video_format_score"]
+    score += av_metadata["audio_format_score"]
+    score += av_metadata["audio_channel_score"]
 
     # Add health score (max 10 points)
     health = calculate_torrent_health(seeders, leechers)
