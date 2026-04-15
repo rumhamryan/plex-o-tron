@@ -1662,6 +1662,7 @@ def test_compute_filtered_results_filters_by_codec():
                 "source": "tpb",
                 "is_gold_av": True,
                 "is_silver_av": False,
+                "is_bronze_av": False,
                 "has_video_match": True,
                 "has_audio_match": True,
             },
@@ -1675,10 +1676,25 @@ def test_compute_filtered_results_filters_by_codec():
                 "source": "tpb",
                 "is_gold_av": False,
                 "is_silver_av": True,
+                "is_bronze_av": False,
                 "has_video_match": True,
                 "has_audio_match": True,
             },
             "🥈 ",
+        ),
+        (
+            {
+                "codec": "x265",
+                "seeders": 85,
+                "size_gib": 4.6,
+                "source": "tpb",
+                "is_gold_av": False,
+                "is_silver_av": False,
+                "is_bronze_av": True,
+                "has_video_match": True,
+                "has_audio_match": True,
+            },
+            "🥉 ",
         ),
         (
             {
@@ -1688,6 +1704,7 @@ def test_compute_filtered_results_filters_by_codec():
                 "source": "tpb",
                 "is_gold_av": False,
                 "is_silver_av": False,
+                "is_bronze_av": False,
                 "has_video_match": True,
                 "has_audio_match": False,
             },
@@ -1701,6 +1718,7 @@ def test_compute_filtered_results_filters_by_codec():
                 "source": "tpb",
                 "is_gold_av": False,
                 "is_silver_av": False,
+                "is_bronze_av": False,
                 "has_video_match": False,
                 "has_audio_match": True,
             },
@@ -1745,6 +1763,7 @@ async def test_render_results_view_adds_legend_when_visible_page_has_icons(
             "has_audio_match": False,
             "is_gold_av": False,
             "is_silver_av": False,
+            "is_bronze_av": False,
         }
     ]
     session.results_query = "Icon result"
@@ -1754,6 +1773,7 @@ async def test_render_results_view_adds_legend_when_visible_page_has_icons(
 
     text = safe_mock.await_args.kwargs["text"]
     assert "Legend: 🥇 Dolby Vision \\+ Atmos" in text
+    assert "🥉 other audio\\+video match" in text
     assert "🎥 video match" in text
 
 

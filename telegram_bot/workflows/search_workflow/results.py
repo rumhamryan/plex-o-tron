@@ -83,6 +83,7 @@ def _log_aggregated_results(query_str: str, results: list[dict[str, Any]]) -> No
         "has_audio_match",
         "is_gold_av",
         "is_silver_av",
+        "is_bronze_av",
     ]
 
     for idx, result in enumerate(results, start=1):
@@ -201,6 +202,8 @@ def _select_result_icon(result: dict[str, Any]) -> str:
         return "🥇"
     if bool(result.get("is_silver_av")):
         return "🥈"
+    if bool(result.get("is_bronze_av")):
+        return "🥉"
     if bool(result.get("has_video_match")):
         return "🎥"
     if bool(result.get("has_audio_match")):
@@ -405,7 +408,8 @@ async def _render_results_view(
         if any(_select_result_icon(result) for result in visible_results):
             results_text += (
                 "\n\nLegend: 🥇 Dolby Vision \\+ Atmos \\| "
-                "🥈 other audio\\+video match \\| 🎥 video match \\| 🔊 audio match"
+                "🥈 HDR10\\+/HDR10 \\+ Atmos/TrueHD/DTS\\-HD MA \\| "
+                "🥉 other audio\\+video match \\| 🎥 video match \\| 🔊 audio match"
             )
 
     keyboard = _build_results_keyboard(session, filtered_results, total_pages)

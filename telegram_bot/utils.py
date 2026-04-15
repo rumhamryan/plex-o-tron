@@ -632,6 +632,10 @@ def _max_weight_for_matches(matches: list[str], weights: dict[str, int]) -> int:
     return max(weights.get(key, 0) for key in matches)
 
 
+def _has_any(values: set[str], candidates: set[str]) -> bool:
+    return bool(values.intersection(candidates))
+
+
 def compute_av_match_metadata(title: str, preferences: dict[str, Any]) -> dict[str, Any]:
     """Builds AV match metadata for UI and scoring consumers."""
     parsed_video_formats = parse_video_formats(title)
@@ -664,10 +668,38 @@ def compute_av_match_metadata(title: str, preferences: dict[str, Any]) -> dict[s
         parsed_audio_channels, channel_weights, order=_AUDIO_CHANNEL_ORDER
     )
 
-    has_video_match = bool(matched_video_formats)
-    has_audio_match = bool(matched_audio_formats)
-    is_gold_av = "dolby_vision" in matched_video_formats and "atmos" in matched_audio_formats
-    is_silver_av = has_video_match and has_audio_match and not is_gold_av
+    matched_video_set = set(matched_video_formats)
+    matched_audio_set = set(matched_audio_formats)
+
+    has_video_match = bool(matched_video_set)
+    has_audio_match = bool(matched_audio_set)
+    is_gold_av = "dolby_vision" in matched_video_set and "atmos" in matched_audio_set
+    silver_video_tier = {"hdr10_plus", "hdr10"}
+    silver_audio_tier = {"atmos", "truehd", "dts_hd_ma"}
+    is_silver_av = (
+        not is_gold_av
+        and _has_any(matched_video_set, silver_video_tier)
+        and _has_any(matched_audio_set, silver_audio_tier)
+    )
+    bronze_video_tier = {"dolby_vision", "hdr10_plus", "hdr10", "hdr", "hlg"}
+    bronze_audio_tier = {
+        "atmos",
+        "truehd",
+        "dts_hd_ma",
+        "ddp",
+        "dts_hd",
+        "dts",
+        "dd",
+        "aac",
+        "flac",
+        "opus",
+    }
+    is_bronze_av = (
+        not is_gold_av
+        and not is_silver_av
+        and _has_any(matched_video_set, bronze_video_tier)
+        and _has_any(matched_audio_set, bronze_audio_tier)
+    )
 
     return {
         "matched_video_formats": matched_video_formats,
@@ -677,6 +709,7 @@ def compute_av_match_metadata(title: str, preferences: dict[str, Any]) -> dict[s
         "has_audio_match": has_audio_match,
         "is_gold_av": is_gold_av,
         "is_silver_av": is_silver_av,
+        "is_bronze_av": is_bronze_av,
         # Format categories use top-match scoring to avoid double counting.
         "video_format_score": _max_weight_for_matches(matched_video_formats, video_weights),
         "audio_format_score": _max_weight_for_matches(matched_audio_formats, audio_weights),

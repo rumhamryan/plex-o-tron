@@ -270,6 +270,7 @@ def _log_scraper_results(site_label: str, results: list[dict[str, Any]]) -> None
         "has_audio_match",
         "is_gold_av",
         "is_silver_av",
+        "is_bronze_av",
     ]
 
     for idx, result in enumerate(results, start=1):

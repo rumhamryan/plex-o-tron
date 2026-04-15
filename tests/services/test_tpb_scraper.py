@@ -109,6 +109,7 @@ async def test_scrape_tpb_returns_filtered_results(mocker):
     assert top["matched_audio_channels"] == []
     assert top["is_gold_av"] is False
     assert top["is_silver_av"] is False
+    assert top["is_bronze_av"] is False
     assert top["has_video_match"] is False
     assert top["has_audio_match"] is False
 

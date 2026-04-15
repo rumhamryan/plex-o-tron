@@ -130,8 +130,31 @@ def test_compute_av_match_metadata_obeys_specificity_and_sets_flags():
     assert metadata["matched_audio_channels"] == ["7.1"]
     assert metadata["is_gold_av"] is True
     assert metadata["is_silver_av"] is False
+    assert metadata["is_bronze_av"] is False
     assert metadata["has_video_match"] is True
     assert metadata["has_audio_match"] is True
+
+
+def test_compute_av_match_metadata_sets_silver_for_explicit_tier_combo():
+    prefs = {
+        "video_formats": {"hdr10_plus": 6, "hdr10": 4, "hdr": 2},
+        "audio_formats": {"atmos": 8, "truehd": 6, "dts_hd_ma": 5, "ddp": 4},
+    }
+    metadata = compute_av_match_metadata("Movie HDR10+ TrueHD", prefs)
+    assert metadata["is_gold_av"] is False
+    assert metadata["is_silver_av"] is True
+    assert metadata["is_bronze_av"] is False
+
+
+def test_compute_av_match_metadata_sets_bronze_for_non_silver_av_combo():
+    prefs = {
+        "video_formats": {"hdr": 2},
+        "audio_formats": {"ddp": 4},
+    }
+    metadata = compute_av_match_metadata("Movie HDR DDP5.1", prefs)
+    assert metadata["is_gold_av"] is False
+    assert metadata["is_silver_av"] is False
+    assert metadata["is_bronze_av"] is True
 
 
 def test_score_torrent_result_includes_av_format_preferences():

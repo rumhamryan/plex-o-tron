@@ -1204,6 +1204,7 @@ async def test_scrape_eztv_parses_results(mocker):
     assert entry["matched_audio_channels"] == []
     assert entry["is_gold_av"] is False
     assert entry["is_silver_av"] is False
+    assert entry["is_bronze_av"] is False
     assert entry["has_video_match"] is False
     assert entry["has_audio_match"] is False
 
@@ -1274,6 +1275,7 @@ async def test_scrape_yts_parses_results(mocker):
     assert results[0]["matched_audio_channels"] == []
     assert results[0]["is_gold_av"] is False
     assert results[0]["is_silver_av"] is False
+    assert results[0]["is_bronze_av"] is False
     assert results[0]["has_video_match"] is False
     assert results[0]["has_audio_match"] is False
 

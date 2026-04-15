@@ -119,6 +119,7 @@ async def scrape_yaml_site(
                 "matched_audio_channels": av_metadata["matched_audio_channels"],
                 "is_gold_av": av_metadata["is_gold_av"],
                 "is_silver_av": av_metadata["is_silver_av"],
+                "is_bronze_av": av_metadata["is_bronze_av"],
                 "has_video_match": av_metadata["has_video_match"],
                 "has_audio_match": av_metadata["has_audio_match"],
             }
