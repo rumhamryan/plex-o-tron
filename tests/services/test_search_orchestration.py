@@ -11,6 +11,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 def _ctx_with_config(websites_movies=None, websites_tv=None, prefs_movies=None, prefs_tv=None):
     ctx = Mock()
     ctx.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "websites": {
                 "movies": websites_movies or [],
@@ -30,7 +31,7 @@ def _ctx_with_config(websites_movies=None, websites_tv=None, prefs_movies=None, 
                     "uploaders": {},
                 },
             },
-        }
+        },
     }
     return ctx
 

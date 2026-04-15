@@ -7,7 +7,7 @@ from typing import Any
 
 from telegram.ext import ContextTypes
 
-from ...config import logger
+from ...config import logger, require_scraper_max_torrent_size_gib
 from .. import scraping_service
 from ..interfaces import ScraperFunction
 
@@ -33,6 +33,16 @@ def _coerce_non_negative_int(value: Any, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed >= 0 else default
+
+
+def _coerce_positive_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
 
 
 def _create_scraper_task(
@@ -69,6 +79,19 @@ async def orchestrate_searches(
         kwargs.get("min_seeders"),
         default=_DEFAULT_MIN_RESULT_SEEDERS,
     )
+    configured_max_size_gib = require_scraper_max_torrent_size_gib(context.bot_data)
+    requested_max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb"))
+    max_size_gib = (
+        _coerce_positive_float(requested_max_size_gib)
+        if requested_max_size_gib is not None
+        else configured_max_size_gib
+    )
+    if max_size_gib is None:
+        logger.error(
+            "[SEARCH] Invalid max_size_gib override %r; value must be greater than 0.",
+            requested_max_size_gib,
+        )
+        return []
 
     config_key = "movies" if media_type == "movie" else "tv"
     sites_to_scrape = websites_config.get(config_key, [])
@@ -147,6 +170,8 @@ async def orchestrate_searches(
             # Allow callers to override the string used for fuzzy filtering.
             base_filter = kwargs.get("base_query_for_filter", query)
             extra_kwargs = {k: v for k, v in kwargs.items() if k != "base_query_for_filter"}
+            extra_kwargs.pop("max_size_gb", None)
+            extra_kwargs["max_size_gib"] = max_size_gib
             extra_kwargs["site_name"] = canonical_site_name
 
             if normalized_name and normalized_name.startswith("1337x") and scraper_func is not None:

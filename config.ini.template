@@ -24,6 +24,8 @@ region = US
 default_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Unsorted
 movies_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Movies
 tv_shows_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\TV
+# Required: search scraper result cap (GiB). This does not change direct magnet/.torrent validation.
+scraper_max_torrent_size_gib = 22
 
 [search]
 websites = {

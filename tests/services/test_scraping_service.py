@@ -996,6 +996,7 @@ async def test_scrape_1337x_parses_results(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1004,7 +1005,7 @@ async def test_scrape_1337x_parses_results(mocker):
                     "uploaders": {"Anonymous": 2},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_1337x(
@@ -1032,6 +1033,7 @@ async def test_scrape_1337x_no_results(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1040,7 +1042,7 @@ async def test_scrape_1337x_no_results(mocker):
                     "uploaders": {},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_1337x(
@@ -1096,6 +1098,7 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1104,7 +1107,7 @@ async def test_scrape_1337x_fuzzy_filter(mocker):
                     "uploaders": {"Anonymous": 2},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_1337x(
@@ -1129,7 +1132,10 @@ async def test_scrape_1337x_passes_limit(mocker):
     mocker.patch.object(scraping_service.GenericTorrentScraper, "search", mock_search)
 
     context = Mock()
-    context.bot_data = {"SEARCH_CONFIG": {"preferences": {"movies": {"codecs": {"x": 1}}}}}
+    context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
+        "SEARCH_CONFIG": {"preferences": {"movies": {"codecs": {"x": 1}}}},
+    }
 
     await scraping_service.scrape_1337x(
         "query", "movie", "https://example.com/{query}", context, limit=7
@@ -1173,6 +1179,7 @@ async def test_scrape_eztv_parses_results(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "tv": {
@@ -1181,7 +1188,7 @@ async def test_scrape_eztv_parses_results(mocker):
                     "uploaders": {},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_yaml_site(
@@ -1248,6 +1255,7 @@ async def test_scrape_yts_parses_results(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1256,7 +1264,7 @@ async def test_scrape_yts_parses_results(mocker):
                     "uploaders": {"YTS": 2},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_yts(
@@ -1332,6 +1340,7 @@ async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1340,7 +1349,7 @@ async def test_scrape_yts_retries_on_validation_failure(caplog, mocker):
                     "uploaders": {"YTS": 2},
                 }
             }
-        }
+        },
     }
 
     with caplog.at_level(logging.DEBUG):
@@ -1408,6 +1417,7 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1416,7 +1426,7 @@ async def test_scrape_yts_paginates_browse_pages_to_find_year(mocker):
                     "uploaders": {"YTS": 2},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_yts(
@@ -1480,6 +1490,7 @@ async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1488,7 +1499,7 @@ async def test_scrape_yts_api_fallback_relaxes_quality(mocker):
                     "uploaders": {"YTS": 2},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_yts(
@@ -1563,6 +1574,7 @@ async def test_scrape_yts_api_fallback_relaxes_year(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1571,7 +1583,7 @@ async def test_scrape_yts_api_fallback_relaxes_year(mocker):
                     "uploaders": {"YTS": 2},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_yts(
@@ -1637,6 +1649,7 @@ async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
 
     context = Mock()
     context.bot_data = {
+        "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -1645,7 +1658,7 @@ async def test_scrape_yts_token_gate_avoids_near_homonyms(mocker):
                     "uploaders": {"YTS": 2},
                 }
             }
-        }
+        },
     }
 
     results = await scraping_service.scrape_yts(

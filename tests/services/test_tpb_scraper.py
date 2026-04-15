@@ -3,6 +3,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
+from telegram_bot.config import SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY
 from telegram_bot.services.scrapers import scrape_tpb
 
 
@@ -49,6 +50,7 @@ class FakeAsyncClient:
 def _ctx():
     ctx = Mock()
     ctx.bot_data = {
+        SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY: 22.0,
         "SEARCH_CONFIG": {
             "preferences": {
                 "movies": {
@@ -62,7 +64,7 @@ def _ctx():
                     "uploaders": {"SceneTeam": 3},
                 },
             }
-        }
+        },
     }
     return ctx
 

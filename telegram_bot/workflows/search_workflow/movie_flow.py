@@ -12,7 +12,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
-from ...config import MAX_TORRENT_SIZE_GIB, logger
+from ...config import logger, require_scraper_max_torrent_size_gib
 from ...services import scraping_service, search_logic
 from ...ui.keyboards import single_column_keyboard
 from ...utils import (
@@ -31,6 +31,10 @@ from .results import FOUR_K_SIZE_MULTIPLIER, _present_search_results
 from .state import _end_search_workflow, _get_session, _save_session, _send_prompt
 
 MOVIE_FAST_PATH_RESOLUTIONS = {"1080p", "2160p"}
+
+
+def _get_scraper_max_size_gib(context: ContextTypes.DEFAULT_TYPE) -> float:
+    return require_scraper_max_torrent_size_gib(context.bot_data)
 
 
 async def _handle_movie_title_reply(
@@ -338,12 +342,13 @@ async def _search_movie_results(
     search_title = final_title.split("(")[0].strip() or final_title
     year_match = re.search(r"\((\d{4})\)", final_title)
     year = year_match.group(1) if year_match else None
+    scraper_max_size_gib = _get_scraper_max_size_gib(context)
 
     combined_results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     for resolution in search_resolutions:
         # Allow size override for 4K
-        max_size: float = float(MAX_TORRENT_SIZE_GIB)
+        max_size = scraper_max_size_gib
         if resolution == "2160p":
             max_size *= FOUR_K_SIZE_MULTIPLIER
 
@@ -373,7 +378,7 @@ async def _search_movie_results(
             else f"{final_title} [All]"
         ),
         session=session,
-        max_size_gib=MAX_TORRENT_SIZE_GIB,
+        max_size_gib=scraper_max_size_gib,
         initial_resolution=preferred_resolution or "all",
         initial_codec=preferred_codec,
     )

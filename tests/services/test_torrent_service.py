@@ -154,6 +154,50 @@ async def test_fetch_and_parse_magnet_details_escapes_status_message(mocker, con
     assert kwargs["text"] == "Found 2 links\\. Fetching details\\.\\.\\."
 
 
+@pytest.mark.asyncio
+async def test_fetch_and_parse_magnet_details_keeps_large_torrent(mocker, context, make_message):
+    class _Files:
+        def num_files(self):
+            return 1
+
+        def file_path(self, index):
+            return "Big.Movie.2025.2160p.mkv"
+
+        def file_size(self, index):
+            return 60 * 1024 * 1024 * 1024
+
+    class _TorrentInfo:
+        def name(self):
+            return "Big.Movie.2025.2160p.WEB-DL.x265"
+
+        def total_size(self):
+            return 60 * 1024 * 1024 * 1024
+
+        def files(self):
+            return _Files()
+
+    progress = make_message()
+    context.bot_data["TORRENT_SESSION"] = object()
+    mocker.patch(
+        "telegram_bot.services.torrent_service.input_handlers.safe_edit_message",
+        AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.services.torrent_service.input_handlers._blocking_fetch_metadata",
+        return_value=b"metadata",
+    )
+    mocker.patch(
+        "telegram_bot.services.torrent_service.input_handlers.lt.torrent_info",
+        return_value=_TorrentInfo(),
+    )
+
+    result = await _fetch_and_parse_magnet_details(["magnet1"], context, progress)
+
+    assert len(result) == 1
+    assert result[0]["name"] == "Big.Movie.2025.2160p.WEB-DL.x265"
+    assert result[0]["magnet_link"] == "magnet1"
+
+
 # -------- fetch_metadata_from_magnet ---------
 
 

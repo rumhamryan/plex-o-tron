@@ -1772,9 +1772,9 @@ async def test_render_results_view_adds_legend_when_visible_page_has_icons(
     await _render_results_view(make_message(), context, session)
 
     text = safe_mock.await_args.kwargs["text"]
-    assert "Legend: 🥇 Dolby Vision \\+ Atmos" in text
-    assert "🥉 other audio\\+video match" in text
-    assert "🎥 video match" in text
+    assert "🥇 Dolby Vision \\+ Atmos" in text
+    assert "🥉 HD Audio \\+ HD Video" in text
+    assert "🎥 Video match only" in text
 
 
 @pytest.mark.asyncio

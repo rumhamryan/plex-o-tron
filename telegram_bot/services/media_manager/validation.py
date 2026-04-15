@@ -9,12 +9,10 @@ from telegram.helpers import escape_markdown
 
 from telegram_bot.config import (
     ALLOWED_EXTENSIONS,
-    MAX_TORRENT_SIZE_BYTES,
-    MAX_TORRENT_SIZE_GIB,
     logger,
 )
 from telegram_bot.services.scraping_service import fetch_episode_title_from_wikipedia
-from telegram_bot.utils import format_bytes, parse_torrent_name, safe_edit_message
+from telegram_bot.utils import parse_torrent_name, safe_edit_message
 
 
 def _looks_like_sample(path: str) -> bool:
@@ -117,7 +115,7 @@ async def validate_and_enrich_torrent(
     progress_message: Message,  # type: ignore
 ) -> tuple[str | None, dict[str, Any] | None]:
     """
-    Validates a torrent_info object against size and file type rules,
+    Validates a torrent_info object against file type rules,
     and enriches its metadata (e.g., fetching TV episode titles).
 
     Returns:
@@ -125,26 +123,7 @@ async def validate_and_enrich_torrent(
         error_message will be a string. Otherwise, it will be None and
         parsed_info will be populated.
     """
-    # 1. Validate size
-    if ti.total_size() > MAX_TORRENT_SIZE_BYTES:
-        # Escape the dynamic parts of the string that might contain special characters.
-        torrent_size_str = escape_markdown(format_bytes(ti.total_size()), version=2)
-        size_limit_str = escape_markdown(str(MAX_TORRENT_SIZE_GIB), version=2)
-
-        # Construct the final message using the escaped parts, also escaping the final period.
-        error_msg = (
-            f"This torrent is *{torrent_size_str}*, which is larger than the "
-            f"*{size_limit_str} GiB* limit\\."
-        )
-
-        await safe_edit_message(
-            progress_message,
-            text=f"❌ *Size Limit Exceeded*\n\n{error_msg}",
-            parse_mode="MarkdownV2",
-        )
-        return "Size limit exceeded", None
-
-    # 2. Validate file types
+    # 1. Validate file types
     validation_error = validate_torrent_files(ti)
     if validation_error:
         error_msg = f"This torrent {escape_markdown(validation_error)}"
@@ -155,7 +134,7 @@ async def validate_and_enrich_torrent(
         )
         return "Unsupported file type", None
 
-    # 3. Parse name and enrich if it's a TV show
+    # 2. Parse name and enrich if it's a TV show
     parsed_info = parse_torrent_name(ti.name())
     if parsed_info.get("type") == "tv":
         # For season packs, skip per-episode Wikipedia lookups

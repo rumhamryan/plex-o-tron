@@ -15,7 +15,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
-from ...config import LOG_SCRAPER_STATS, MAX_TORRENT_SIZE_GIB, logger
+from ...config import LOG_SCRAPER_STATS, logger, require_scraper_max_torrent_size_gib
 from ...services import scraping_service, search_logic
 from ...services.media_manager import _get_path_size_bytes
 from ...services.tracking import tmdb_release_service
@@ -957,6 +957,7 @@ async def _collect_collection_torrents(
     pending_items: list[dict[str, Any]] = []
     missing: list[str] = []
     total = len(movies)
+    scraper_max_size_gib = require_scraper_max_torrent_size_gib(context.bot_data)
 
     for idx, movie in enumerate(movies, 1):
         label = _format_collection_movie_label(movie)
@@ -970,7 +971,7 @@ async def _collect_collection_torrents(
         year_kw = str(year_value) if isinstance(year_value, int) else None
 
         # Allow size override for 4K
-        max_size: float = float(MAX_TORRENT_SIZE_GIB)
+        max_size = scraper_max_size_gib
         if session.collection_resolution == "2160p":
             max_size *= FOUR_K_SIZE_MULTIPLIER
 

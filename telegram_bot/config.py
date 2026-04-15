@@ -17,6 +17,7 @@ DELETION_ENABLED = True
 PERSISTENCE_FILE = "persistence.json"
 TRACKING_STATE_FILE = "tracking_state.json"
 LOG_SCRAPER_STATS = True
+SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY = "SCRAPER_MAX_TORRENT_SIZE_GIB"
 
 # Setup basic logging
 logging.basicConfig(
@@ -36,6 +37,7 @@ def get_configuration() -> (
         dict[str, str],
         dict[str, Any],
         dict[str, str],
+        dict[str, Any],
     ]
 ):
     """
@@ -76,11 +78,12 @@ def get_configuration() -> (
 
     plex_config = _load_plex_config(config_for_parser)
     tmdb_config = _load_tmdb_config(config_for_parser)
+    runtime_limits = _load_runtime_limits(config_for_parser)
 
     if not search_config:
         logger.info("No [search] section found or it was empty. Search command now disabled.")
 
-    return token, paths, allowed_ids, plex_config, search_config, tmdb_config
+    return token, paths, allowed_ids, plex_config, search_config, tmdb_config, runtime_limits
 
 
 def _is_in_section(section_header: str, current_line: str, all_lines: list[str]) -> bool:
@@ -206,3 +209,42 @@ def _load_tmdb_config(config: configparser.ConfigParser) -> dict[str, str]:
         logger.info("[CONFIG] TMDB configuration loaded successfully.")
         return tmdb
     return {}
+
+
+def _load_runtime_limits(config: configparser.ConfigParser) -> dict[str, Any]:
+    """Loads required runtime limits that govern scraper search behavior."""
+    if not config.has_option("host", "scraper_max_torrent_size_gib"):
+        raise ValueError(
+            "'scraper_max_torrent_size_gib' is mandatory in [host] and must be a positive integer."
+        )
+
+    try:
+        scraper_max_torrent_size_gib = config.getint("host", "scraper_max_torrent_size_gib")
+    except ValueError as exc:
+        raise ValueError(
+            "'scraper_max_torrent_size_gib' in [host] must be a positive integer."
+        ) from exc
+
+    if scraper_max_torrent_size_gib <= 0:
+        raise ValueError("'scraper_max_torrent_size_gib' in [host] must be greater than 0.")
+
+    return {"scraper_max_torrent_size_gib": float(scraper_max_torrent_size_gib)}
+
+
+def require_scraper_max_torrent_size_gib(bot_data: dict[str, Any] | Any) -> float:
+    """
+    Returns the configured scraper max-size cap from bot_data.
+
+    This is intentionally strict and does not provide a fallback.
+    """
+    if not isinstance(bot_data, dict):
+        raise ValueError("bot_data is unavailable; scraper max torrent size is not configured.")
+
+    value = bot_data.get(SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY)
+    if isinstance(value, (int, float)) and float(value) > 0:
+        return float(value)
+
+    raise ValueError(
+        "Missing or invalid SCRAPER_MAX_TORRENT_SIZE_GIB in bot_data. "
+        "Set [host].scraper_max_torrent_size_gib in config.ini."
+    )

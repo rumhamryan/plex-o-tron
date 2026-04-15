@@ -407,9 +407,12 @@ async def _render_results_view(
         visible_results = filtered_results[start:end]
         if any(_select_result_icon(result) for result in visible_results):
             results_text += (
-                "\n\nLegend: 🥇 Dolby Vision \\+ Atmos \\| "
-                "🥈 HDR10\\+/HDR10 \\+ Atmos/TrueHD/DTS\\-HD MA \\| "
-                "🥉 other audio\\+video match \\| 🎥 video match \\| 🔊 audio match"
+                "\n"
+                "\n🥇 Dolby Vision \\+ Atmos"
+                "\n🥈 HDR10 \\+ Atmos/TrueHD/DTS"
+                "\n🥉 HD Audio \\+ HD Video"
+                "\n🔊 Audio match only"
+                "\n🎥 Video match only"
             )
 
     keyboard = _build_results_keyboard(session, filtered_results, total_pages)

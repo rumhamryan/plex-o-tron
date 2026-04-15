@@ -18,6 +18,8 @@ from telegram import Update, Message, Chat, User, CallbackQuery, Bot  # noqa: E4
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY = "SCRAPER_MAX_TORRENT_SIZE_GIB"
+
 REPO_TMP_ROOT = Path(__file__).resolve().parent / "_tmp"
 
 
@@ -118,7 +120,7 @@ def make_update():
 
 @pytest.fixture
 def context(make_message):
-    bot_data: dict[str, object] = {}
+    bot_data: dict[str, object] = {SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY: 22.0}
     bot = SimpleNamespace(
         send_message=AsyncMock(return_value=make_message()),
         delete_message=AsyncMock(),

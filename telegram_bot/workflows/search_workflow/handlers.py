@@ -12,7 +12,7 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
-from ...config import MAX_TORRENT_SIZE_GIB, logger
+from ...config import logger, require_scraper_max_torrent_size_gib
 from ...services import search_logic, torrent_service
 from ...services.media_manager import validate_and_enrich_torrent
 from ...ui.keyboards import cancel_only_keyboard, stacked_choice_keyboard
@@ -403,9 +403,10 @@ async def _handle_resolution_button(
         year_match = re.search(r"\((\d{4})\)", final_title)
         year = year_match.group(1) if year_match else None
         search_title = final_title.split("(")[0].strip()
+        scraper_max_size_gib = require_scraper_max_torrent_size_gib(context.bot_data)
 
         # Allow size override for 4K
-        max_size: float = float(MAX_TORRENT_SIZE_GIB)
+        max_size = scraper_max_size_gib
         if resolution == "2160p":
             max_size *= FOUR_K_SIZE_MULTIPLIER
 
@@ -423,7 +424,7 @@ async def _handle_resolution_button(
             results,
             f"{final_title} [{resolution}]",
             session=session,
-            max_size_gib=MAX_TORRENT_SIZE_GIB,
+            max_size_gib=scraper_max_size_gib,
             initial_resolution=resolution,
         )
         return

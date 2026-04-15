@@ -8,6 +8,8 @@ from telegram_bot.services.search_logic import orchestrate_searches
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
+SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY = "SCRAPER_MAX_TORRENT_SIZE_GIB"
+
 
 def _filter_by_resolution(results, resolution: str):
     res = resolution.lower()
@@ -31,6 +33,7 @@ def _filter_by_resolution(results, resolution: str):
 def _ctx_with_search_config():
     ctx = Mock()
     ctx.bot_data = {
+        SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY: 22.0,
         "SEARCH_CONFIG": {
             "websites": {
                 "movies": [
@@ -59,7 +62,7 @@ def _ctx_with_search_config():
                     "uploaders": {"EZTV": 5, "MeGusta": 5},
                 },
             },
-        }
+        },
     }
     return ctx
 
@@ -190,6 +193,7 @@ async def test_dry_run_tv_search_workflow_basic(mocker):
     # TV workflow uses TV websites set; here we only include 1337x TV category
     ctx = Mock()
     ctx.bot_data = {
+        SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY: 22.0,
         "SEARCH_CONFIG": {
             "websites": {
                 "movies": [],
@@ -208,7 +212,7 @@ async def test_dry_run_tv_search_workflow_basic(mocker):
                     "uploaders": {"EZTV": 5, "MeGusta": 5},
                 }
             },
-        }
+        },
     }
 
     x_results = [

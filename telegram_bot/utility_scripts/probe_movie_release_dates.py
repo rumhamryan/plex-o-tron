@@ -15,7 +15,7 @@ from telegram_bot.services.tracking.movie_release_dates import (
 
 def _apply_tmdb_runtime_env_from_config() -> dict[str, str]:
     """Loads TMDB credentials from config.ini [tmdb] for this probe run."""
-    _, _, _, _, _, tmdb_config = get_configuration()
+    _, _, _, _, _, tmdb_config, _ = get_configuration()
     if "access_token" in tmdb_config:
         os.environ["TMDB_ACCESS_TOKEN"] = tmdb_config["access_token"]
     if "api_key" in tmdb_config:

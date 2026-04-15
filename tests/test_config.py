@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
+
 import pytest
+
 from telegram_bot.config import get_configuration
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -14,6 +16,7 @@ allowed_user_ids=1,2
 
 [host]
 default_save_path=/downloads
+scraper_max_torrent_size_gib=22
 
 [plex]
 plex_url=http://example.com
@@ -31,7 +34,15 @@ region=ca
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.makedirs")
 
-    token, paths, allowed_ids, plex_config, search_config, tmdb_config = get_configuration()
+    (
+        token,
+        paths,
+        allowed_ids,
+        plex_config,
+        search_config,
+        tmdb_config,
+        runtime_limits,
+    ) = get_configuration()
 
     assert token == "TEST_TOKEN"
     assert paths == {
@@ -46,6 +57,7 @@ region=ca
         "preferences": {"category": "movie"},
     }
     assert tmdb_config == {"access_token": "TMDB_TEST_ACCESS_TOKEN", "region": "CA"}
+    assert runtime_limits == {"scraper_max_torrent_size_gib": 22.0}
 
 
 def test_get_configuration_tmdb_api_key_only(mocker):
@@ -55,6 +67,7 @@ bot_token=TEST_TOKEN
 
 [host]
 default_save_path=/downloads
+scraper_max_torrent_size_gib=22
 
 [tmdb]
 api_key=TMDB_TEST_API_KEY
@@ -63,7 +76,7 @@ api_key=TMDB_TEST_API_KEY
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.makedirs")
 
-    _, _, _, _, _, tmdb_config = get_configuration()
+    _, _, _, _, _, tmdb_config, _ = get_configuration()
     assert tmdb_config == {"api_key": "TMDB_TEST_API_KEY", "region": "US"}
 
 
@@ -80,6 +93,7 @@ bot_token=PLACE_TOKEN_HERE
 
 [host]
 default_save_path=/downloads
+scraper_max_torrent_size_gib=22
 """
     mocker.patch("builtins.open", mocker.mock_open(read_data=config_data))
     mocker.patch("os.path.exists", return_value=True)
@@ -98,6 +112,20 @@ bot_token=TEST_TOKEN
         get_configuration()
 
 
+def test_get_configuration_missing_scraper_size_limit(mocker):
+    config_data = """
+[telegram]
+bot_token=TEST_TOKEN
+
+[host]
+default_save_path=/downloads
+"""
+    mocker.patch("builtins.open", mocker.mock_open(read_data=config_data))
+    mocker.patch("os.path.exists", return_value=True)
+    with pytest.raises(ValueError):
+        get_configuration()
+
+
 def test_get_configuration_invalid_search_json(mocker):
     config_data = """
 [telegram]
@@ -105,6 +133,7 @@ bot_token=TEST_TOKEN
 
 [host]
 default_save_path=/downloads
+scraper_max_torrent_size_gib=22
 
 [search]
 websites={invalid_json}

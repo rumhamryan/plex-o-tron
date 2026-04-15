@@ -7,7 +7,7 @@ from typing import Any, Iterable
 from telegram.ext import ContextTypes
 from thefuzz import fuzz
 
-from ....config import MAX_TORRENT_SIZE_GIB, logger
+from ....config import logger, require_scraper_max_torrent_size_gib
 from ....utils import (
     compute_av_match_metadata,
     parse_codec,
@@ -57,6 +57,22 @@ def _coerce_non_negative_int(value: Any, *, default: int) -> int:
     return parsed if parsed >= 0 else default
 
 
+def _resolve_max_size_gib(
+    context: ContextTypes.DEFAULT_TYPE,
+    kwargs: dict[str, Any],
+) -> float | None:
+    raw = kwargs.get("max_size_gib", kwargs.get("max_size_gb"))
+    if raw is None:
+        return require_scraper_max_torrent_size_gib(context.bot_data)
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
 async def scrape_tpb(
     query: str,
     media_type: str,
@@ -91,7 +107,10 @@ async def scrape_tpb(
     except Exception:
         limit_value = _DEFAULT_LIMIT
 
-    max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb", MAX_TORRENT_SIZE_GIB))
+    max_size_gib = _resolve_max_size_gib(context, kwargs)
+    if max_size_gib is None:
+        logger.error("[SCRAPER] TPB: Invalid max_size_gib override: %r", kwargs.get("max_size_gib"))
+        return []
     min_seeders = _coerce_non_negative_int(kwargs.get("min_seeders"), default=_DEFAULT_MIN_SEEDERS)
 
     try:

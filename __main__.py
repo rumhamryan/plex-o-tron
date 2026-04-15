@@ -14,7 +14,11 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
-from telegram_bot.config import get_configuration, logger
+from telegram_bot.config import (
+    SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY,
+    get_configuration,
+    logger,
+)
 from telegram_bot.handlers.callback_handlers import button_handler
 from telegram_bot.handlers.error_handler import global_error_handler
 from telegram_bot.handlers.message_handlers import handle_user_message
@@ -46,7 +50,15 @@ def main() -> None:
     logger.info("Starting bot...")
 
     # Load configuration from config.ini.
-    token, save_paths, allowed_ids, plex_config, search_config, tmdb_config = get_configuration()
+    (
+        token,
+        save_paths,
+        allowed_ids,
+        plex_config,
+        search_config,
+        tmdb_config,
+        runtime_limits,
+    ) = get_configuration()
 
     # The Application object is the heart of the bot. We use `bot_data` to store
     # application-level state and configurations, making them accessible
@@ -76,6 +88,9 @@ def main() -> None:
     application.bot_data["SEARCH_CONFIG"] = search_config
     application.bot_data["TMDB_CONFIG"] = tmdb_config
     application.bot_data["ALLOWED_USER_IDS"] = allowed_ids
+    application.bot_data[SCRAPER_MAX_TORRENT_SIZE_BOT_DATA_KEY] = runtime_limits[
+        "scraper_max_torrent_size_gib"
+    ]
     # The 'persistence_file' key is removed from here as it's no longer needed.
     application.bot_data.setdefault("active_downloads", {})
     application.bot_data.setdefault("download_queues", {})
