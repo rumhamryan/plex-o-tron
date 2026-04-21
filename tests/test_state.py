@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from unittest.mock import Mock
 from telegram_bot.state import (
+    STATE_LOAD_COMPLETED_KEY,
     load_state,
     post_init,
     post_shutdown,
@@ -146,6 +147,7 @@ async def test_post_shutdown_cancels_tasks_and_saves_state(mocker):
     application.bot_data = {
         "active_downloads": {"1": {"task": task}},
         "download_queues": {},
+        STATE_LOAD_COMPLETED_KEY: True,
     }
 
     mocker.patch("telegram_bot.state.asyncio.gather", new=AsyncMock())
@@ -164,3 +166,30 @@ async def test_post_shutdown_cancels_tasks_and_saves_state(mocker):
     save_mock.assert_called_once()
     stop_scheduler_mock.assert_awaited_once_with(application)
     persist_tracking_mock.assert_called_once_with(application)
+
+
+@pytest.mark.asyncio
+async def test_post_shutdown_skips_state_persist_when_startup_not_loaded(mocker):
+    application = Mock()
+    application.bot_data = {
+        "active_downloads": {},
+        "download_queues": {},
+        STATE_LOAD_COMPLETED_KEY: False,
+    }
+
+    save_mock = mocker.patch("telegram_bot.state.save_state")
+    warning_mock = mocker.patch("telegram_bot.state.logger.warning")
+    stop_scheduler_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.stop_tracking_scheduler",
+        new=AsyncMock(),
+    )
+    persist_tracking_mock = mocker.patch(
+        "telegram_bot.services.tracking.manager.persist_tracking_state_from_bot_data"
+    )
+
+    await post_shutdown(application)
+
+    save_mock.assert_not_called()
+    persist_tracking_mock.assert_not_called()
+    stop_scheduler_mock.assert_awaited_once_with(application)
+    warning_mock.assert_called_once()

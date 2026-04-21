@@ -12,6 +12,8 @@ from telegram.ext import Application
 # --- Corrected Import: Import the constant directly ---
 from .config import PERSISTENCE_FILE, logger
 
+STATE_LOAD_COMPLETED_KEY = "state_load_completed"
+
 
 def save_state(file_path: str, active_downloads: dict, download_queues: dict) -> None:
     """Saves the state of active and queued downloads to a JSON file."""
@@ -125,6 +127,7 @@ async def post_init(application: Application) -> None:
     )
 
     logger.info("--- Loading persisted state and resuming downloads ---")
+    application.bot_data[STATE_LOAD_COMPLETED_KEY] = False
     # --- Fix: Use the imported constant directly ---
     persistence_file = PERSISTENCE_FILE
 
@@ -148,6 +151,7 @@ async def post_init(application: Application) -> None:
     load_tracking_state_into_bot_data(application)
     reconcile_tracking_items_on_startup(application)
     start_tracking_scheduler(application)
+    application.bot_data[STATE_LOAD_COMPLETED_KEY] = True
 
     await _render_home_menu_on_startup(application)
 
@@ -183,6 +187,14 @@ async def post_shutdown(application: Application) -> None:
         await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
 
     await stop_tracking_scheduler(application)
+
+    if not application.bot_data.get(STATE_LOAD_COMPLETED_KEY, False):
+        logger.warning(
+            "Skipping persistence save on shutdown because startup state load did not complete."
+        )
+        logger.info("--- All active tasks stopped. Shutdown complete. ---")
+        return
+
     persist_tracking_state_from_bot_data(application)
 
     # Final state save before exiting

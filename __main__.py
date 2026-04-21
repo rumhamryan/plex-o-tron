@@ -22,7 +22,7 @@ from telegram_bot.config import (
 from telegram_bot.handlers.callback_handlers import button_handler
 from telegram_bot.handlers.error_handler import global_error_handler
 from telegram_bot.handlers.message_handlers import handle_user_message
-from telegram_bot.state import post_init, post_shutdown
+from telegram_bot.state import STATE_LOAD_COMPLETED_KEY, post_init, post_shutdown
 
 
 def register_handlers(application: Application) -> None:
@@ -98,6 +98,7 @@ def main() -> None:
     application.bot_data.setdefault("tracking_in_progress_ids", set())
     application.bot_data.setdefault("tracking_loop_task", None)
     application.bot_data.setdefault("is_shutting_down", False)
+    application.bot_data.setdefault(STATE_LOAD_COMPLETED_KEY, False)
 
     # Resolve TMDB auth from config.ini so operators can keep secrets in config.ini.
     if "access_token" in tmdb_config:
