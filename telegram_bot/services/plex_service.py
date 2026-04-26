@@ -437,6 +437,121 @@ def _resolve_existing_collection_name(movies_section: Any, requested_name: str) 
     return requested_name
 
 
+def _has_meaningful_collection_thumb(collection: Any) -> bool:
+    thumb_value = str(getattr(collection, "thumb", "") or "").strip()
+    if not thumb_value:
+        return False
+    # Plex uses a blank placeholder thumb for empty collections.
+    return "/:/resources/blank" not in thumb_value.casefold()
+
+
+def _choose_composite_poster(posters: Sequence[Any]) -> Any | None:
+    """
+    Select the best available generated/composite poster candidate.
+
+    We prefer generated metadata posters (usually collage/composite) and
+    avoid upload-based posters when trying to recover missing artwork.
+    """
+    if not posters:
+        return None
+
+    metadata_candidates: list[Any] = []
+    non_upload_candidates: list[Any] = []
+    for poster in posters:
+        rating_key = str(getattr(poster, "ratingKey", "") or "").strip().casefold()
+        if rating_key.startswith("metadata://"):
+            metadata_candidates.append(poster)
+            continue
+        if not rating_key.startswith("upload://"):
+            non_upload_candidates.append(poster)
+
+    if metadata_candidates:
+        return metadata_candidates[0]
+    if non_upload_candidates:
+        return non_upload_candidates[0]
+    return posters[0]
+
+
+def _ensure_collection_has_composite_poster(movies_section: Any, collection_name: str) -> None:
+    """Best-effort recovery for collections that ended up with blank poster art."""
+    collection_lookup = getattr(movies_section, "collection", None)
+    if not callable(collection_lookup):
+        return
+
+    try:
+        collection = collection_lookup(collection_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[PLEX] Could not load collection '%s' for poster recovery: %s",
+            collection_name,
+            exc,
+        )
+        return
+
+    if _has_meaningful_collection_thumb(collection):
+        return
+
+    refresh = getattr(collection, "refresh", None)
+    if callable(refresh):
+        try:
+            refresh()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "[PLEX] Collection refresh failed while recovering poster for '%s': %s",
+                collection_name,
+                exc,
+            )
+
+    posters_getter = getattr(collection, "posters", None)
+    if not callable(posters_getter):
+        return
+
+    try:
+        posters = posters_getter() or []
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[PLEX] Could not fetch poster options for collection '%s': %s",
+            collection_name,
+            exc,
+        )
+        return
+
+    preferred = _choose_composite_poster(posters)
+    if preferred is None:
+        return
+
+    set_poster = getattr(collection, "setPoster", None)
+    if callable(set_poster):
+        try:
+            set_poster(preferred)
+            logger.info(
+                "[PLEX] Applied composite-style poster for collection '%s'.",
+                collection_name,
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[PLEX] Failed selecting poster candidate for collection '%s': %s",
+                collection_name,
+                exc,
+            )
+
+    select = getattr(preferred, "select", None)
+    if callable(select):
+        try:
+            select()
+            logger.info(
+                "[PLEX] Applied poster candidate directly for collection '%s'.",
+                collection_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[PLEX] Failed selecting poster directly for collection '%s': %s",
+                collection_name,
+                exc,
+            )
+
+
 async def get_plex_server_status(
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -650,6 +765,7 @@ async def ensure_collection_contains_movies(
         collection_name,
     )
     matched_labels: list[str] = []
+    matched_count = 0
 
     for movie in movies:
         title = str(movie.get("title") or "").strip()
@@ -681,6 +797,7 @@ async def ensure_collection_contains_movies(
         target = matches[0]
         try:
             await asyncio.to_thread(target.addCollection, resolved_collection_name)
+            matched_count += 1
             label = target.title
             target_year = getattr(target, "year", None)
             if target_year:
@@ -693,6 +810,13 @@ async def ensure_collection_contains_movies(
                 resolved_collection_name,
                 exc,
             )
+
+    if matched_count >= 2:
+        await asyncio.to_thread(
+            _ensure_collection_has_composite_poster,
+            movies_section,
+            resolved_collection_name,
+        )
 
     return matched_labels
 

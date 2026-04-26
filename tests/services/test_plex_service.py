@@ -273,6 +273,106 @@ async def test_ensure_collection_contains_movies_skips_placeholder_token(mocker)
 
 
 @pytest.mark.asyncio
+async def test_ensure_collection_contains_movies_recovers_blank_collection_with_composite_poster(
+    mocker,
+):
+    movie_one = mocker.Mock()
+    movie_one.title = "Movie One"
+    movie_one.year = 2001
+    movie_one.addCollection = mocker.Mock()
+
+    movie_two = mocker.Mock()
+    movie_two.title = "Movie Two"
+    movie_two.year = 2002
+    movie_two.addCollection = mocker.Mock()
+
+    upload_poster_candidate = mocker.Mock()
+    upload_poster_candidate.ratingKey = "upload://poster-from-user"
+    metadata_poster_candidate = mocker.Mock()
+    metadata_poster_candidate.ratingKey = "metadata://generated-composite"
+
+    collection = mocker.Mock()
+    collection.title = "Saga"
+    collection.thumb = "/:/resources/blank.png"
+    collection.refresh = mocker.Mock()
+    collection.posters.return_value = [upload_poster_candidate, metadata_poster_candidate]
+    collection.setPoster = mocker.Mock()
+
+    section = mocker.Mock()
+    section.collection.return_value = collection
+    section.collections.return_value = []
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.create_plex_client", return_value=plex)
+    mocker.patch(
+        "telegram_bot.services.plex_service._search_movies_section",
+        side_effect=[[movie_one], [movie_two]],
+    )
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    movies = [
+        {"title": "Movie One", "year": 2001},
+        {"title": "Movie Two", "year": 2002},
+    ]
+    result = await ensure_collection_contains_movies(plex_config, "Saga", movies)
+
+    assert result == ["Movie One (2001)", "Movie Two (2002)"]
+    movie_one.addCollection.assert_called_once_with("Saga")
+    movie_two.addCollection.assert_called_once_with("Saga")
+    collection.refresh.assert_called_once_with()
+    collection.setPoster.assert_called_once_with(metadata_poster_candidate)
+
+
+@pytest.mark.asyncio
+async def test_ensure_collection_contains_movies_does_not_override_existing_collection_artwork(
+    mocker,
+):
+    movie_one = mocker.Mock()
+    movie_one.title = "Movie One"
+    movie_one.year = 2001
+    movie_one.addCollection = mocker.Mock()
+
+    movie_two = mocker.Mock()
+    movie_two.title = "Movie Two"
+    movie_two.year = 2002
+    movie_two.addCollection = mocker.Mock()
+
+    collection = mocker.Mock()
+    collection.title = "Saga"
+    collection.thumb = "/library/metadata/1/thumb/abc123"
+    collection.refresh = mocker.Mock()
+    collection.posters = mocker.Mock()
+    collection.setPoster = mocker.Mock()
+
+    section = mocker.Mock()
+    section.collection.return_value = collection
+    section.collections.return_value = []
+
+    plex = mocker.Mock()
+    plex.library.section.return_value = section
+
+    mocker.patch("telegram_bot.services.plex_service.create_plex_client", return_value=plex)
+    mocker.patch(
+        "telegram_bot.services.plex_service._search_movies_section",
+        side_effect=[[movie_one], [movie_two]],
+    )
+
+    plex_config = {"url": "http://plex", "token": "123"}
+    movies = [
+        {"title": "Movie One", "year": 2001},
+        {"title": "Movie Two", "year": 2002},
+    ]
+    result = await ensure_collection_contains_movies(plex_config, "Saga", movies)
+
+    assert result == ["Movie One (2001)", "Movie Two (2002)"]
+    collection.refresh.assert_not_called()
+    collection.posters.assert_not_called()
+    collection.setPoster.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_wait_for_movies_to_be_available_returns_early_when_movies_found(mocker):
     movie = mocker.Mock()
     movie.title = "Movie One"
