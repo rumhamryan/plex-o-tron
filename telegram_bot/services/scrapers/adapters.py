@@ -11,7 +11,7 @@ import httpx
 
 def create_async_client(
     *,
-    timeout: int = 30,
+    timeout: int | float = 30,
     follow_redirects: bool = True,
 ) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=timeout, follow_redirects=follow_redirects)
@@ -22,7 +22,7 @@ async def fetch_page(
     *,
     params: Mapping[str, Any] | None = None,
     headers: Mapping[str, str] | None = None,
-    timeout: int = 30,
+    timeout: int | float = 30,
     follow_redirects: bool = True,
 ) -> httpx.Response:
     async with create_async_client(timeout=timeout, follow_redirects=follow_redirects) as client:
