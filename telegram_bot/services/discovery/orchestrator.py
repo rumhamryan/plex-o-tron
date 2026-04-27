@@ -4,6 +4,7 @@ import asyncio
 import re
 import urllib.parse
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from ...config import logger
@@ -31,6 +32,24 @@ PROVIDER_FACTORY: dict[str, type[BaseProvider]] = {
 }
 
 
+@dataclass(slots=True)
+class ProviderSearchStats:
+    provider_name: str
+    status: str = "pending"
+    raw_count: int = 0
+    deduplicated_count: int = 0
+    filtered_count: int = 0
+    scored_count: int = 0
+    dropped_duplicate_count: int = 0
+    dropped_low_seeders_count: int = 0
+    dropped_too_large_count: int = 0
+    dropped_screener_count: int = 0
+    dropped_low_score_count: int = 0
+    raw_samples: list[dict[str, Any]] | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+
+
 class DiscoveryOrchestrator:
     """Runs discovery providers, deduplicates results, and applies legacy scoring."""
 
@@ -46,6 +65,7 @@ class DiscoveryOrchestrator:
         self.preferences = dict(preferences or {})
         self.min_result_score = min_result_score
         self.providers: list[BaseProvider] = []
+        self.last_provider_stats: dict[str, ProviderSearchStats] = {}
 
         for raw_config in provider_configs:
             cfg = self._coerce_provider_config(raw_config)
@@ -66,6 +86,10 @@ class DiscoveryOrchestrator:
         preferences: Mapping[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Executes discovery, deduplication, filtering, and scoring."""
+        self.last_provider_stats = {
+            provider.config.name: ProviderSearchStats(provider_name=provider.config.name)
+            for provider in self.providers
+        }
         raw_results = await self._execute_discovery(request)
         unique_results = self._deduplicate(raw_results)
         filtered_results = self._filter_results(unique_results, request)
@@ -97,6 +121,12 @@ class DiscoveryOrchestrator:
             provider_name = provider.config.name
             if not self.breaker.is_healthy(provider_name):
                 logger.warning("[DISCOVERY] Skipping %s because it is cooling down.", provider_name)
+                self._mark_provider_failed(
+                    provider_name,
+                    error_type="CircuitBreakerOpen",
+                    error_message="Provider is cooling down.",
+                    status="skipped",
+                )
                 continue
 
             task_entries.append((provider, asyncio.create_task(provider.search(request))))
@@ -116,16 +146,31 @@ class DiscoveryOrchestrator:
                 raise result
             if isinstance(result, ProviderSearchError):
                 logger.warning("[DISCOVERY] %s failed: %s", provider_name, result)
+                self._mark_provider_failed(
+                    provider_name,
+                    error_type=type(result.__cause__ or result).__name__,
+                    error_message=str(result.__cause__ or result),
+                )
                 self.breaker.record_failure(provider_name)
                 continue
             if isinstance(result, Exception):
                 logger.error("[DISCOVERY] %s failed unexpectedly: %s", provider_name, result)
+                self._mark_provider_failed(
+                    provider_name,
+                    error_type=type(result).__name__,
+                    error_message=str(result),
+                )
                 self.breaker.record_failure(provider_name)
                 continue
             if isinstance(result, BaseException):
                 raise result
 
             self.breaker.record_success(provider_name)
+            stats = self.last_provider_stats.get(provider_name)
+            if stats is not None:
+                stats.status = "success"
+                stats.raw_count = len(result)
+                stats.raw_samples = [self._sample_result(item) for item in result[:5]]
             all_found.extend(result)
 
         return all_found
@@ -138,8 +183,14 @@ class DiscoveryOrchestrator:
             dedupe_key = self._dedupe_key(result)
             if dedupe_key is not None:
                 if dedupe_key in seen_keys:
+                    stats = self.last_provider_stats.get(result.source)
+                    if stats is not None:
+                        stats.dropped_duplicate_count += 1
                     continue
                 seen_keys.add(dedupe_key)
+            stats = self.last_provider_stats.get(result.source)
+            if stats is not None:
+                stats.deduplicated_count += 1
             unique.append(result)
 
         return unique
@@ -172,14 +223,26 @@ class DiscoveryOrchestrator:
         filtered: list[DiscoveryResult] = []
         for result in results:
             if result.seeders < request.min_seeders:
+                stats = self.last_provider_stats.get(result.source)
+                if stats is not None:
+                    stats.dropped_low_seeders_count += 1
                 continue
             if (
                 request.max_size_gib is not None
                 and result.size_bytes / (1024**3) > request.max_size_gib
             ):
+                stats = self.last_provider_stats.get(result.source)
+                if stats is not None:
+                    stats.dropped_too_large_count += 1
                 continue
             if request.media_type == "movie" and self._is_screener_movie_release(result):
+                stats = self.last_provider_stats.get(result.source)
+                if stats is not None:
+                    stats.dropped_screener_count += 1
                 continue
+            stats = self.last_provider_stats.get(result.source)
+            if stats is not None:
+                stats.filtered_count += 1
             filtered.append(result)
         return filtered
 
@@ -242,8 +305,41 @@ class DiscoveryOrchestrator:
                 leechers=int(result.get("leechers") or 0),
             )
             if score < self.min_result_score:
+                source = result.get("source")
+                stats = self.last_provider_stats.get(str(source))
+                if stats is not None:
+                    stats.dropped_low_score_count += 1
                 continue
             result["score"] = score
+            source = result.get("source")
+            stats = self.last_provider_stats.get(str(source))
+            if stats is not None:
+                stats.scored_count += 1
             scored.append(result)
 
         return sorted(scored, key=lambda item: item.get("score", 0), reverse=True)
+
+    def _sample_result(self, result: DiscoveryResult) -> dict[str, Any]:
+        return {
+            "title": result.title,
+            "seeders": result.seeders,
+            "leechers": result.leechers,
+            "size_gib": round(result.size_bytes / (1024**3), 2),
+            "info_url": result.info_url,
+            "raw_attrs": result.raw_data.get("attrs"),
+        }
+
+    def _mark_provider_failed(
+        self,
+        provider_name: str,
+        *,
+        error_type: str,
+        error_message: str,
+        status: str = "failed",
+    ) -> None:
+        stats = self.last_provider_stats.get(provider_name)
+        if stats is None:
+            return
+        stats.status = status
+        stats.error_type = error_type
+        stats.error_message = error_message

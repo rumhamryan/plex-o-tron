@@ -114,9 +114,10 @@ class TorznabProvider(BaseProvider):
             response.raise_for_status()
         except Exception as exc:
             logger.error(
-                "[DISCOVERY] %s: Torznab request failed for %r: %s",
+                "[DISCOVERY] %s: Torznab request failed for %r: %s: %s",
                 self.config.name,
                 request.query,
+                type(exc).__name__,
                 exc,
             )
             raise ProviderSearchError(

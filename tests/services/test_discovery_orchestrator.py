@@ -111,6 +111,14 @@ async def test_orchestrator_deduplicates_by_info_hash_and_keeps_more_seeded_resu
 
     assert len(results) == 1
     assert results[0]["title"] == "Movie 1080p x265 high"
+    stats = orchestrator.last_provider_stats["fake"]
+    assert stats.raw_count == 2
+    assert stats.deduplicated_count == 1
+    assert stats.filtered_count == 1
+    assert stats.scored_count == 1
+    assert stats.dropped_duplicate_count == 1
+    assert stats.raw_samples
+    assert stats.raw_samples[0]["seeders"] == 20
 
 
 @pytest.mark.asyncio
