@@ -214,9 +214,7 @@ def _tracking_review_item_summary_line(item: TrackingItem) -> str:
     else:
         next_air_text = "TBD"
 
-    return (
-        f"\\- {icon} {escaped_title}\n" f"  Next Air: {escape_markdown(next_air_text, version=2)}"
-    )
+    return f"\\- {icon} {escaped_title}\n  Next Air: {escape_markdown(next_air_text, version=2)}"
 
 
 def _tracking_review_keyboard(items: list[TrackingItem]) -> InlineKeyboardMarkup:
@@ -824,7 +822,7 @@ async def _handle_collection_name_resolution(
         ]
         if skipped_past_year_unknown:
             summary_lines.append(
-                "Past\\-year with unknown streaming date: " f"*{skipped_past_year_unknown}*"
+                f"Past\\-year with unknown streaming date: *{skipped_past_year_unknown}*"
             )
         summary_lines.append("")
         summary_lines.append("Send another collection name, or tap Cancel\\.")

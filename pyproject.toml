@@ -26,7 +26,6 @@ dependencies = [
     "plexapi",
     "thefuzz",
     "httpx[http2]",
-    "PyYAML",
 ]
 
 [project.optional-dependencies]
@@ -45,8 +44,10 @@ dev = [
     "pluggy",
     "pygments",
     "iniconfig",
-    "types-PyYAML",
 ]
+
+[tool.setuptools.packages.find]
+include = ["telegram_bot*"]
 
 # --- Tool Configurations ---
 

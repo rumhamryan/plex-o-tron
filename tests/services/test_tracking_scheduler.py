@@ -446,7 +446,7 @@ async def test_tracking_scheduler_queues_candidate_from_discovery_provider(
     fake_discovery_provider,
 ):
     app = _build_application(mocker, movie_resolutions={"2160p": 5, "1080p": 3})
-    app.bot_data["SEARCH_CONFIG"]["websites"] = {
+    app.bot_data["SEARCH_CONFIG"]["providers"] = {
         "movies": [
             {
                 "name": "Prowlarr",

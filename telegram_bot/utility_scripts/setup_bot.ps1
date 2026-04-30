@@ -248,18 +248,10 @@ plex_token = $PlexToken
 default_save_path = $($DefaultSavePath -replace '\\','/')
 movies_save_path = $($MoviesSavePath -replace '\\','/')
 tv_shows_save_path = $($TvShowsSavePath -replace '\\','/')
+scraper_max_torrent_size_gib = 22
 
 [search]
-websites = {
-    "movies": [
-        {"name": "YTS.lt", "search_url": "https://yts.lt/browse-movies/{query}/{quality}/all/0/latest/{year}/all"},
-        {"name": "tpb", "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"}
-    ],
-    "tv": [
-        {"name": "eztvx.to", "search_url": "https://eztvx.to/search/{query}"},
-        {"name": "tpb", "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"}
-    ]
-}
+providers = []
 preferences = {
     "movies": {
         "resolutions": {

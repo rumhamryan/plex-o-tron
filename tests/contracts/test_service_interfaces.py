@@ -7,7 +7,6 @@ from telegram_bot.services.interfaces import (
     PlexLibrary,
     PlexLibrarySection,
     PlexMediaItem,
-    ScraperFunction,
     TorrentSession,
 )
 
@@ -49,12 +48,6 @@ class DummyTorrentSession:
         return None
 
 
-async def dummy_scraper(
-    search_query: str, media_type: str, site_url: str, context: Any, **extra_kwargs: Any
-) -> list[dict[str, Any]]:
-    return []
-
-
 def test_plex_client_protocol_runtime_check() -> None:
     assert isinstance(DummyPlexClient(), PlexClient)
     assert isinstance(DummyPlexClient().library, PlexLibrary)
@@ -63,7 +56,3 @@ def test_plex_client_protocol_runtime_check() -> None:
 
 def test_torrent_session_protocol_runtime_check() -> None:
     assert isinstance(DummyTorrentSession(), TorrentSession)
-
-
-def test_scraper_function_protocol_runtime_check() -> None:
-    assert isinstance(dummy_scraper, ScraperFunction)

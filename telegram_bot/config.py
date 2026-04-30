@@ -114,7 +114,7 @@ def _parse_search_section(lines: list[str]) -> dict[str, Any]:
         if in_search_section:
             if stripped_line.startswith("[") and stripped_line.endswith("]"):
                 break  # Reached the next section
-            if "=" in line and line.strip().startswith(("websites", "preferences", "providers")):
+            if "=" in line and line.strip().startswith(("preferences", "providers")):
                 key, value = line.split("=", 1)
                 current_key = key.strip()
                 search_section_content[current_key] = value.strip()
@@ -122,8 +122,6 @@ def _parse_search_section(lines: list[str]) -> dict[str, Any]:
                 search_section_content[current_key] += "\n" + line
 
     try:
-        if "websites" in search_section_content:
-            search_config["websites"] = json.loads(search_section_content["websites"])
         if "preferences" in search_section_content:
             search_config["preferences"] = json.loads(search_section_content["preferences"])
         if "providers" in search_section_content:

@@ -16,8 +16,9 @@ designed to be called from handlers and workflows.
 - Avoid service-to-workflow imports except for existing exceptions.
 
 ## Service Map
-- `scrapers/`: Site-specific scraping plus generic HTML/YAML-based scrapers.
-- `search_logic/`: Search orchestration and local media discovery helpers.
+- `discovery/`: Provider-backed torrent discovery and health isolation.
+- `scrapers/wikipedia/`: Wikipedia metadata lookup helpers.
+- `search_logic/`: Provider-backed search orchestration and local media discovery helpers.
 - `torrent_service/`: Magnet/torrent URL handling and metadata retrieval.
 - `download_manager/`: Download orchestration, queueing, progress, and cleanup.
 - `media_manager/`: File parsing, naming, and post-download organization.

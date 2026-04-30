@@ -23,7 +23,7 @@ plex_url=http://example.com
 plex_token=PLEX_TOKEN
 
 [search]
-websites=["site1"]
+providers=[{"name":"Prowlarr","type":"torznab","search_url":"http://127.0.0.1/api"}]
 preferences={"category": "movie"}
 
 [tmdb]
@@ -53,7 +53,9 @@ region=ca
     assert allowed_ids == [1, 2]
     assert plex_config == {"url": "http://example.com", "token": "PLEX_TOKEN"}
     assert search_config == {
-        "websites": ["site1"],
+        "providers": [
+            {"name": "Prowlarr", "type": "torznab", "search_url": "http://127.0.0.1/api"}
+        ],
         "preferences": {"category": "movie"},
     }
     assert tmdb_config == {"access_token": "TMDB_TEST_ACCESS_TOKEN", "region": "CA"}
@@ -183,7 +185,7 @@ default_save_path=/downloads
 scraper_max_torrent_size_gib=22
 
 [search]
-websites={invalid_json}
+providers={invalid_json}
 """
     mocker.patch("builtins.open", mocker.mock_open(read_data=config_data))
     mocker.patch("os.path.exists", return_value=True)

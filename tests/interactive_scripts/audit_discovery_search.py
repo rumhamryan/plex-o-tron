@@ -41,12 +41,18 @@ def _configured_torznab_providers(
     search_config: dict[str, Any],
     media_type: str,
 ) -> list[dict[str, Any]]:
-    websites = search_config.get("websites", {})
-    if not isinstance(websites, dict):
+    providers_config = search_config.get("providers", [])
+    config_key = "movies" if media_type == "movie" else "tv"
+    if isinstance(providers_config, list):
+        possible_groups = [providers_config]
+    elif isinstance(providers_config, dict):
+        possible_groups = [
+            providers_config.get("providers", []),
+            providers_config.get(config_key, []),
+        ]
+    else:
         return []
 
-    config_key = "movies" if media_type == "movie" else "tv"
-    possible_groups = [websites.get("providers", []), websites.get(config_key, [])]
     providers: list[dict[str, Any]] = []
     for group in possible_groups:
         if not isinstance(group, list):

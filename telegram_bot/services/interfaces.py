@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol, runtime_checkable
 
 __all__ = [
@@ -11,7 +11,6 @@ __all__ = [
     "PlexLibrary",
     "PlexLibrarySection",
     "PlexMediaItem",
-    "ScraperFunction",
     "TorrentSession",
 ]
 
@@ -51,8 +50,3 @@ class TorrentSession(Protocol):
     def add_torrent(self, params: Any) -> Any: ...
 
     def remove_torrent(self, handle: Any, options: Any | None = None) -> None: ...
-
-
-@runtime_checkable
-class ScraperFunction(Protocol):
-    def __call__(self, *args: Any, **kwargs: Any) -> Coroutine[Any, Any, list[dict[str, Any]]]: ...

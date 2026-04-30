@@ -6,9 +6,10 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from typing import Any
 
+import httpx
+
 from ....config import logger
 from ....utils import parse_codec, parse_torrent_name
-from ...scrapers.adapters import fetch_page
 from ..exceptions import ProviderSearchError
 from ..schemas import DiscoveryRequest, DiscoveryResult
 from .base import BaseProvider
@@ -18,6 +19,16 @@ _DEFAULT_TORZNAB_TYPES = {
     "tv": "tvsearch",
 }
 _RESOLUTION_PATTERN = re.compile(r"(?i)\b(2160p|1080p|720p|480p|4k)\b")
+
+
+async def fetch_page(
+    url: str,
+    *,
+    timeout: float = 30,
+    follow_redirects: bool = True,
+) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=follow_redirects) as client:
+        return await client.get(url)
 
 
 def _local_name(tag: str) -> str:

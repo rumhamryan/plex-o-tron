@@ -12,15 +12,16 @@ Purpose: Make service boundaries explicit so future refactors stay clean and pre
 - Handlers and UI may call workflows and services.
 - Workflows may call services and helpers, but should not be imported by services.
 - Services should not import handlers or UI. If UI formatting is needed, expose a helper in `telegram_bot/ui/messages.py`.
-- Scrapers should only be used by scraping/search services, never by handlers or workflows directly.
+- Metadata scrapers should only be used by scraping/search services, never by handlers or workflows directly.
 
 ## Service Map
 - `auth_service`: allowlist checks. Depends on `config` and Telegram types.
 - `plex_service`: Plex API operations. Depends on `plexapi` and `config`.
-- `scraping_service`: shared scraping entry points. Depends on `services/scrapers` and `httpx/beautifulsoup4`.
-- `services/scrapers/*`: site-specific or generic scraping. Depends on `scraping_service` helpers and external HTTP/HTML libs.
-- `search_logic/*`: search orchestration and scoring. Depends on `scraping_service`, `services/scrapers`, and `utils`.
-- `torrent_service/*`: magnet/torrent intake. Depends on `media_manager` for parsing helpers and `scraping_service` for magnet discovery.
+- `scraping_service`: shared metadata lookup entry points. Depends on Wikipedia scraper helpers.
+- `services/scrapers/wikipedia/*`: Wikipedia metadata scraping for movie/episode/collection details.
+- `services/discovery/*`: provider-backed torrent discovery. Depends on Torznab/Prowlarr/Jackett-style APIs.
+- `search_logic/*`: search orchestration and local media discovery helpers. Torrent search delegates to `services/discovery`.
+- `torrent_service/*`: magnet/torrent intake. Depends on `media_manager` for parsing helpers.
 - `media_manager/*`: naming, validation, file moves, Plex scan trigger. Depends on `scraping_service` (episode titles) and `plex_service` helpers.
 - `download_manager/*`: queueing and progress for torrents. Depends on `media_manager`, `plex_service`, `services/types`, and `state`.
 

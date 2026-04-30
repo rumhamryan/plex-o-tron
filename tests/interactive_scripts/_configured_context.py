@@ -22,46 +22,57 @@ def load_configured_context() -> SimpleNamespace:
     )
 
 
-def get_configured_sites(context: SimpleNamespace, media_type: str) -> list[dict[str, Any]]:
+def get_configured_providers(context: SimpleNamespace, media_type: str) -> list[dict[str, Any]]:
     config_key = "movies" if media_type == "movie" else "tv"
-    websites = context.bot_data.get("SEARCH_CONFIG", {}).get("websites", {})
-    sites = websites.get(config_key, [])
-    if not isinstance(sites, list):
+    providers_config = context.bot_data.get("SEARCH_CONFIG", {}).get("providers", [])
+    if isinstance(providers_config, list):
+        providers = providers_config
+    elif isinstance(providers_config, dict):
+        providers = [
+            *providers_config.get("providers", []),
+            *providers_config.get(config_key, []),
+        ]
+    else:
         return []
-    return [site for site in sites if isinstance(site, dict) and site.get("enabled", True)]
+    return [
+        provider
+        for provider in providers
+        if isinstance(provider, dict) and provider.get("enabled", True)
+    ]
 
 
-def print_configured_sites(sites: list[dict[str, Any]]) -> None:
-    if not sites:
-        print("No enabled sites are configured for that media type.")
+def print_configured_providers(providers: list[dict[str, Any]]) -> None:
+    if not providers:
+        print("No enabled discovery providers are configured for that media type.")
         return
-    print("Configured sites:")
-    for index, site in enumerate(sites, start=1):
+    print("Configured discovery providers:")
+    for index, provider in enumerate(providers, start=1):
         print(
-            f"  {index}. {site.get('name', '<unnamed>')} -> {site.get('search_url', '<missing>')}"
+            f"  {index}. {provider.get('name', '<unnamed>')} -> "
+            f"{provider.get('search_url', '<missing>')}"
         )
 
 
-def choose_configured_site(
+def choose_configured_provider(
     context: SimpleNamespace,
     *,
     media_type: str,
     name_contains: str | None = None,
 ) -> dict[str, Any] | None:
-    sites = get_configured_sites(context, media_type)
+    providers = get_configured_providers(context, media_type)
     if name_contains:
         needle = name_contains.casefold()
-        for site in sites:
-            name = str(site.get("name", ""))
+        for provider in providers:
+            name = str(provider.get("name", ""))
             if needle in name.casefold():
-                return site
+                return provider
         return None
 
-    print_configured_sites(sites)
-    if not sites:
+    print_configured_providers(providers)
+    if not providers:
         return None
 
-    selection = input("Select configured site number: ").strip()
+    selection = input("Select configured provider number: ").strip()
     if selection.lower() in {"exit", "quit", "q"}:
         return None
     try:
@@ -69,16 +80,7 @@ def choose_configured_site(
     except ValueError:
         print("Invalid selection.")
         return None
-    if index < 1 or index > len(sites):
+    if index < 1 or index > len(providers):
         print("Selection out of range.")
         return None
-    return sites[index - 1]
-
-
-def canonical_yaml_site_name(configured_name: str) -> str:
-    normalized = configured_name.strip().casefold()
-    if "eztv" in normalized:
-        return "eztv"
-    if normalized.startswith("1337x"):
-        return "1337x"
-    return configured_name.strip()
+    return providers[index - 1]

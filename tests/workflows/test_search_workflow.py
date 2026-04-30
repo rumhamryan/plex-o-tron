@@ -58,7 +58,7 @@ def _extract_codec_row_texts(keyboard):
 
 @pytest.mark.asyncio
 async def test_search_movie_happy_path(mocker, context, make_callback_query, make_message):
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_flow.scraping_service.fetch_movie_years_from_wikipedia",
         new=AsyncMock(return_value=([2010], "Inception")),
@@ -298,7 +298,7 @@ async def test_movie_search_without_config_sets_notice(
 
 @pytest.mark.asyncio
 async def test_movie_scope_collection_sets_flag(mocker, context, make_callback_query, make_message):
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     start_message = make_message()
     start_callback = make_callback_query("search_start_movie", start_message)
     await handle_search_buttons(Update(update_id=10, callback_query=start_callback), context)
@@ -316,7 +316,7 @@ async def test_movie_scope_collection_sets_flag(mocker, context, make_callback_q
 async def test_collection_lookup_handles_missing_franchise(
     mocker, context, make_callback_query, make_message
 ):
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
 
     async def fake_fetch_movie_franchise_details(_title, *, progress_callback=None):
         if progress_callback is not None:
@@ -376,7 +376,7 @@ async def test_collection_lookup_handles_missing_franchise(
 async def test_collection_lookup_ignores_unreleased_titles(
     mocker, context, make_callback_query, make_message
 ):
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=120)
     send_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
@@ -451,7 +451,7 @@ async def test_collection_lookup_ignores_unreleased_titles(
 async def test_collection_lookup_strips_duplicate_trailing_year_from_titles(
     mocker, context, make_callback_query, make_message
 ):
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=120)
     mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
@@ -510,7 +510,7 @@ async def test_collection_lookup_strips_duplicate_trailing_year_from_titles(
 async def test_collection_lookup_normalizes_resolved_franchise_name(
     mocker, context, make_callback_query, make_message
 ):
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=122)
     mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow.safe_send_message",
@@ -576,7 +576,7 @@ async def test_collection_lookup_accepts_past_year_only_titles(
         def today(cls):
             return cls(2026, 3, 12)
 
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=121)
     mocker.patch("telegram_bot.workflows.search_workflow.movie_collection_flow.date", _FixedDate)
     mocker.patch(
@@ -637,7 +637,7 @@ async def test_collection_lookup_rejects_future_year_only_titles(
         def today(cls):
             return cls(2026, 3, 12)
 
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=122)
     edit_mock = AsyncMock()
     logger_mock = mocker.patch(
@@ -701,7 +701,7 @@ async def test_collection_lookup_rejects_entries_missing_all_release_metadata(
         def today(cls):
             return cls(2026, 3, 12)
 
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=123)
     edit_mock = AsyncMock()
     logger_mock = mocker.patch(
@@ -939,7 +939,7 @@ async def test_collection_lookup_handles_mixed_current_year_release_resolution(
         def today(cls):
             return cls(2026, 3, 12)
 
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=124)
     resolve_mock = mocker.patch(
         "telegram_bot.workflows.search_workflow.movie_collection_flow._resolve_current_year_release_date",
@@ -1070,7 +1070,7 @@ def test_format_collection_movie_label_avoids_duplicate_year_suffix():
 async def test_collection_lookup_rejects_all_unreleased_titles(
     mocker, context, make_callback_query, make_message
 ):
-    context.bot_data["SEARCH_CONFIG"] = {"websites": []}
+    context.bot_data["SEARCH_CONFIG"] = {"providers": []}
     status_message = make_message(message_id=150)
     edit_mock = AsyncMock()
     logger_mock = mocker.patch(

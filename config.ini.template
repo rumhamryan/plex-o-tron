@@ -24,13 +24,14 @@ region = US
 default_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Unsorted
 movies_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\Movies
 tv_shows_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\TV
-# Required: search scraper result cap (GiB). This does not change direct magnet/.torrent validation.
+# Required: discovery result cap (GiB). This does not change direct magnet/.torrent validation.
 scraper_max_torrent_size_gib = 22
 
 [search]
-# Optional: Torznab/Prowlarr/Jackett discovery providers. When at least one enabled
-# provider is configured, manual searches and tracking use the discovery pipeline
-# instead of direct tracker scrapers for that media type.
+# Torznab/Prowlarr/Jackett discovery providers. Legacy direct tracker scrapers
+# have been removed; search/tracking/collection flows require provider-backed
+# discovery.
+providers = []
 # providers = [
 #     {
 #         "name": "Prowlarr",
@@ -41,28 +42,6 @@ scraper_max_torrent_size_gib = 22
 #         "timeout_seconds": 8
 #     }
 # ]
-websites = {
-    "movies": [
-        {
-            "name": "YTS.lt",
-            "search_url": "https://yts.lt/browse-movies/{query}/{quality}/all/0/latest/{year}/all"
-        },
-        {
-            "name": "tpb",
-            "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"
-        }
-    ],
-    "tv": [
-        {
-            "name": "eztvx.to",
-            "search_url": "https://eztvx.to/search/{query}"
-        },
-        {
-            "name": "tpb",
-            "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0"
-        }
-    ]
-}
 # Movie collection runs automatically use the highest-ranked supported
 # movie resolution and codec from the preferences below as the collection template.
 preferences = {

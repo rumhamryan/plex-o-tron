@@ -6,8 +6,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from _configured_context import (
     load_configured_context,
-    print_configured_sites,
-    get_configured_sites,
+    get_configured_providers,
+    print_configured_providers,
 )
 from telegram_bot.services.search_logic import orchestrate_searches
 
@@ -38,7 +38,7 @@ def _print_results(results: list[dict]) -> None:
 
 async def main() -> None:
     print(
-        "Configured search audit. This uses config.ini websites/preferences via orchestrate_searches."
+        "Configured search audit. This uses config.ini providers/preferences via orchestrate_searches."
     )
     print("Enter 'exit' to quit at any time.")
     context = load_configured_context()
@@ -51,7 +51,7 @@ async def main() -> None:
             print("Invalid media type. Please enter 'movie' or 'tv'.")
             continue
 
-        print_configured_sites(get_configured_sites(context, media_type))
+        print_configured_providers(get_configured_providers(context, media_type))
 
         query = input("Enter search query: ").strip()
         if query.lower() in {"exit", "quit", "q"}:

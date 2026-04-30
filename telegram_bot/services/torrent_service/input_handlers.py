@@ -2,7 +2,9 @@
 
 import asyncio
 import os
+import re
 from typing import Any, Dict, Iterable, cast
+from urllib.parse import unquote
 
 import httpx
 import libtorrent as lt
@@ -16,11 +18,43 @@ from telegram_bot.services.media_manager import (
     get_dominant_file_type,
     parse_resolution_from_name,
 )
-from telegram_bot.services.scraping_service import find_magnet_link_on_page
 from telegram_bot.ui.keyboards import single_column_keyboard
 from telegram_bot.utils import format_bytes, parse_torrent_name, safe_edit_message
 
 from .metadata_fetch import _blocking_fetch_metadata, fetch_metadata_from_magnet
+
+_MAGNET_LINK_PATTERN = re.compile(r"""(?i)href=["'](magnet:\?xt=urn:btih:[^"']+)["']""")
+_MAGNET_TEXT_PATTERN = re.compile(r"""(?i)magnet:\?xt=urn:btih:[^\s"'<>]+""")
+
+
+async def find_magnet_link_on_page(url: str) -> list[str]:
+    """
+    Extracts magnet links from a user-supplied page URL.
+
+    This is kept for manual link ingestion only. Torrent search/collection no
+    longer uses direct tracker HTML scraping.
+    """
+    try:
+        from .adapters import fetch_url
+
+        response = await fetch_url(url, timeout=20, follow_redirects=True)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.error("[TORRENT] Failed to fetch page for magnet extraction: %s", exc)
+        return []
+
+    candidates = [
+        *_MAGNET_LINK_PATTERN.findall(response.text),
+        *_MAGNET_TEXT_PATTERN.findall(response.text),
+    ]
+    seen: set[str] = set()
+    magnet_links: list[str] = []
+    for candidate in candidates:
+        cleaned = unquote(candidate).strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            magnet_links.append(cleaned)
+    return magnet_links
 
 
 async def process_user_input(

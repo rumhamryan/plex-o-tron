@@ -7,26 +7,14 @@ import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Hashable, TypedDict
+from typing import Any, Hashable
 
 from ..config import logger
-from .generic_torrent_scraper import GenericTorrentScraper, load_site_config
 from .scrapers import (
     _WIKI_MOVIE_CACHE,
     _WIKI_SOUP_CACHE,
     _WIKI_TITLES_CACHE,
-    _get_page_html,
-    _score_candidate_links,
-    _strategy_contextual_search,
-    _strategy_find_direct_links,
-    _strategy_find_in_tables,
     fetch_episode_title_from_wikipedia,
-    find_magnet_link_on_page,
-    scrape_1337x,
-    scrape_generic_page,
-    scrape_tpb,
-    scrape_yaml_site,
-    scrape_yts,
 )
 from .scrapers import (
     fetch_episode_titles_for_season as _raw_fetch_episode_titles_for_season,
@@ -47,56 +35,6 @@ from .scrapers import (
 WIKI_CACHE_MAX_ENTRIES = 100
 WIKI_CACHE_TTL_SECONDS = 30 * 60  # 30 minutes
 WIKI_CACHE_FAILURE_TTL_SECONDS = 5 * 60  # Negative cache entries expire quickly
-
-
-class ScraperResult(TypedDict):
-    """
-    Standardized schema for a torrent search result.
-
-    All scrapers must return a list of dictionaries confirming to this shape.
-    Leechers are mandatory to support swarm health scoring.
-    """
-
-    title: str
-    page_url: str  # Usually a magnet link or .torrent URL
-    info_url: str | None  # URL to the torrent's detail/info page for auditing
-    score: int
-    source: str
-    uploader: str | None
-    size_gib: float
-    codec: str | None
-    seeders: int
-    leechers: int
-    year: int | None
-
-
-def _coerce_swarm_counts(result: dict[str, Any]) -> dict[str, Any]:
-    """
-    Ensures seeders and leechers are non-negative integers.
-
-    If 'leechers' is missing, it logs a warning (fail-fast during dev)
-    and defaults to 0 to prevent downstream crashes.
-    """
-    if "leechers" not in result:
-        logger.warning(
-            "[SCRAPER] Result from '%s' missing 'leechers' field: %s",
-            result.get("source", "unknown"),
-            result.get("title", "unknown"),
-        )
-
-    try:
-        s = int(result.get("seeders", 0))
-        result["seeders"] = s if s >= 0 else 0
-    except (ValueError, TypeError):
-        result["seeders"] = 0
-
-    try:
-        leechers = int(result.get("leechers", 0))
-        result["leechers"] = leechers if leechers >= 0 else 0
-    except (ValueError, TypeError):
-        result["leechers"] = 0
-
-    return result
 
 
 @dataclass
@@ -329,22 +267,7 @@ __all__ = [
     "fetch_episode_titles_for_season",
     "fetch_total_seasons_from_wikipedia",
     "fetch_season_episode_count_from_wikipedia",
-    "scrape_yts",
-    "scrape_1337x",
-    "scrape_tpb",
-    "find_magnet_link_on_page",
-    "scrape_generic_page",
-    "scrape_yaml_site",
-    "_get_page_html",
-    "_strategy_find_direct_links",
-    "_strategy_contextual_search",
-    "_strategy_find_in_tables",
-    "_score_candidate_links",
     "_WIKI_TITLES_CACHE",
     "_WIKI_SOUP_CACHE",
     "_WIKI_MOVIE_CACHE",
-    "GenericTorrentScraper",
-    "load_site_config",
-    "ScraperResult",
-    "_coerce_swarm_counts",
 ]
