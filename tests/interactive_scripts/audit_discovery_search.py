@@ -15,7 +15,7 @@ from telegram_bot.services.discovery.schemas import MediaType
 
 DEFAULT_TORZNAB_URL = os.environ.get("PROWLARR_TORZNAB_URL", "")
 DEFAULT_TORZNAB_PROVIDERS: list[dict[str, Any]] = []
-DEFAULT_PROWLARR_INDEXER_IDS = range(1, 6)
+DEFAULT_PROWLARR_INDEXER_IDS = [1, 3, 6, 7, 9, 10]
 
 
 def _redact_url(value: str) -> str:

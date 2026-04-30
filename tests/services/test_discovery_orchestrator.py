@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from telegram_bot.services.discovery import CircuitBreaker, DiscoveryRequest, DiscoveryResult
@@ -45,10 +47,20 @@ class FakeProvider(BaseProvider):
         return response
 
 
+class SlowProvider(BaseProvider):
+    calls = 0
+
+    async def search(self, request: DiscoveryRequest) -> list[DiscoveryResult]:
+        type(self).calls += 1
+        await asyncio.sleep(1.0)
+        return []
+
+
 @pytest.fixture(autouse=True)
 def _register_fake_provider(monkeypatch):
     FakeProvider.calls = {}
     FakeProvider.responses = {}
+    SlowProvider.calls = 0
     monkeypatch.setitem(PROVIDER_FACTORY, "fake", FakeProvider)
 
 
@@ -92,6 +104,40 @@ async def test_orchestrator_records_provider_failures_and_skips_cooling_provider
     assert len(results) == 1
     assert FakeProvider.calls["bad"] == CircuitBreaker.FAILURE_THRESHOLD
     assert FakeProvider.calls["good"] == CircuitBreaker.FAILURE_THRESHOLD + 1
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_times_out_slow_provider_without_blocking_healthy_provider(
+    monkeypatch,
+) -> None:
+    monkeypatch.setitem(PROVIDER_FACTORY, "slow", SlowProvider)
+    FakeProvider.responses = {
+        "good": [_result("Great Movie 1080p x265", source="good")],
+    }
+    orchestrator = DiscoveryOrchestrator(
+        [
+            {
+                "name": "slow",
+                "type": "slow",
+                "search_url": "https://slow.example",
+                "timeout_seconds": 0.01,
+            },
+            {"name": "good", "type": "fake", "search_url": "https://good.example"},
+        ],
+        preferences={"movies": {"codecs": {"x265": 10}, "uploaders": {"trusted": 20}}},
+    )
+
+    results = await asyncio.wait_for(
+        orchestrator.search(DiscoveryRequest(query="Great Movie", media_type="movie")),
+        timeout=0.2,
+    )
+
+    assert len(results) == 1
+    assert results[0]["source"] == "good"
+    assert SlowProvider.calls == 1
+    slow_stats = orchestrator.last_provider_stats["slow"]
+    assert slow_stats.status == "failed"
+    assert slow_stats.error_type == "TimeoutError"
 
 
 @pytest.mark.asyncio

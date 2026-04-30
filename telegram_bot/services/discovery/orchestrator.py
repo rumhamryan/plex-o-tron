@@ -129,7 +129,12 @@ class DiscoveryOrchestrator:
                 )
                 continue
 
-            task_entries.append((provider, asyncio.create_task(provider.search(request))))
+            task_entries.append(
+                (
+                    provider,
+                    asyncio.create_task(self._search_provider_with_timeout(provider, request)),
+                )
+            )
 
         if not task_entries:
             return []
@@ -174,6 +179,22 @@ class DiscoveryOrchestrator:
             all_found.extend(result)
 
         return all_found
+
+    async def _search_provider_with_timeout(
+        self,
+        provider: BaseProvider,
+        request: DiscoveryRequest,
+    ) -> list[DiscoveryResult]:
+        try:
+            return await asyncio.wait_for(
+                provider.search(request),
+                timeout=provider.config.timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise ProviderSearchError(
+                f"Provider timed out after {provider.config.timeout_seconds:g}s",
+                provider_name=provider.config.name,
+            ) from exc
 
     def _deduplicate(self, results: Sequence[DiscoveryResult]) -> list[DiscoveryResult]:
         seen_keys: set[str] = set()
