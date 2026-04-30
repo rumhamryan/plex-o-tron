@@ -23,6 +23,7 @@ from ..ui.home_menu import (
 from ..ui.views import send_confirmation_prompt
 from ..workflows.delete_workflow import handle_delete_buttons
 from ..workflows.navigation import mark_chat_idle, return_to_home
+from ..workflows.search_session import SearchSession
 from ..workflows.search_workflow import handle_reject_season_pack, handle_search_buttons
 from ..workflows.tracking_workflow.handlers import handle_tracking_buttons
 from .command_handlers import (
@@ -45,6 +46,33 @@ HOME_ACTIONS = {
     "home_track",
     "home_refresh",
 }
+
+
+def _log_operation_cancelled(context: ContextTypes.DEFAULT_TYPE, query) -> None:
+    user = getattr(query, "from_user", None)
+    message = getattr(query, "message", None)
+    chat_id = getattr(message, "chat_id", None)
+    user_id = getattr(user, "id", None)
+    user_data = getattr(context, "user_data", None)
+    workflow = user_data.get("active_workflow") if isinstance(user_data, dict) else None
+    session = SearchSession.from_user_data(user_data if isinstance(user_data, dict) else None)
+
+    if workflow == "search" and session.is_active:
+        logger.info(
+            "[SEARCH] Search cancelled by user %s in chat %s (step=%s, query=%s).",
+            user_id or "unknown",
+            chat_id or "unknown",
+            session.step.value,
+            session.results_query or session.final_title or session.effective_title or "unknown",
+        )
+        return
+
+    logger.info(
+        "Operation cancelled by user %s in chat %s (workflow=%s).",
+        user_id or "unknown",
+        chat_id or "unknown",
+        workflow or "unknown",
+    )
 
 
 def _is_private_message(message: Message | None) -> bool:
@@ -228,6 +256,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif action.startswith("cancel_"):
         if action == "cancel_operation":
             if isinstance(query.message, Message):
+                _log_operation_cancelled(context, query)
                 await return_to_home(
                     context,
                     query.message.chat_id,

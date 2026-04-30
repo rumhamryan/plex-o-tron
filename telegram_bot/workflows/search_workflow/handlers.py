@@ -35,7 +35,6 @@ from .movie_collection_flow import (
 )
 from .movie_flow import _handle_movie_title_reply, _handle_movie_year_reply, _search_movie_results
 from .results import (
-    FOUR_K_SIZE_MULTIPLIER,
     _compute_filtered_results,
     _ensure_results_available,
     _get_allowed_resolution_filters,
@@ -405,18 +404,13 @@ async def _handle_resolution_button(
         search_title = final_title.split("(")[0].strip()
         scraper_max_size_gib = require_scraper_max_torrent_size_gib(context.bot_data)
 
-        # Allow size override for 4K
-        max_size = scraper_max_size_gib
-        if resolution == "2160p":
-            max_size *= FOUR_K_SIZE_MULTIPLIER
-
         results = await search_logic.orchestrate_searches(
             search_title,
             "movie",
             context,
             year=year,
             resolution=resolution,
-            max_size_gib=max_size,
+            max_size_gib=scraper_max_size_gib,
         )
         await _present_search_results(
             query.message,

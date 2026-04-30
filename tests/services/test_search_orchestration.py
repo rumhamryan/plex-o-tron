@@ -1,8 +1,13 @@
+import asyncio
+import logging
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 import pytest
 
+from telegram_bot.services.discovery.orchestrator import PROVIDER_FACTORY
+from telegram_bot.services.discovery.providers.base import BaseProvider
+from telegram_bot.services.discovery.schemas import DiscoveryRequest, DiscoveryResult
 from telegram_bot.services.search_logic import orchestrate_searches
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -34,6 +39,34 @@ def _ctx_with_config(websites_movies=None, websites_tv=None, prefs_movies=None, 
         },
     }
     return ctx
+
+
+class FakeDiscoveryProvider(BaseProvider):
+    calls: list[DiscoveryRequest] = []
+    results: list[DiscoveryResult] = []
+
+    async def search(self, request: DiscoveryRequest) -> list[DiscoveryResult]:
+        type(self).calls.append(request)
+        return type(self).results
+
+
+class CancelledDiscoveryProvider(BaseProvider):
+    async def search(self, request: DiscoveryRequest) -> list[DiscoveryResult]:
+        raise asyncio.CancelledError()
+
+
+@pytest.fixture
+def fake_discovery_provider(mocker):
+    FakeDiscoveryProvider.calls = []
+    FakeDiscoveryProvider.results = []
+    mocker.patch.dict(PROVIDER_FACTORY, {"fake_discovery": FakeDiscoveryProvider})
+    return FakeDiscoveryProvider
+
+
+@pytest.fixture
+def cancelled_discovery_provider(mocker):
+    mocker.patch.dict(PROVIDER_FACTORY, {"cancel_discovery": CancelledDiscoveryProvider})
+    return CancelledDiscoveryProvider
 
 
 @pytest.mark.asyncio
@@ -319,3 +352,212 @@ async def test_orchestrate_searches_filters_screener_movie_results(mocker):
     assert len(results) == 1
     assert "webscreener" not in results[0]["title"].lower()
     assert "web-dl" in results[0]["title"].lower()
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_uses_discovery_provider_and_skips_legacy_scrapers(
+    mocker,
+    fake_discovery_provider,
+):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "Prowlarr 1337x",
+                "type": "fake_discovery",
+                "enabled": True,
+                "search_url": "http://127.0.0.1:9696/1/api?q={query}",
+                "timeout_seconds": 1,
+                "extra_legacy_key": "ignored",
+            },
+            {
+                "name": "yts.lt",
+                "enabled": True,
+                "search_url": "https://yts.lt/browse-movies/{query}/all/all/0/latest/0/all",
+            },
+        ],
+        prefs_movies={
+            "codecs": {"x265": 5},
+            "resolutions": {"1080p": 5},
+            "uploaders": {"trusted": 10},
+        },
+    )
+    fake_discovery_provider.results = [
+        DiscoveryResult(
+            title="Alien 1979 1080p x265",
+            download_url="magnet:?xt=urn:btih:DISCOVERY",
+            magnet_url="magnet:?xt=urn:btih:DISCOVERY",
+            source="Prowlarr 1337x",
+            size_bytes=2 * 1024**3,
+            seeders=30,
+            leechers=1,
+            uploader="trusted",
+        )
+    ]
+    yts_mock = mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_yts",
+        new=AsyncMock(return_value=[]),
+    )
+
+    results = await orchestrate_searches("Alien", "movie", ctx, year="1979")
+
+    assert yts_mock.await_count == 0
+    assert len(fake_discovery_provider.calls) == 1
+    assert fake_discovery_provider.calls[0].query == "Alien 1979"
+    assert len(results) == 1
+    assert results[0]["source"] == "Prowlarr 1337x"
+    assert results[0]["page_url"] == "magnet:?xt=urn:btih:DISCOVERY"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_caps_discovery_size_at_config_limit(
+    fake_discovery_provider,
+):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "Prowlarr",
+                "type": "fake_discovery",
+                "enabled": True,
+                "search_url": "http://127.0.0.1:9696/1/api?q={query}",
+            }
+        ],
+        prefs_movies={"codecs": {"x265": 5}, "resolutions": {"1080p": 5}},
+    )
+    fake_discovery_provider.results = [
+        DiscoveryResult(
+            title="Movie 1080p x265 oversized",
+            download_url="magnet:?xt=urn:btih:OVERSIZED",
+            source="Prowlarr",
+            size_bytes=30 * 1024**3,
+            seeders=50,
+            leechers=0,
+        ),
+        DiscoveryResult(
+            title="Movie 1080p x265 valid",
+            download_url="magnet:?xt=urn:btih:VALID",
+            source="Prowlarr",
+            size_bytes=10 * 1024**3,
+            seeders=50,
+            leechers=0,
+        ),
+    ]
+
+    results = await orchestrate_searches("Movie", "movie", ctx, max_size_gib=44)
+
+    assert len(fake_discovery_provider.calls) == 1
+    assert fake_discovery_provider.calls[0].max_size_gib == 22.0
+    assert [result["title"] for result in results] == ["Movie 1080p x265 valid"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_caps_legacy_scraper_size_at_config_limit(mocker):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "tpb",
+                "enabled": True,
+                "search_url": "https://apibay.org/q.php?q={query}",
+            }
+        ]
+    )
+    scrape_tpb = mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_tpb",
+        new=AsyncMock(return_value=[]),
+    )
+
+    await orchestrate_searches("Movie", "movie", ctx, max_size_gib=44)
+
+    scrape_tpb.assert_awaited_once()
+    assert scrape_tpb.await_args.kwargs["max_size_gib"] == 22.0
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_reuses_discovery_circuit_breaker(
+    fake_discovery_provider,
+):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "Prowlarr",
+                "type": "fake_discovery",
+                "enabled": True,
+                "search_url": "http://127.0.0.1:9696/1/api?q={query}",
+            }
+        ],
+        prefs_movies={"codecs": {"x265": 5}, "resolutions": {"1080p": 5}},
+    )
+    fake_discovery_provider.results = [
+        DiscoveryResult(
+            title="Movie 1080p x265",
+            download_url="magnet:?xt=urn:btih:FIRST",
+            source="Prowlarr",
+            size_bytes=1024**3,
+            seeders=30,
+            leechers=0,
+        )
+    ]
+
+    first_results = await orchestrate_searches("Movie", "movie", ctx)
+    second_results = await orchestrate_searches("Movie", "movie", ctx)
+
+    assert first_results
+    assert second_results
+    assert "DISCOVERY_CIRCUIT_BREAKER" in ctx.bot_data
+    assert len(fake_discovery_provider.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_uses_legacy_when_discovery_provider_disabled(
+    mocker,
+    fake_discovery_provider,
+):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "Prowlarr",
+                "type": "fake_discovery",
+                "enabled": False,
+                "search_url": "http://127.0.0.1:9696/1/api?q={query}",
+            },
+            {
+                "name": "TPB",
+                "enabled": True,
+                "search_url": "https://thepiratebay.org/search.php?q={query}&cat=0",
+            },
+        ]
+    )
+    tpb_mock = mocker.patch(
+        "telegram_bot.services.scraping_service.scrape_tpb",
+        new=AsyncMock(
+            return_value=[{"title": "Movie 1080p", "score": 20, "source": "tpb", "seeders": 30}]
+        ),
+    )
+
+    results = await orchestrate_searches("Movie", "movie", ctx)
+
+    assert len(fake_discovery_provider.calls) == 0
+    assert tpb_mock.await_count == 1
+    assert results[0]["source"] == "tpb"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_searches_logs_discovery_cancellation(
+    cancelled_discovery_provider,
+    caplog,
+):
+    ctx = _ctx_with_config(
+        websites_movies=[
+            {
+                "name": "Prowlarr",
+                "type": "cancel_discovery",
+                "enabled": True,
+                "search_url": "http://127.0.0.1:9696/1/api?q={query}",
+            }
+        ]
+    )
+
+    caplog.set_level(logging.INFO, logger="telegram_bot.config")
+    with pytest.raises(asyncio.CancelledError):
+        await orchestrate_searches("Movie", "movie", ctx)
+
+    assert "Discovery search cancelled for 'Movie' (movie)." in caplog.text

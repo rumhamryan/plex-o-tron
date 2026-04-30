@@ -27,7 +27,7 @@ from ..search_session import (
     SearchStep,
 )
 from .movie_collection_flow import _start_collection_lookup
-from .results import FOUR_K_SIZE_MULTIPLIER, _present_search_results
+from .results import _present_search_results
 from .state import _end_search_workflow, _get_session, _save_session, _send_prompt
 
 MOVIE_FAST_PATH_RESOLUTIONS = {"1080p", "2160p"}
@@ -309,7 +309,17 @@ async def _search_movie_results(
         session.resolution if session.resolution in MOVIE_FAST_PATH_RESOLUTIONS else None
     )
     preferred_codec = SearchSession.normalize_results_codec_filter(session.results_codec_filter)
-    search_resolutions = (preferred_resolution,) if preferred_resolution else ("1080p", "2160p")
+    search_uses_discovery = search_logic.has_configured_discovery_providers(
+        context.bot_data.get("SEARCH_CONFIG", {}),
+        "movie",
+    )
+    search_resolutions = (
+        (preferred_resolution,)
+        if preferred_resolution
+        else (None,)
+        if search_uses_discovery
+        else ("1080p", "2160p")
+    )
 
     if preferred_resolution:
         codec_suffix = (
@@ -347,18 +357,18 @@ async def _search_movie_results(
     combined_results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     for resolution in search_resolutions:
-        # Allow size override for 4K
-        max_size = scraper_max_size_gib
-        if resolution == "2160p":
-            max_size *= FOUR_K_SIZE_MULTIPLIER
+        search_kwargs: dict[str, Any] = {
+            "year": year,
+            "max_size_gib": scraper_max_size_gib,
+        }
+        if resolution is not None:
+            search_kwargs["resolution"] = resolution
 
         results = await search_logic.orchestrate_searches(
             search_title,
             "movie",
             context,
-            year=year,
-            resolution=resolution,
-            max_size_gib=max_size,
+            **search_kwargs,
         )
         for item in results or []:
             key = item.get("page_url") or item.get("magnet") or item.get("title")

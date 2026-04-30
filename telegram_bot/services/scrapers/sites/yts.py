@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup, Tag
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 
-from ....config import logger, require_scraper_max_torrent_size_gib
+from ....config import logger, resolve_scraper_max_torrent_size_gib
 from ....utils import compute_av_match_metadata, parse_codec, score_torrent_result
 from .. import adapters
 
@@ -28,17 +28,10 @@ async def scrape_yts(
         year_str = None
 
     raw_max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb"))
-    if raw_max_size_gib is None:
-        max_size_gib = require_scraper_max_torrent_size_gib(context.bot_data)
-    else:
-        try:
-            max_size_gib = float(raw_max_size_gib)
-        except (TypeError, ValueError):
-            logger.error("[SCRAPER] YTS: Invalid max_size_gib override: %r", raw_max_size_gib)
-            return []
-        if max_size_gib <= 0:
-            logger.error("[SCRAPER] YTS: max_size_gib must be greater than 0. Got %s", max_size_gib)
-            return []
+    max_size_gib = resolve_scraper_max_torrent_size_gib(context.bot_data, raw_max_size_gib)
+    if max_size_gib is None:
+        logger.error("[SCRAPER] YTS: Invalid max_size_gib override: %r", raw_max_size_gib)
+        return []
 
     preferences = context.bot_data.get("SEARCH_CONFIG", {}).get("preferences", {}).get("movies", {})
     if not preferences:

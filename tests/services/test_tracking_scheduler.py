@@ -6,6 +6,18 @@ import pytest
 
 from telegram_bot.services.tracking import manager as tracking_manager
 from telegram_bot.services.tracking import scheduler as tracking_scheduler
+from telegram_bot.services.discovery.orchestrator import PROVIDER_FACTORY
+from telegram_bot.services.discovery.providers.base import BaseProvider
+from telegram_bot.services.discovery.schemas import DiscoveryRequest, DiscoveryResult
+
+
+class FakeDiscoveryProvider(BaseProvider):
+    calls: list[DiscoveryRequest] = []
+    results: list[DiscoveryResult] = []
+
+    async def search(self, request: DiscoveryRequest) -> list[DiscoveryResult]:
+        type(self).calls.append(request)
+        return type(self).results
 
 
 def _build_application(
@@ -24,6 +36,7 @@ def _build_application(
         bot=bot,
         bot_data={
             "SAVE_PATHS": {"default": "/tmp"},
+            "SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0,
             "SEARCH_CONFIG": {
                 "preferences": {
                     "movies": {"resolutions": movie_resolutions},
@@ -72,6 +85,14 @@ def _create_movie_item(
         now_utc=now_utc,
     )
     return created["id"]
+
+
+@pytest.fixture
+def fake_discovery_provider(mocker):
+    FakeDiscoveryProvider.calls = []
+    FakeDiscoveryProvider.results = []
+    mocker.patch.dict(PROVIDER_FACTORY, {"fake_discovery": FakeDiscoveryProvider})
+    return FakeDiscoveryProvider
 
 
 def _create_tv_item(
@@ -417,6 +438,60 @@ async def test_tracking_scheduler_movie_selects_best_top_tier_candidate(mocker):
     assert current["status"] == "waiting_fulfillment"
     assert current["next_check_at_utc"] == "2026-06-01T18:00:00Z"
     assert current["linked_download_message_id"] == 91
+
+
+@pytest.mark.asyncio
+async def test_tracking_scheduler_queues_candidate_from_discovery_provider(
+    mocker,
+    fake_discovery_provider,
+):
+    app = _build_application(mocker, movie_resolutions={"2160p": 5, "1080p": 3})
+    app.bot_data["SEARCH_CONFIG"]["websites"] = {
+        "movies": [
+            {
+                "name": "Prowlarr",
+                "type": "fake_discovery",
+                "enabled": True,
+                "search_url": "http://127.0.0.1:9696/1/api?q={query}",
+            }
+        ],
+        "tv": [],
+    }
+    item_id = _create_movie_item(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        availability_date=date(2026, 6, 1),
+    )
+    item = tracking_manager.get_tracking_item(app, item_id)
+    assert item is not None
+    item["status"] = "searching"
+    item["next_check_at_utc"] = "2026-06-01T12:00:00Z"
+    fake_discovery_provider.results = [
+        DiscoveryResult(
+            title="Future Release 2026 2160p WEB x265",
+            download_url="magnet:?xt=urn:btih:DISCOVERY2160",
+            magnet_url="magnet:?xt=urn:btih:DISCOVERY2160",
+            source="Prowlarr",
+            size_bytes=2 * 1024**3,
+            seeders=50,
+            leechers=0,
+        )
+    ]
+    queue_mock = mocker.patch(
+        "telegram_bot.services.tracking.scheduler.queue_download_source",
+        AsyncMock(return_value=(True, 1)),
+    )
+
+    await tracking_scheduler.run_tracking_scheduler_tick(
+        app,
+        now_utc=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert len(fake_discovery_provider.calls) == 1
+    assert fake_discovery_provider.calls[0].query == "Future Release 2026"
+    queue_mock.assert_awaited_once()
+    queued_source = queue_mock.await_args.kwargs["source_dict"]
+    assert queued_source["value"] == "magnet:?xt=urn:btih:DISCOVERY2160"
 
 
 @pytest.mark.asyncio

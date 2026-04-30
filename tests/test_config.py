@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from telegram_bot.config import get_configuration
+from telegram_bot.config import get_configuration, resolve_scraper_max_torrent_size_gib
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -60,6 +60,16 @@ region=ca
     assert runtime_limits == {"scraper_max_torrent_size_gib": 22.0}
 
 
+def test_resolve_scraper_max_torrent_size_gib_caps_requested_limit():
+    bot_data = {"SCRAPER_MAX_TORRENT_SIZE_GIB": 22.0}
+
+    assert resolve_scraper_max_torrent_size_gib(bot_data, None) == 22.0
+    assert resolve_scraper_max_torrent_size_gib(bot_data, 10) == 10.0
+    assert resolve_scraper_max_torrent_size_gib(bot_data, 44) == 22.0
+    assert resolve_scraper_max_torrent_size_gib(bot_data, "invalid") is None
+    assert resolve_scraper_max_torrent_size_gib(bot_data, 0) is None
+
+
 def test_get_configuration_tmdb_api_key_only(mocker):
     config_data = """
 [telegram]
@@ -78,6 +88,43 @@ api_key=TMDB_TEST_API_KEY
 
     _, _, _, _, _, tmdb_config, _ = get_configuration()
     assert tmdb_config == {"api_key": "TMDB_TEST_API_KEY", "region": "US"}
+
+
+def test_get_configuration_loads_search_providers(mocker):
+    config_data = """
+[telegram]
+bot_token=TEST_TOKEN
+
+[host]
+default_save_path=/downloads
+scraper_max_torrent_size_gib=22
+
+[search]
+providers=[
+    {
+        "name": "Prowlarr",
+        "type": "torznab",
+        "enabled": true,
+        "search_url": "http://127.0.0.1:9696/1/api?apikey=KEY&t={type}&q={query}&cat={category}"
+    }
+]
+"""
+    mocker.patch("builtins.open", mocker.mock_open(read_data=config_data))
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch("os.makedirs")
+
+    _, _, _, _, search_config, _, _ = get_configuration()
+
+    assert search_config["providers"] == [
+        {
+            "name": "Prowlarr",
+            "type": "torznab",
+            "enabled": True,
+            "search_url": (
+                "http://127.0.0.1:9696/1/api?apikey=KEY&t={type}&q={query}&cat={category}"
+            ),
+        }
+    ]
 
 
 def test_get_configuration_missing_file(mocker):

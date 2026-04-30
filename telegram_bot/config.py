@@ -114,7 +114,7 @@ def _parse_search_section(lines: list[str]) -> dict[str, Any]:
         if in_search_section:
             if stripped_line.startswith("[") and stripped_line.endswith("]"):
                 break  # Reached the next section
-            if "=" in line and line.strip().startswith(("websites", "preferences")):
+            if "=" in line and line.strip().startswith(("websites", "preferences", "providers")):
                 key, value = line.split("=", 1)
                 current_key = key.strip()
                 search_section_content[current_key] = value.strip()
@@ -126,6 +126,8 @@ def _parse_search_section(lines: list[str]) -> dict[str, Any]:
             search_config["websites"] = json.loads(search_section_content["websites"])
         if "preferences" in search_section_content:
             search_config["preferences"] = json.loads(search_section_content["preferences"])
+        if "providers" in search_section_content:
+            search_config["providers"] = json.loads(search_section_content["providers"])
         if search_config:
             logger.info("[CONFIG] Search configuration loaded successfully.")
     except json.JSONDecodeError as e:
@@ -248,3 +250,26 @@ def require_scraper_max_torrent_size_gib(bot_data: dict[str, Any] | Any) -> floa
         "Missing or invalid SCRAPER_MAX_TORRENT_SIZE_GIB in bot_data. "
         "Set [host].scraper_max_torrent_size_gib in config.ini."
     )
+
+
+def resolve_scraper_max_torrent_size_gib(
+    bot_data: dict[str, Any] | Any,
+    requested_limit_gib: Any = None,
+) -> float | None:
+    """
+    Resolves a scraper size limit without allowing overrides above config.ini.
+
+    The configured [host].scraper_max_torrent_size_gib value is the hard cap. Callers
+    may request a smaller limit for a specific search, but cannot raise the ceiling.
+    """
+    configured_limit_gib = require_scraper_max_torrent_size_gib(bot_data)
+    if requested_limit_gib is None:
+        return configured_limit_gib
+
+    try:
+        parsed_limit_gib = float(requested_limit_gib)
+    except (TypeError, ValueError):
+        return None
+    if parsed_limit_gib <= 0:
+        return None
+    return min(parsed_limit_gib, configured_limit_gib)

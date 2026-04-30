@@ -28,6 +28,19 @@ tv_shows_save_path = C:\Users\Ryan\Desktop\Telegram Downloads\TV
 scraper_max_torrent_size_gib = 22
 
 [search]
+# Optional: Torznab/Prowlarr/Jackett discovery providers. When at least one enabled
+# provider is configured, manual searches and tracking use the discovery pipeline
+# instead of direct tracker scrapers for that media type.
+# providers = [
+#     {
+#         "name": "Prowlarr",
+#         "type": "torznab",
+#         "enabled": true,
+#         "search_url": "http://127.0.0.1:9696/1/api?apikey=KEY&t={type}&q={query}&cat={category}",
+#         "categories": {"movie": "2000", "tv": "5000"},
+#         "timeout_seconds": 8
+#     }
+# ]
 websites = {
     "movies": [
         {

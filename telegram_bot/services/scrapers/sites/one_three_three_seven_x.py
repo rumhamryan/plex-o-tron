@@ -4,7 +4,7 @@ from typing import Any
 
 from telegram.ext import ContextTypes
 
-from ....config import logger, require_scraper_max_torrent_size_gib
+from ....config import logger, resolve_scraper_max_torrent_size_gib
 from ....utils import (
     compute_av_match_metadata,
     parse_codec,
@@ -53,19 +53,10 @@ async def scrape_1337x(
     )
 
     raw_max_size_gib = kwargs.get("max_size_gib", kwargs.get("max_size_gb"))
-    if raw_max_size_gib is None:
-        max_size_gib = require_scraper_max_torrent_size_gib(context.bot_data)
-    else:
-        try:
-            max_size_gib = float(raw_max_size_gib)
-        except (TypeError, ValueError):
-            logger.error("[SCRAPER] 1337x: Invalid max_size_gib override: %r", raw_max_size_gib)
-            return []
-        if max_size_gib <= 0:
-            logger.error(
-                "[SCRAPER] 1337x: max_size_gib must be greater than 0. Got %s", max_size_gib
-            )
-            return []
+    max_size_gib = resolve_scraper_max_torrent_size_gib(context.bot_data, raw_max_size_gib)
+    if max_size_gib is None:
+        logger.error("[SCRAPER] 1337x: Invalid max_size_gib override: %r", raw_max_size_gib)
+        return []
 
     results: list[dict[str, Any]] = []
     for item in raw_results:

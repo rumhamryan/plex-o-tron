@@ -7,7 +7,7 @@ from typing import Any, Iterable
 from telegram.ext import ContextTypes
 from thefuzz import fuzz
 
-from ....config import logger, require_scraper_max_torrent_size_gib
+from ....config import logger, resolve_scraper_max_torrent_size_gib
 from ....utils import (
     compute_av_match_metadata,
     parse_codec,
@@ -61,16 +61,10 @@ def _resolve_max_size_gib(
     context: ContextTypes.DEFAULT_TYPE,
     kwargs: dict[str, Any],
 ) -> float | None:
-    raw = kwargs.get("max_size_gib", kwargs.get("max_size_gb"))
-    if raw is None:
-        return require_scraper_max_torrent_size_gib(context.bot_data)
-    try:
-        parsed = float(raw)
-    except (TypeError, ValueError):
-        return None
-    if parsed <= 0:
-        return None
-    return parsed
+    return resolve_scraper_max_torrent_size_gib(
+        context.bot_data,
+        kwargs.get("max_size_gib", kwargs.get("max_size_gb")),
+    )
 
 
 async def scrape_tpb(

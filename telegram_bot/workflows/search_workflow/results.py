@@ -27,7 +27,6 @@ from .state import _end_search_workflow, _get_session, _save_session
 
 RESULTS_PAGE_SIZE = 5
 RESULTS_SESSION_TTL_SECONDS = 15 * 60
-FOUR_K_SIZE_MULTIPLIER = 2.0
 RESOLUTION_FILTERS: tuple[str, ...] = ("all", "720p", "1080p", "2160p")
 RESULTS_EXPIRED_MESSAGE = "? These search results have expired\\. Please start a new search\\."
 
@@ -218,16 +217,8 @@ def _format_size_for_button(size_gib: float | None) -> str:
     return f"{rounded} GiB"
 
 
-def _determine_size_cap(
-    session: SearchSession, resolution_filter: str | None = None
-) -> float | None:
-    cap = session.results_max_size_gib
-    if cap is None:
-        return None
-    active = _normalize_resolution_filter(resolution_filter or session.results_resolution_filter)
-    if active == "2160p":
-        return cap * FOUR_K_SIZE_MULTIPLIER
-    return cap
+def _determine_size_cap(session: SearchSession) -> float | None:
+    return session.results_max_size_gib
 
 
 def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
@@ -248,7 +239,7 @@ def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
     if resolution_filter != "all":
         working = _filter_results_by_resolution(working, resolution_filter)
 
-    size_cap = _determine_size_cap(session, resolution_filter)
+    size_cap = _determine_size_cap(session)
     if size_cap is not None:
         limited: list[dict[str, Any]] = []
         for item in working:

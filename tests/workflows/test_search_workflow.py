@@ -21,6 +21,7 @@ from telegram_bot.workflows.search_workflow.movie_collection_flow import (
     _resolve_current_year_release_date,
     _resolve_collection_release,
 )
+from telegram_bot.workflows.search_workflow.movie_flow import _search_movie_results
 from telegram_bot.workflows.search_workflow.results import (
     RESULTS_SESSION_TTL_SECONDS,
     _build_results_keyboard,
@@ -109,7 +110,9 @@ async def test_search_movie_happy_path(mocker, context, make_callback_query, mak
     assert first_call.args[:3] == ("Inception", "movie", context)
     assert first_call.kwargs["year"] == "2010"
     assert first_call.kwargs["resolution"] == "1080p"
+    assert first_call.kwargs["max_size_gib"] == 22.0
     assert second_call.kwargs["resolution"] == "2160p"
+    assert second_call.kwargs["max_size_gib"] == 22.0
     present_mock.assert_awaited_once()
     presented_results = present_mock.await_args.args[2]
     assert [r["title"] for r in presented_results] == [
@@ -118,6 +121,40 @@ async def test_search_movie_happy_path(mocker, context, make_callback_query, mak
     ]
     query_label = present_mock.await_args.args[3]
     assert query_label.endswith("[All]")
+
+
+@pytest.mark.asyncio
+async def test_movie_all_search_uses_single_discovery_pass(mocker, context, make_message):
+    session = SearchSession(media_type="movie", step=SearchStep.RESOLUTION)
+    session.set_title("Inception")
+    session.set_final_title("Inception (2010)")
+    session.resolution = None
+    session.save(context.user_data)
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_flow.search_logic.has_configured_discovery_providers",
+        return_value=True,
+    )
+    orchestrate_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_flow.search_logic.orchestrate_searches",
+        new=AsyncMock(return_value=[{"title": "Inception 2160p", "page_url": "a"}]),
+    )
+    present_mock = mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_flow._present_search_results",
+        new=AsyncMock(),
+    )
+    mocker.patch(
+        "telegram_bot.workflows.search_workflow.movie_flow.safe_edit_message",
+        new=AsyncMock(),
+    )
+
+    await _search_movie_results(make_message(), context, session)
+
+    orchestrate_mock.assert_awaited_once()
+    assert orchestrate_mock.await_args.args[:3] == ("Inception", "movie", context)
+    assert orchestrate_mock.await_args.kwargs["year"] == "2010"
+    assert "resolution" not in orchestrate_mock.await_args.kwargs
+    assert orchestrate_mock.await_args.kwargs["max_size_gib"] == 22.0
+    present_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1586,7 +1623,7 @@ async def test_results_filter_callback_updates_state(
     assert safe_mock.await_count == 0
 
 
-def test_size_filter_allows_large_when_filtering_for_4k():
+def test_size_filter_respects_configured_cap_when_filtering_for_4k():
     session = SearchSession(media_type="movie")
     session.results = [
         {
@@ -1615,7 +1652,7 @@ def test_size_filter_allows_large_when_filtering_for_4k():
 
     session.results_resolution_filter = "2160p"
     filtered_four_k = _compute_filtered_results(session)
-    assert [r["title"] for r in filtered_four_k] == ["Huge 4K"]
+    assert filtered_four_k == []
 
 
 def test_compute_filtered_results_filters_by_codec():

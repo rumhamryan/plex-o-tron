@@ -1,4 +1,5 @@
 import os
+import time
 from collections.abc import MutableMapping
 
 from telegram import Message, Update
@@ -49,6 +50,7 @@ _TEXT_DRIVEN_SEARCH_STEPS = {
     SearchStep.TV_SEASON,
     SearchStep.TV_EPISODE,
 }
+_SEARCH_RESULTS_TTL_SECONDS = 15 * 60
 
 _TEXT_DRIVEN_DELETE_ACTIONS = {
     "delete_movie_collection_search",
@@ -117,6 +119,17 @@ def _has_valid_link_session(
         or isinstance(user_data.get("temp_magnet_choices_details"), list)
         or isinstance(get_active_prompt_message_id(context, chat_id), int)
     )
+
+
+def _has_fresh_search_results_session(session: SearchSession) -> bool:
+    if session.step != SearchStep.CONFIRMATION:
+        return False
+    if not session.results or not session.results_query:
+        return False
+    generated_at = session.results_generated_at
+    if not isinstance(generated_at, (int, float)):
+        return False
+    return time.time() - float(generated_at) <= _SEARCH_RESULTS_TTL_SECONDS
 
 
 async def handle_link_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -200,6 +213,13 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         session = SearchSession.from_user_data(user_data)
         if session.is_active and session.step in _TEXT_DRIVEN_SEARCH_STEPS:
             await handle_search_workflow(update, context)
+            return
+        if session.is_active and _has_fresh_search_results_session(session):
+            logger.info(
+                "Ignoring text message while search results await button selection for user %s.",
+                user.id,
+            )
+            await _delete_user_message_before_menu(message)
             return
         logger.info("Clearing stale search workflow state for user %s.", user.id)
         await return_to_home(context, chat.id, source_message=message)

@@ -5,6 +5,7 @@ from telegram import Message, Update
 
 from telegram_bot.handlers.message_handlers import handle_link_message, handle_user_message
 from telegram_bot.workflows.navigation import mark_chat_workflow_active, return_to_home
+from telegram_bot.workflows.search_session import SearchStep
 from telegram_bot.workflows.tracking_workflow.handlers import TRACKING_AWAIT_MOVIE_TITLE
 from telegram_bot.workflows.tracking_workflow.state import TRACKING_NEXT_ACTION_KEY
 
@@ -102,6 +103,44 @@ async def test_active_search_non_text_step_returns_home_menu(mocker, make_messag
 
     search_mock.assert_not_awaited()
     return_home_mock.assert_awaited_once_with(context, msg.chat_id, source_message=msg)
+
+
+@pytest.mark.asyncio
+async def test_active_search_confirmation_text_keeps_results_session(mocker, make_message, context):
+    msg = make_message("thanks")
+    update = Update(update_id=1, message=msg)
+
+    mark_chat_workflow_active(context, msg.chat_id, "search")
+    context.user_data["search_session"] = {
+        "media_type": "movie",
+        "step": SearchStep.CONFIRMATION.value,
+        "results": [{"title": "Movie", "page_url": "magnet:?xt=urn:btih:abc"}],
+        "results_query": "Movie [All]",
+        "results_generated_at": 1_000_000.0,
+    }
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.time.time",
+        return_value=1_000_001.0,
+    )
+    mocker.patch(
+        "telegram_bot.handlers.message_handlers.is_user_authorized",
+        AsyncMock(return_value=True),
+    )
+    return_home_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.return_to_home",
+        AsyncMock(),
+    )
+    search_mock = mocker.patch(
+        "telegram_bot.handlers.message_handlers.handle_search_workflow",
+        AsyncMock(),
+    )
+
+    await handle_user_message(update, context)
+
+    search_mock.assert_not_awaited()
+    return_home_mock.assert_not_awaited()
+    msg.get_bot().delete_message.assert_awaited_once()
+    assert context.user_data["search_session"]["step"] == SearchStep.CONFIRMATION.value
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock
+import logging
 
 import pytest
 from telegram import CallbackQuery, Update
@@ -208,13 +209,21 @@ async def test_home_refresh_consumes_and_rerenders_menu(
 
 
 @pytest.mark.asyncio
-async def test_cancel_operation_routes_return_to_home(
-    mocker, make_callback_query, context, make_message
+async def test_cancel_operation_routes_return_to_home_and_logs_search_cancel(
+    mocker, make_callback_query, context, make_message, caplog
 ):
     mocker.patch.object(CallbackQuery, "answer", AsyncMock())
     message = make_message(message_id=7)
     query = make_callback_query("cancel_operation", message)
     update = Update(update_id=1, callback_query=query)
+    context.user_data["active_workflow"] = "search"
+    context.user_data["search_session"] = {
+        "media_type": "movie",
+        "step": "confirmation",
+        "results": [{"title": "Movie", "page_url": "magnet:?xt=urn:btih:abc"}],
+        "results_query": "Movie [All]",
+        "results_generated_at": 1_000_000.0,
+    }
 
     mocker.patch(
         "telegram_bot.handlers.callback_handlers.is_user_authorized",
@@ -225,12 +234,15 @@ async def test_cancel_operation_routes_return_to_home(
         AsyncMock(),
     )
 
+    caplog.set_level(logging.INFO, logger="telegram_bot.config")
     await button_handler(update, context)
 
     return_home_mock.assert_awaited_once()
     kwargs = return_home_mock.await_args.kwargs
     assert kwargs["message_text"] == "Operation cancelled\\."
     assert kwargs["replace_home_menu"] is True
+    assert "Search cancelled by user" in caplog.text
+    assert "Movie [All]" in caplog.text
 
 
 @pytest.mark.asyncio

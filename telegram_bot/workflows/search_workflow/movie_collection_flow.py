@@ -51,7 +51,6 @@ from .collection_reconciliation import (
     select_preferred_collection_match,
 )
 from .results import (
-    FOUR_K_SIZE_MULTIPLIER,
     _filter_results_by_resolution,
     _log_aggregated_results,
     _normalize_resolution_filter,
@@ -970,13 +969,8 @@ async def _collect_collection_torrents(
         year_value = movie.get("year")
         year_kw = str(year_value) if isinstance(year_value, int) else None
 
-        # Allow size override for 4K
-        max_size = scraper_max_size_gib
-        if session.collection_resolution == "2160p":
-            max_size *= FOUR_K_SIZE_MULTIPLIER
-
         results = await search_logic.orchestrate_searches(
-            label, "movie", context, year=year_kw, max_size_gib=max_size
+            label, "movie", context, year=year_kw, max_size_gib=scraper_max_size_gib
         )
 
         if LOG_SCRAPER_STATS:

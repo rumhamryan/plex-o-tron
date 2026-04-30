@@ -189,6 +189,47 @@ async def test_scrape_tpb_respects_min_seeders_override(mocker):
 
 
 @pytest.mark.asyncio
+async def test_scrape_tpb_caps_size_override_at_config_limit(mocker):
+    data = [
+        {
+            "id": "31",
+            "name": "Example Movie 2023 1080p x265 Oversized",
+            "info_hash": "ABC123AAA111ABC123ABC123ABC123ABC123CCC1",
+            "seeders": "80",
+            "leechers": "5",
+            "size": str(30 * 1024**3),
+            "username": "TrustedUploader",
+            "category": "207",
+        },
+        {
+            "id": "32",
+            "name": "Example Movie 2023 1080p x265 Valid",
+            "info_hash": "ABC123AAA111ABC123ABC123ABC123ABC123CCC2",
+            "seeders": "70",
+            "leechers": "4",
+            "size": str(10 * 1024**3),
+            "username": "TrustedUploader",
+            "category": "207",
+        },
+    ]
+    fake_client = FakeAsyncClient(response=FakeResponse(data))
+    mocker.patch(
+        "telegram_bot.services.scrapers.adapters.create_async_client", return_value=fake_client
+    )
+
+    context = _ctx()
+    results = await scrape_tpb(
+        "Example Movie 2023",
+        "movie",
+        "unused",
+        context,
+        max_size_gib=100,
+    )
+
+    assert [result["title"] for result in results] == ["Example Movie 2023 1080p x265 Valid"]
+
+
+@pytest.mark.asyncio
 async def test_scrape_tpb_handles_http_errors(mocker):
     fake_client = FakeAsyncClient(error=httpx.HTTPError("boom"))
     mocker.patch(
