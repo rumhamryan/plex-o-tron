@@ -1689,7 +1689,7 @@ def test_compute_filtered_results_filters_by_codec():
 
 
 @pytest.mark.parametrize(
-    "result, expected_prefix",
+    "result, expected_label",
     [
         (
             {
@@ -1702,8 +1702,10 @@ def test_compute_filtered_results_filters_by_codec():
                 "is_bronze_av": False,
                 "has_video_match": True,
                 "has_audio_match": True,
+                "matched_video_formats": ["dolby_vision"],
+                "matched_audio_formats": ["atmos"],
             },
-            "🥇 ",
+            "🥇 | S:100 | 5 GiB",
         ),
         (
             {
@@ -1716,8 +1718,10 @@ def test_compute_filtered_results_filters_by_codec():
                 "is_bronze_av": False,
                 "has_video_match": True,
                 "has_audio_match": True,
+                "matched_video_formats": ["hdr10"],
+                "matched_audio_formats": ["truehd"],
             },
-            "🥈 ",
+            "🥈 | S:90 | 5 GiB",
         ),
         (
             {
@@ -1730,8 +1734,10 @@ def test_compute_filtered_results_filters_by_codec():
                 "is_bronze_av": True,
                 "has_video_match": True,
                 "has_audio_match": True,
+                "matched_video_formats": ["hdr"],
+                "matched_audio_formats": ["ddp", "aac"],
             },
-            "🥉 ",
+            "🥉 | S:85 | 5 GiB | HDR, DDP, AAC",
         ),
         (
             {
@@ -1744,8 +1750,10 @@ def test_compute_filtered_results_filters_by_codec():
                 "is_bronze_av": False,
                 "has_video_match": True,
                 "has_audio_match": False,
+                "matched_video_formats": ["dolby_vision"],
+                "matched_audio_formats": [],
             },
-            "🎥 ",
+            "🎥 | S:80 | 5 GiB | Dolby Vision",
         ),
         (
             {
@@ -1758,8 +1766,10 @@ def test_compute_filtered_results_filters_by_codec():
                 "is_bronze_av": False,
                 "has_video_match": False,
                 "has_audio_match": True,
+                "matched_video_formats": [],
+                "matched_audio_formats": ["ddp"],
             },
-            "🔊 ",
+            "🔊 | S:70 | 5 GiB | DDP",
         ),
         (
             {
@@ -1768,15 +1778,15 @@ def test_compute_filtered_results_filters_by_codec():
                 "size_gib": 4.6,
                 "source": "tpb",
             },
-            "",
+            "S:60 | 5 GiB",
         ),
     ],
 )
-def test_format_result_button_label_uses_icon_priority(result, expected_prefix):
+def test_format_result_button_label_uses_av_match_layout(result, expected_label):
     label = _format_result_button_label(result)
-    assert label.startswith(expected_prefix)
-    assert " | S:" in label
-    assert "5 GiB" in label
+    assert label == expected_label
+    assert "x265" not in label
+    assert "[tpb]" not in label
 
 
 @pytest.mark.asyncio

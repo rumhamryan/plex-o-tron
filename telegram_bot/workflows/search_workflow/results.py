@@ -217,6 +217,51 @@ def _format_size_for_button(size_gib: float | None) -> str:
     return f"{rounded} GiB"
 
 
+_MATCH_DISPLAY_NAMES = {
+    "dolby_vision": "Dolby Vision",
+    "hdr10_plus": "HDR10+",
+    "hdr10": "HDR10",
+    "hdr": "HDR",
+    "hlg": "HLG",
+    "sdr": "SDR",
+    "atmos": "Atmos",
+    "truehd": "TrueHD",
+    "ddp": "DDP",
+    "dd": "DD",
+    "dts_hd_ma": "DTS-HD MA",
+    "dts_hd": "DTS-HD",
+    "dts": "DTS",
+    "aac": "AAC",
+    "flac": "FLAC",
+    "opus": "Opus",
+}
+
+
+def _format_match_values(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+
+    formatted: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        formatted.append(_MATCH_DISPLAY_NAMES.get(value, value.replace("_", " ").title()))
+    return formatted
+
+
+def _format_result_match_text(result: dict[str, Any], icon: str) -> str:
+    video_matches = _format_match_values(result.get("matched_video_formats"))
+    audio_matches = _format_match_values(result.get("matched_audio_formats"))
+
+    if icon == "🥉":
+        return ", ".join([*video_matches, *audio_matches])
+    if icon == "🎥":
+        return ", ".join(video_matches)
+    if icon == "🔊":
+        return ", ".join(audio_matches)
+    return ""
+
+
 def _determine_size_cap(session: SearchSession) -> float | None:
     return session.results_max_size_gib
 
@@ -253,15 +298,16 @@ def _compute_filtered_results(session: SearchSession) -> list[dict[str, Any]]:
 
 def _format_result_button_label(result: dict[str, Any]) -> str:
     icon = _select_result_icon(result)
-    codec = result.get("codec") or "N/A"
     seeders = _safe_int(result.get("seeders"))
     size_value = _result_size_gib(result)
     size_text = _format_size_for_button(size_value)
-    source_site = result.get("source") or "source"
-    source_name = source_site.split(".")[0]
-    label = f"{codec} | S:{seeders} | {size_text} | [{source_name}]"
+    label = f"S:{seeders} | {size_text}"
     if icon:
-        return f"{icon} {label}"
+        label = f"{icon} | {label}"
+
+    match_text = _format_result_match_text(result, icon)
+    if match_text:
+        label = f"{label} | {match_text}"
     return label
 
 
